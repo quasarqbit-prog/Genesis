@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Genesis — Регистрация на сервер</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="sky" aria-hidden="true">
+    <div class="planets" id="planets"></div>
+    <div class="stars" id="stars"></div>
+    <div class="wind-layer" id="wind-layer"></div>
+    <div class="cloud cloud-a"></div>
+    <div class="cloud cloud-b"></div>
+    <div class="cloud cloud-c"></div>
+    <div class="cloud cloud-d"></div>
+    <div class="cloud cloud-e"></div>
+    <div class="cloud cloud-f"></div>
+    <div class="cloud cloud-g"></div>
+    <div class="cloud cloud-h"></div>
+    <div class="fireflies" id="fireflies"></div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand-mark">GENESIS</div>
+    <nav class="nav">
+      <button type="button" class="nav-item" data-nav="server">СЕРВЕР</button>
+      <button type="button" class="nav-item" data-nav="rules">ПРАВИЛА</button>
+      <button type="button" class="nav-item" id="nav-register" data-nav="register">РЕГИСТРАЦИЯ</button>
+      <button type="button" class="nav-item" id="nav-catalog" data-nav="catalog">КАТАЛОГ</button>
+    </nav>
+  </header>
+
+  <main class="stage">
+    <div class="panels stage-view is-active" id="panels">
+      <section class="hero panel" id="hero">
+        <h1 class="logo">GENESIS</h1>
+        <p class="lead" id="hero-lead">Регистрация расы на сервер</p>
+        <button type="button" class="mc-btn" id="start-btn">РЕГИСТРАЦИЯ</button>
+      </section>
+
+      <form class="survey panel" id="survey" novalidate hidden>
+        <div class="field-block">
+          <label class="field-label" for="nick">
+            Игровой ник
+            <span class="req">*</span>
+          </label>
+          <p class="field-hint">3–16 символов · латиница, цифры и _</p>
+          <input
+            class="field-input"
+            id="nick"
+            name="nick"
+            type="text"
+            maxlength="16"
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+          <p class="field-error" id="nick-error" hidden></p>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="raceName">
+            Название расы
+            <span class="req">*</span>
+          </label>
+          <input
+            class="field-input"
+            id="raceName"
+            name="raceName"
+            type="text"
+            maxlength="48"
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+          <p class="field-error" id="raceName-error" hidden></p>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="origin">
+            Происхождение расы
+            <span class="req">*</span>
+          </label>
+          <textarea
+            class="field-area"
+            id="origin"
+            name="origin"
+            rows="5"
+            required
+            placeholder="Распишите как появилась ваша раса, не выходя за рамки логики и лора Minecraft."
+          ></textarea>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="abilities">
+            Способности расы
+            <span class="req">*</span>
+          </label>
+          <textarea
+            class="field-area"
+            id="abilities"
+            name="abilities"
+            rows="5"
+            required
+            placeholder="Распишите какие есть способности у вашей расы."
+          ></textarea>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="traits">
+            Особенности расы
+            <span class="opt">необязательно</span>
+          </label>
+          <textarea
+            class="field-area"
+            id="traits"
+            name="traits"
+            rows="5"
+            placeholder="Распишите какие есть побочные эффекты у этой расы. (отрицательные эффекты, фоновые фишки)"
+          ></textarea>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="useful">
+            Чем ваша раса полезна для других
+            <span class="req">*</span>
+          </label>
+          <textarea
+            class="field-area"
+            id="useful"
+            name="useful"
+            rows="5"
+            required
+            placeholder="Распишите чем ваша раса может помочь другим игрокам в быту."
+          ></textarea>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="mechanics">
+            Особые механики которые привносит раса в мир
+            <span class="opt">необязательно</span>
+          </label>
+          <textarea
+            class="field-area"
+            id="mechanics"
+            name="mechanics"
+            rows="5"
+            placeholder="Распишите что нового в игровой мир добавит приход вашей расы. (новые предметы, биомы, структуры, механики)"
+          ></textarea>
+        </div>
+
+        <div class="field-block">
+          <div class="field-label">
+            Скины
+            <span class="opt">необязательно</span>
+          </div>
+          <p class="field-hint">Можно загрузить несколько PNG</p>
+          <div class="skin-grid" id="skin-grid"></div>
+          <div class="file-upload-row">
+            <label class="mc-btn mc-btn--file" for="skin-input">ЗАГРУЗИТЬ СКИН</label>
+            <div class="upload-spinner" id="skin-spinner"></div>
+          </div>
+          <input
+            id="skin-input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg"
+            multiple
+            hidden
+          />
+        </div>
+
+        <div class="field-block">
+          <div class="field-label">
+            Аудио
+            <span class="opt">необязательно</span>
+          </div>
+          <p class="field-hint">Звуки расы: .ogg, .mp3, .wav</p>
+          <div class="audio-list" id="race-audio-list"></div>
+          <div class="file-upload-row">
+            <label class="mc-btn mc-btn--file" for="race-audio-input">ЗАГРУЗИТЬ АУДИО</label>
+            <div class="upload-spinner" id="race-audio-spinner"></div>
+          </div>
+          <input
+            id="race-audio-input"
+            type="file"
+            accept="audio/ogg,audio/mpeg,audio/wav,.ogg,.mp3,.wav"
+            multiple
+            hidden
+          />
+        </div>
+
+        <div class="field-block field-block--action">
+          <button type="submit" class="mc-btn" id="finish-btn">
+            ЗАВЕРШИТЬ
+          </button>
+          <p class="form-status" id="form-status" hidden></p>
+        </div>
+      </form>
+
+      <section class="submit-flow panel" id="submit-flow" hidden>
+        <p class="submit-progress" id="submit-progress">Этап 1 / 4</p>
+
+        <div class="submit-body">
+          <div class="submit-step is-active" data-step="1">
+            <h2 class="submit-title">Установка</h2>
+            <p class="submit-text">Скачайте ZIP с данными вашей анкеты</p>
+            <button type="button" class="mc-btn" id="download-zip-btn">
+              СКАЧАТЬ ZIP
+            </button>
+          </div>
+
+          <div class="submit-step" data-step="2" hidden>
+            <h2 class="submit-title">Отправка</h2>
+            <p class="submit-text">
+              Отправьте скачанный файл пользователю
+              <a
+                class="inline-link"
+                href="https://t.me/mr_NoNear"
+                target="_blank"
+                rel="noopener noreferrer"
+              >@mr_NoNear</a>
+            </p>
+          </div>
+
+          <div class="submit-step" data-step="3" hidden>
+            <h2 class="submit-title">Вход на сервер</h2>
+            <p class="submit-text">
+              Регистрация расы окончена. Вы в очереди на добавление, и сможете заходить на
+              сервер когда вас добавят в белый список.
+            </p>
+            <p class="submit-meta">• Minecraft 1.21.11 fabric</p>
+          </div>
+
+          <div class="submit-step" data-step="4" hidden>
+            <h2 class="submit-title">Готово</h2>
+            <p class="submit-text">Регистрация завершена.</p>
+          </div>
+        </div>
+
+        <div class="submit-nav">
+          <button type="button" class="mc-btn mc-btn--ghost" id="step-back">
+            НАЗАД
+          </button>
+          <button type="button" class="mc-btn" id="step-next">
+            ДАЛЕЕ
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <section class="server stage-view" id="server" hidden>
+      <article class="server-panel">
+        <p class="server-lead">
+          <span class="server-brand">Genesis</span> — это приватный мирный сервер без PvP,
+          где каждый игрок может почувствовать себя тем, кем хочет.
+        </p>
+        <p class="server-text">
+          Здесь нет готовых шаблонов и обязательных ролей — игрок сам придумывает себе расу,
+          её способности и предназначение в мире, а другие уважают этот выбор и не пытаются
+          подчинить или эксплуатировать чужого персонажа.
+        </p>
+        <p class="server-text">
+          Мир Genesis живёт и растёт вместе с игроками: вы можете добавлять свой контент,
+          который станет частью общего сервера для всех.
+        </p>
+
+        <div class="server-meta-block">
+          <p class="server-meta-row">
+            <span class="server-meta-label">IP сервера:</span>
+            <button type="button" class="server-ip" id="server-ip-btn" title="Скопировать IP">
+              srv1001.godlike.club:26519
+            </button>
+          </p>
+          <p class="server-meta-row server-meta-row--soft">Minecraft 1.21.11 Fabric</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="catalog stage-view" id="catalog" hidden>
+      <div class="catalog-inner" id="catalog-inner"></div>
+    </section>
+
+    <section class="rules stage-view" id="rules" hidden>
+      <aside class="rules-side" aria-label="Разделы правил">
+        <p class="rules-side__title">Разделы</p>
+        <nav class="rules-toc" id="rules-toc">
+          <button type="button" class="rules-toc__btn is-active" data-rule="rule-1">1. Безопасность</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-2">2. Расы</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-3">3. Территория</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-4">4. Читы</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-5">5. Общение</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-6">6. Ники и скины</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-7">7. Администрация</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-8">8. Ответственность</button>
+        </nav>
+      </aside>
+
+      <div class="rules-body" id="rules-body">
+        <header class="rules-head">
+          <h1 class="rules-head__title">Правила сервера</h1>
+          <p class="rules-head__lead">Обязательны к исполнению всеми игроками</p>
+        </header>
+
+        <article class="rule-block" id="rule-1">
+          <h2 class="rule-block__title">1. Безопасность игроков</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">1.1.</span>
+              Запрещено причинять вред другим игрокам любыми способами, особенно через обходные методы:
+              ловушки с лавой/TNT, выталкивание в пропасть или в мобов, использование багов и эксплойтов
+              для убийства, удушение блоками, заманивание в опасные зоны и т.п.
+            </li>
+            <li>
+              <span class="rule-num">1.2.</span>
+              Любые попытки убить или покалечить игрока способом, не предусмотренным разработчиками,
+              строго запрещены.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 24 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-2">
+          <h2 class="rule-block__title">2. Расы и социальное взаимодействие</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">2.1.</span>
+              У каждого игрока есть своя раса на сервере — уважайте выбор и особенности других игроков.
+            </li>
+            <li>
+              <span class="rule-num">2.2.</span>
+              Запрещено эксплуатировать других игроков и их способности: принуждать к рабству,
+              бесплатному труду, отбирать ресурсы силой или через обман, использовать чужую расу
+              как повод для дискриминации или давления.
+            </li>
+            <li>
+              <span class="rule-num">2.3.</span>
+              Любое сотрудничество (торговля, совместные постройки, найм) — только по добровольному
+              согласию сторон.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 48 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-3">
+          <h2 class="rule-block__title">3. Территория и постройки</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">3.1.</span>
+              Гриферство запрещено: разрушение, порча или изменение чужих построек без разрешения владельца.
+            </li>
+            <li>
+              <span class="rule-num">3.2.</span>
+              Воровство из чужих сундуков, домов и хранилищ запрещено.
+            </li>
+            <li>
+              <span class="rule-num">3.3.</span>
+              Не стройте слишком близко к чужим участкам без согласия соседей.
+            </li>
+            <li>
+              <span class="rule-num">3.4.</span>
+              Не оставляйте после себя огромные ямы, вырубленные леса без остатков летающей листвы
+              и прочий беспорядок в общем ландшафте.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 48 часов.</li>
+            <li>Есть возможность избежать наказания вернув или восстановив ресурсы/постройки.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-4">
+          <h2 class="rule-block__title">4. Читы и эксплойты</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">4.1.</span>
+              Использование чит-клиентов, x-ray, дюпов (дублирования предметов), автокликеров и любых
+              сторонних программ, дающих особое нечестное преимущество, запрещено.
+            </li>
+            <li>
+              <span class="rule-num">4.2.</span>
+              Использование багов игры в корыстных целях (для получения ресурсов, урона другим игрокам
+              и т.д.) запрещено. О найденных багах сообщайте администрации.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 48 часов.</li>
+          </ul>
+          <p class="rule-note">
+            Примечание: Использование вспомогательных модов по типу: карты, авто-инструмента, авто рыбалки
+            и так далее — разрешены.
+          </p>
+        </article>
+
+        <article class="rule-block" id="rule-5">
+          <h2 class="rule-block__title">5. Общение в чате</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">5.1.</span>
+              Уважительное общение — обязательно. Оскорбления, травля, разжигание конфликтов запрещены.
+              Просто маты без контекста оскорбления можно.
+            </li>
+            <li>
+              <span class="rule-num">5.2.</span>
+              Спам, флуд, реклама других серверов и проектов без разрешения администрации запрещены.
+            </li>
+            <li>
+              <span class="rule-num">5.3.</span>
+              Запрещён контент 18+, дискриминация по любому признаку, политические и религиозные споры.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 15 минут до 3 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-6">
+          <h2 class="rule-block__title">6. Никнеймы и скины</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">6.1.</span>
+              Ник и скин не должны содержать оскорбления, нацистскую и экстремистскую символику,
+              а также имена администрации сервера без разрешения.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 12 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-7">
+          <h2 class="rule-block__title">7. Администрация</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">7.1.</span>
+              Решения администрации обязательны к исполнению. Спорные ситуации решаются через жалобы
+              основателю сервера, а не самосудом.
+            </li>
+            <li>
+              <span class="rule-num">7.2.</span>
+              Попытки обмануть или манипулировать администрацией (ложные жалобы, подставы) наказываются.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 96 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-8">
+          <h2 class="rule-block__title">8. Ответственность</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">8.1.</span>
+              За нарушение правил — предупреждение, временное отстранение или постоянный бан в зависимости
+              от тяжести и повторяемости нарушения.
+            </li>
+            <li>
+              <span class="rule-num">8.2.</span>
+              Незнание правил не освобождает от ответственности.
+            </li>
+          </ol>
+        </article>
+      </div>
+    </section>
+
+    <section class="content-flow stage-view" id="content-flow" hidden>
+      <form class="content-form panel" id="content-form" novalidate>
+        <p class="content-form__mode" id="content-form-mode"></p>
+        <h2 class="content-form__title" id="content-form-title">Предмет</h2>
+
+        <!-- Report-mode fields (shown only in report mode) -->
+        <div class="field-block" id="report-fields" hidden>
+          <label class="field-label" for="reportName">
+            Название контента
+            <span class="req">*</span>
+          </label>
+          <input
+            class="field-input"
+            id="reportName"
+            name="reportName"
+            type="text"
+            maxlength="128"
+            autocomplete="off"
+          />
+        </div>
+        <div class="field-block" id="report-desc-block" hidden>
+          <label class="field-label" for="reportDesc">
+            Описание проблемы
+            <span class="req">*</span>
+          </label>
+          <textarea
+            class="field-area field-area--sm"
+            id="reportDesc"
+            name="reportDesc"
+            rows="2"
+            placeholder="Опишите в чём заключается проблема."
+          ></textarea>
+        </div>
+
+        <p class="content-form__warn" id="content-form-warn" hidden>
+          Создание нового измерения сильно затягивает разработку. Измерения не входят в режим очереди.
+        </p>
+
+        <div class="type-fields" data-type-fields="item" id="item-fields">
+        <div class="field-block">
+          <label class="field-label" for="itemName">
+            Название предмета
+            <span class="req">*</span>
+          </label>
+          <input
+            class="field-input"
+            id="itemName"
+            name="itemName"
+            type="text"
+            maxlength="64"
+            autocomplete="off"
+            required
+          />
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="itemTooltip">
+            Описание предмета (ToolTip)
+            <span class="opt">необязательно</span>
+          </label>
+          <textarea
+            class="field-area field-area--sm"
+            id="itemTooltip"
+            name="itemTooltip"
+            rows="2"
+            placeholder="Краткое описание, которое видно при наведении"
+          ></textarea>
+        </div>
+
+        <div class="field-block">
+          <div class="field-label">
+            Тип предмета
+            <span class="req">*</span>
+          </div>
+          <div class="choice-grid" id="itemTypeGrid" role="radiogroup" aria-label="Тип предмета">
+            <label class="choice-chip"><input type="radio" name="itemType" value="item" checked /><span>Предмет</span></label>
+            <label class="choice-chip"><input type="radio" name="itemType" value="tool" /><span>Инструмент</span></label>
+            <label class="choice-chip"><input type="radio" name="itemType" value="weapon" /><span>Оружие</span></label>
+            <label class="choice-chip"><input type="radio" name="itemType" value="armor" /><span>Броня</span></label>
+            <label class="choice-chip"><input type="radio" name="itemType" value="accessory" /><span>Аксессуар</span></label>
+            <label class="choice-chip"><input type="radio" name="itemType" value="ingredient" /><span>Ингредиент</span></label>
+            <label class="choice-chip"><input type="radio" name="itemType" value="other" /><span>Другое</span></label>
+          </div>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="itemStats">
+            Характеристики
+            <span class="opt">необязательно</span>
+          </label>
+          <textarea
+            class="field-area field-area--sm"
+            id="itemStats"
+            name="itemStats"
+            rows="2"
+            placeholder="Опишите прочность, скорость копания, урон.."
+          ></textarea>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="itemFeatures">
+            Особенности
+            <span class="opt">необязательно</span>
+          </label>
+          <textarea
+            class="field-area field-area--sm"
+            id="itemFeatures"
+            name="itemFeatures"
+            rows="2"
+            placeholder="Опишите что делает при взаимодействии, или когда надето/в руке."
+          ></textarea>
+        </div>
+
+        <div class="field-block">
+          <label class="field-label" for="itemUsage">
+            Для чего используется
+            <span class="opt">необязательно</span>
+          </label>
+          <textarea
+            class="field-area field-area--sm"
+            id="itemUsage"
+            name="itemUsage"
+            rows="2"
+            placeholder="Опишите для чего нужен этот предмет."
+          ></textarea>
+        </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="mechanic" hidden>
+          <div class="field-block">
+            <label class="field-label" for="mechanicName">Название механики <span class="req">*</span></label>
+            <input class="field-input" id="mechanicName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="mechanicDesc">Описание механики <span class="req">*</span></label>
+            <textarea class="field-area" id="mechanicDesc" rows="5" placeholder="Опишите то что будет делать ваша механика в игре."></textarea>
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="block" hidden>
+          <div class="field-block">
+            <label class="field-label" for="blockName">Название блока <span class="req">*</span></label>
+            <input class="field-input" id="blockName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="blockTooltip">Описание блока (ToolTip) <span class="opt">необязательно</span></label>
+            <textarea class="field-area field-area--sm" id="blockTooltip" rows="2" placeholder="Краткое описание, которое видно при наведении"></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="blockStats">Характеристики <span class="req">*</span></label>
+            <textarea class="field-area field-area--sm" id="blockStats" rows="2" placeholder="Прочность, взрыво-устойчивость, трение, упругость."></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="blockFeatures">Особенности <span class="opt">необязательно</span></label>
+            <textarea class="field-area field-area--sm" id="blockFeatures" rows="2" placeholder="Опишите особенности блока."></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="blockUsage">Для чего используется <span class="opt">необязательно</span></label>
+            <textarea class="field-area field-area--sm" id="blockUsage" rows="2" placeholder="Опишите для чего нужен этот блок."></textarea>
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="recipe" hidden>
+          <div class="field-block">
+            <label class="field-label" for="recipeName">Название рецепта <span class="req">*</span></label>
+            <input class="field-input" id="recipeName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="structure" hidden>
+          <div class="field-block">
+            <label class="field-label" for="structureName">Название структуры <span class="req">*</span></label>
+            <input class="field-input" id="structureName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="structureSpawn">Условие появления структуры <span class="req">*</span></label>
+            <textarea class="field-area" id="structureSpawn" rows="5" placeholder="Биомы в которых встречается структура, высота, измерение…"></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="structureUsage">Для чего нужна структура <span class="opt">необязательно</span></label>
+            <textarea class="field-area" id="structureUsage" rows="5" placeholder="Опишите для чего будет использоваться эта структура."></textarea>
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="biome" hidden>
+          <div class="field-block">
+            <label class="field-label" for="biomeName">Название биома <span class="req">*</span></label>
+            <input class="field-input" id="biomeName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="biomeFeatures">Особенности биома <span class="opt">необязательно</span></label>
+            <textarea class="field-area" id="biomeFeatures" rows="5" placeholder="Опишите отличительные черты биома."></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="biomeSpawn">Условие появления биома <span class="req">*</span></label>
+            <textarea class="field-area" id="biomeSpawn" rows="5" placeholder="Высота на которой появляется биом, измерение…"></textarea>
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="dimension" hidden>
+          <div class="field-block">
+            <label class="field-label" for="dimensionName">Название измерения <span class="req">*</span></label>
+            <input class="field-input" id="dimensionName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="dimensionFeatures">Особенности измерения <span class="opt">необязательно</span></label>
+            <textarea class="field-area" id="dimensionFeatures" rows="5" placeholder="Опишите особенности измерения."></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="dimensionEnter">Условие попадания в измерение <span class="req">*</span></label>
+            <textarea class="field-area" id="dimensionEnter" rows="5" placeholder="Через портал, при активации алтаря.."></textarea>
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="entity" hidden>
+          <div class="field-block">
+            <label class="field-label" for="entityName">Название моба <span class="req">*</span></label>
+            <input class="field-input" id="entityName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="entitySpawn">Условие появления моба <span class="req">*</span></label>
+            <textarea class="field-area" id="entitySpawn" rows="5" placeholder="В каком биоме, на какой высоте.."></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="entityFeatures">Особенности моба <span class="opt">необязательно</span></label>
+            <textarea class="field-area" id="entityFeatures" rows="5" placeholder="Опишите особенности моба."></textarea>
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="effect" hidden>
+          <div class="field-block">
+            <label class="field-label" for="effectName">Название эффекта <span class="req">*</span></label>
+            <input class="field-input" id="effectName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="effectGet">Условия получения эффекта <span class="req">*</span></label>
+            <textarea class="field-area field-area--sm" id="effectGet" rows="2" placeholder="Как игрок получает этот эффект."></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="effectDoes">Что делает эффект <span class="req">*</span></label>
+            <textarea class="field-area" id="effectDoes" rows="5" placeholder="Опишите действие эффекта."></textarea>
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="ui" hidden>
+          <div class="field-block">
+            <label class="field-label" for="uiName">Название интерфейса <span class="req">*</span></label>
+            <input class="field-input" id="uiName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="uiOpen">Как открыть интерфейс <span class="req">*</span></label>
+            <textarea class="field-area field-area--sm" id="uiOpen" rows="2" placeholder="Команда, предмет, блок…"></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="uiDoes">Что делает интерфейс <span class="req">*</span></label>
+            <textarea class="field-area" id="uiDoes" rows="5" placeholder="Опишите функции интерфейса."></textarea>
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="sound" hidden>
+          <div class="field-block">
+            <label class="field-label" for="soundName">Название звука <span class="req">*</span></label>
+            <input class="field-input" id="soundName" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="soundPlay">Условие воспроизведения звука <span class="req">*</span></label>
+            <textarea class="field-area field-area--sm" id="soundPlay" rows="2" placeholder="Когда и где воспроизводится звук."></textarea>
+          </div>
+        </div>
+
+        <div class="type-fields" data-type-fields="command" hidden>
+          <div class="field-block">
+            <label class="field-label" for="commandInput">Ввод команды <span class="req">*</span></label>
+            <p class="field-hint">Только латиница</p>
+            <input class="field-input" id="commandInput" type="text" maxlength="64" autocomplete="off" spellcheck="false" />
+            <p class="field-error" id="command-error" hidden></p>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="commandParts">Компоненты команды <span class="opt">необязательно</span></label>
+            <textarea class="field-area" id="commandParts" rows="5" placeholder="Аргументы и части команды."></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="commandDoes">Что делает команда, и развёртка компонентов <span class="req">*</span></label>
+            <textarea class="field-area" id="commandDoes" rows="5" placeholder="Опишите действие команды и её аргументы."></textarea>
+          </div>
+        </div>
+
+        <div class="field-block" id="shared-texture" hidden>
+          <div class="field-label">
+            Текстуры
+            <span class="opt">необязательно</span>
+          </div>
+          <p class="field-hint">PNG файлы текстур</p>
+          <div class="skin-grid" id="item-texture-grid"></div>
+          <div class="file-upload-row">
+            <label class="mc-btn mc-btn--file" for="item-texture-input">ЗАГРУЗИТЬ ТЕКСТУРУ</label>
+            <div class="upload-spinner" id="item-texture-spinner"></div>
+          </div>
+          <input
+            id="item-texture-input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg"
+            multiple
+            hidden
+          />
+        </div>
+
+        <div class="field-block" id="shared-audio" hidden>
+          <div class="field-label">
+            Звуки
+            <span class="opt">необязательно</span>
+          </div>
+          <p class="field-hint">.ogg, .mp3, .wav</p>
+          <div class="audio-list" id="item-audio-list"></div>
+          <div class="file-upload-row">
+            <label class="mc-btn mc-btn--file" for="item-audio-input">ЗАГРУЗИТЬ ЗВУК</label>
+            <div class="upload-spinner" id="item-audio-spinner"></div>
+          </div>
+          <input
+            id="item-audio-input"
+            type="file"
+            accept="audio/ogg,audio/mpeg,audio/wav,.ogg,.mp3,.wav"
+            multiple
+            hidden
+          />
+        </div>
+
+        <div class="field-block" id="shared-schematic" hidden>
+          <div class="field-label">
+            Схематика
+            <span class="opt">необязательно</span>
+          </div>
+          <p class="field-hint">Minecraft схематика: .schem, .schematic, .litematic, .nbt</p>
+          <div class="audio-list" id="schematic-list"></div>
+          <div class="file-upload-row">
+            <label class="mc-btn mc-btn--file" for="schematic-input">ЗАГРУЗИТЬ СХЕМАТИКУ</label>
+            <div class="upload-spinner" id="schematic-spinner"></div>
+          </div>
+          <input
+            id="schematic-input"
+            type="file"
+            accept=".schem,.schematic,.litematic,.nbt,application/octet-stream"
+            multiple
+            hidden
+          />
+        </div>
+
+        <div class="field-block" id="craft-block" hidden>
+          <div class="field-label" id="craft-label">
+            Крафт
+            <span class="opt" id="craft-opt">необязательно</span>
+          </div>
+
+          <div class="craft-mode-tabs" id="craft-mode-tabs" role="tablist">
+            <button type="button" class="craft-tab is-active" data-craft="none" role="tab">Нет</button>
+            <button type="button" class="craft-tab" data-craft="smelt" role="tab">Плавка</button>
+            <button type="button" class="craft-tab" data-craft="craft" role="tab">Крафт</button>
+          </div>
+
+          <!-- Smelt -->
+          <div class="craft-panel" id="craft-smelt" hidden>
+            <label class="craft-sub-label" for="smelt-item">Название предмета для плавки</label>
+            <input class="field-input" id="smelt-item" name="smeltItem" type="text" maxlength="64" autocomplete="off" placeholder="Например: железная руда" />
+          </div>
+
+          <!-- Craft grid -->
+          <div class="craft-panel" id="craft-grid-panel" hidden>
+            <div class="craft-grid" id="craft-grid">
+              <!-- 9 cells rendered by JS -->
+            </div>
+            <div class="craft-legend" id="craft-legend">
+              <!-- legend rows rendered by JS -->
+            </div>
+          </div>
+        </div>
+
+        <div class="field-block field-block--action">
+          <button type="button" class="mc-btn mc-btn--ghost" id="content-back-btn">НАЗАД</button>
+          <button type="submit" class="mc-btn" id="content-finish-btn">ЗАВЕРШИТЬ</button>
+          <p class="form-status" id="content-form-status" hidden></p>
+        </div>
+      </form>
+
+      <section class="content-submit panel" id="content-submit" hidden>
+        <p class="submit-progress" id="content-submit-progress">Этап 1 / 2</p>
+        <div class="submit-body">
+          <div class="submit-step is-active" data-cstep="1">
+            <h2 class="submit-title">Установка</h2>
+            <p class="submit-text">Скачайте ZIP с данными анкеты</p>
+            <button type="button" class="mc-btn" id="content-download-zip">СКАЧАТЬ ZIP</button>
+          </div>
+          <div class="submit-step" data-cstep="2" hidden>
+            <h2 class="submit-title">Отправка</h2>
+            <p class="submit-text">
+              Отправьте скачанный файл на рассмотрение пользователю
+              <a class="inline-link" href="https://t.me/mr_NoNear" target="_blank" rel="noopener noreferrer">@mr_NoNear</a>
+            </p>
+          </div>
+        </div>
+        <div class="submit-nav">
+          <button type="button" class="mc-btn mc-btn--ghost" id="content-step-back">НАЗАД</button>
+          <button type="button" class="mc-btn" id="content-step-next">ДАЛЕЕ</button>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden>IP скопирован</div>
+
+  <footer class="footer">
+    <a
+      class="footer-link"
+      href="https://t.me/daps_dapratt"
+      target="_blank"
+      rel="noopener noreferrer"
+    >@DapRatt</a>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
