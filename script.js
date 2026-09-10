@@ -1042,6 +1042,19 @@
   document.getElementById("profile-menu")?.addEventListener("click", (e) => {
     e.stopPropagation();
   });
+  document.getElementById("avatar-refresh-btn")?.addEventListener("click", async () => {
+    const menu = document.getElementById("profile-menu");
+    if (menu) menu.hidden = true;
+    try {
+      const data = await api("/api/user/avatar/refresh", { method: "POST", body: "{}" });
+      if (data.user) authUser = data.user;
+      else if (data.avatarUrl && authUser) authUser.avatarUrl = data.avatarUrl;
+      applyAuthUi();
+      showToast("Аватар обновлён");
+    } catch (err) {
+      showToast(err.message || "Не удалось обновить аватар");
+    }
+  });
   document.getElementById("admin-open-btn")?.addEventListener("click", () => {
     const menu = document.getElementById("profile-menu");
     if (menu) menu.hidden = true;

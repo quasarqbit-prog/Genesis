@@ -110,11 +110,14 @@ function adminMiddleware(req, res, next) {
 
 function toPublicUser(rowOrUser) {
   const role = rowOrUser.role || "user";
-  const avatarPath =
+  let avatarPath =
     rowOrUser.avatarUrl ||
     rowOrUser.avatar_path ||
     rowOrUser.avatarPath ||
     "";
+  if (avatarPath && !avatarPath.startsWith("http") && !avatarPath.includes("?")) {
+    avatarPath = `${avatarPath}?v=1`;
+  }
   return {
     id: rowOrUser.id,
     mcNick: rowOrUser.mcNick || rowOrUser.mc_nick || "",
@@ -397,7 +400,9 @@ async function resolveTelegramPhotoUrl(telegramId, widgetPhotoUrl) {
 
 async function saveTelegramAvatar(userId, photoUrl, telegramId = null) {
   ensureUploadDirs();
-  let url = photoUrl || "";
+  await ensureProfile(userId, null);
+
+  let url = String(photoUrl || "").trim();
   if (!url && telegramId) {
     url = await resolveTelegramPhotoUrl(telegramId, "");
   }
@@ -410,33 +415,46 @@ async function saveTelegramAvatar(userId, photoUrl, telegramId = null) {
   const fileName = `${userId}.${ext}`;
   const absPath = path.join(AVATARS_DIR, fileName);
   const publicPath = `/uploads/avatars/${fileName}`;
-  try {
-    await downloadToFile(String(url), absPath);
+
+  const persistPath = async (avatarPath) => {
     await pool.execute(
       `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
-      { avatarPath: publicPath, userId }
+      { avatarPath, userId }
     );
-    return `${publicPath}?v=${Date.now()}`;
+    return avatarPath.startsWith("http")
+      ? avatarPath
+      : `${avatarPath}?v=${Date.now()}`;
+  };
+
+  try {
+    await downloadToFile(String(url), absPath);
+    return await persistPath(publicPath);
   } catch (err) {
     console.warn("avatar download failed:", err.message);
-    // fallback через Bot API, если виджетная ссылка не скачалась
-    if (telegramId && photoUrl) {
-      try {
-        const botUrl = await resolveTelegramPhotoUrl(telegramId, "");
-        if (botUrl && botUrl !== url) {
-          await downloadToFile(botUrl, absPath);
-          await pool.execute(
-            `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
-            { avatarPath: publicPath, userId }
-          );
-          return `${publicPath}?v=${Date.now()}`;
-        }
-      } catch (err2) {
-        console.warn("avatar bot fallback failed:", err2.message);
-      }
-    }
-    return "";
   }
+
+  // Bot API fallback
+  if (telegramId) {
+    try {
+      const botUrl = await resolveTelegramPhotoUrl(telegramId, "");
+      if (botUrl) {
+        await downloadToFile(botUrl, absPath);
+        return await persistPath(publicPath);
+      }
+    } catch (err2) {
+      console.warn("avatar bot fallback failed:", err2.message);
+    }
+  }
+
+  // Последний запасной вариант — прямая ссылка Telegram CDN
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    try {
+      return await persistPath(url);
+    } catch (err3) {
+      console.warn("avatar remote persist failed:", err3.message);
+    }
+  }
+  return "";
 }
 
 async function allocateMcNick(preferred, telegramId) {
@@ -774,7 +792,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     const [rows] = await pool.execute(
-      `SELECT id, telegram, mc_nick, account_type, role, password_hash
+      `SELECT id, telegram, telegram_id, mc_nick, account_type, role, password_hash
        FROM users
        WHERE mc_nick = :loginNick
        LIMIT 1`,
@@ -791,6 +809,9 @@ app.post("/api/login", async (req, res) => {
     }
 
     await ensureProfile(row.id, row.mc_nick);
+    if (row.telegram_id) {
+      await saveTelegramAvatar(row.id, "", row.telegram_id);
+    }
     const user = (await loadUserPublic(row.id)) || toPublicUser(row);
     return res.json({ token: signToken(user), user });
   } catch (err) {
@@ -847,7 +868,7 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
   try {
     await ensureProfile(req.user.id, req.user.mcNick || null);
     const [userRows] = await pool.execute(
-      `SELECT telegram, mc_nick, account_type, role FROM users WHERE id = :userId LIMIT 1`,
+      `SELECT telegram, telegram_id, mc_nick, account_type, role FROM users WHERE id = :userId LIMIT 1`,
       { userId: req.user.id }
     );
     const u = userRows[0] || {};
@@ -861,6 +882,13 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
       { userId: req.user.id }
     );
     const row = rows[0] || {};
+
+    // Если аватарки ещё нет — пробуем подтянуть из Telegram
+    if (!row.avatar_path && u.telegram_id) {
+      const refreshed = await saveTelegramAvatar(req.user.id, "", u.telegram_id);
+      if (refreshed) row.avatar_path = refreshed.split("?")[0];
+    }
+
     const user = toPublicUser({
       id: req.user.id,
       telegram: u.telegram || req.user.telegram || "",
@@ -885,6 +913,35 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("profile get:", err);
     return res.status(500).json({ error: "Не удалось загрузить профиль" });
+  }
+});
+
+app.post("/api/user/avatar/refresh", authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT telegram_id FROM users WHERE id = :userId LIMIT 1`,
+      { userId: req.user.id }
+    );
+    const telegramId = rows[0]?.telegram_id || null;
+    if (!telegramId) {
+      return res.status(400).json({
+        error: "Сначала войдите через Telegram, чтобы привязать аккаунт",
+      });
+    }
+    const photoUrl = String(req.body?.photo_url || "");
+    const avatarUrl = await saveTelegramAvatar(req.user.id, photoUrl, telegramId);
+    if (!avatarUrl) {
+      return res.status(404).json({
+        error:
+          "Не удалось получить фото. Откройте бота в Telegram (/start) и войдите через Telegram ещё раз",
+      });
+    }
+    const user = await loadUserPublic(req.user.id);
+    if (user) user.avatarUrl = avatarUrl;
+    return res.json({ ok: true, user, avatarUrl });
+  } catch (err) {
+    console.error("avatar refresh:", err);
+    return res.status(500).json({ error: "Ошибка обновления аватарки" });
   }
 });
 
