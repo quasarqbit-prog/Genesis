@@ -371,10 +371,39 @@ function downloadToFile(url, destPath) {
   });
 }
 
-async function saveTelegramAvatar(userId, photoUrl) {
-  if (!photoUrl) return "";
+async function resolveTelegramPhotoUrl(telegramId, widgetPhotoUrl) {
+  if (widgetPhotoUrl) return String(widgetPhotoUrl);
+  if (!TELEGRAM_BOT_TOKEN || !telegramId) return "";
+  try {
+    const photosRes = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN.trim()}/getUserProfilePhotos?user_id=${telegramId}&limit=1`
+    );
+    const photos = await photosRes.json();
+    const sizes = photos?.result?.photos?.[0];
+    if (!Array.isArray(sizes) || !sizes.length) return "";
+    const best = sizes[sizes.length - 1];
+    const fileRes = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN.trim()}/getFile?file_id=${encodeURIComponent(best.file_id)}`
+    );
+    const fileData = await fileRes.json();
+    const filePath = fileData?.result?.file_path;
+    if (!filePath) return "";
+    return `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN.trim()}/${filePath}`;
+  } catch (err) {
+    console.warn("resolveTelegramPhotoUrl:", err.message);
+    return "";
+  }
+}
+
+async function saveTelegramAvatar(userId, photoUrl, telegramId = null) {
   ensureUploadDirs();
-  const extMatch = String(photoUrl).match(/\.(jpe?g|png|webp|gif)(?:\?|$)/i);
+  let url = photoUrl || "";
+  if (!url && telegramId) {
+    url = await resolveTelegramPhotoUrl(telegramId, "");
+  }
+  if (!url) return "";
+
+  const extMatch = String(url).match(/\.(jpe?g|png|webp|gif)(?:\?|$)/i);
   const ext = extMatch
     ? extMatch[1].toLowerCase().replace("jpeg", "jpg")
     : "jpg";
@@ -382,14 +411,30 @@ async function saveTelegramAvatar(userId, photoUrl) {
   const absPath = path.join(AVATARS_DIR, fileName);
   const publicPath = `/uploads/avatars/${fileName}`;
   try {
-    await downloadToFile(String(photoUrl), absPath);
+    await downloadToFile(String(url), absPath);
     await pool.execute(
       `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
       { avatarPath: publicPath, userId }
     );
-    return publicPath;
+    return `${publicPath}?v=${Date.now()}`;
   } catch (err) {
     console.warn("avatar download failed:", err.message);
+    // fallback через Bot API, если виджетная ссылка не скачалась
+    if (telegramId && photoUrl) {
+      try {
+        const botUrl = await resolveTelegramPhotoUrl(telegramId, "");
+        if (botUrl && botUrl !== url) {
+          await downloadToFile(botUrl, absPath);
+          await pool.execute(
+            `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
+            { avatarPath: publicPath, userId }
+          );
+          return `${publicPath}?v=${Date.now()}`;
+        }
+      } catch (err2) {
+        console.warn("avatar bot fallback failed:", err2.message);
+      }
+    }
     return "";
   }
 }
@@ -546,7 +591,7 @@ app.post("/api/auth/telegram", async (req, res) => {
     }
 
     await ensureProfile(userId, null);
-    const avatarUrl = await saveTelegramAvatar(userId, photoUrl);
+    const avatarUrl = await saveTelegramAvatar(userId, photoUrl, telegramId);
     const user = await loadUserPublic(userId);
     if (avatarUrl && user) user.avatarUrl = avatarUrl;
 
@@ -660,7 +705,7 @@ app.post("/api/register", async (req, res) => {
       }
     }
 
-    const avatarUrl = await saveTelegramAvatar(userId, photoUrl);
+    const avatarUrl = await saveTelegramAvatar(userId, photoUrl, telegramId);
     const user =
       (await loadUserPublic(userId)) ||
       toPublicUser({

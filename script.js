@@ -561,7 +561,19 @@
     if (tgEl) tgEl.textContent = displayTg;
     if (avatarImg && avatarFallback) {
       if (avatarUrl) {
-        avatarImg.src = avatarUrl;
+        const src = avatarUrl.includes("?")
+          ? avatarUrl
+          : `${avatarUrl}?v=${Date.now()}`;
+        avatarImg.onerror = () => {
+          avatarImg.hidden = true;
+          avatarFallback.hidden = false;
+          avatarFallback.textContent = (displayNick || "?").slice(0, 1).toUpperCase();
+        };
+        avatarImg.onload = () => {
+          avatarImg.hidden = false;
+          avatarFallback.hidden = true;
+        };
+        avatarImg.src = src;
         avatarImg.hidden = false;
         avatarFallback.hidden = true;
       } else {
