@@ -473,11 +473,20 @@ h3,
 }
 
 .tg-widget-host {
-  min-height: 44px;
+  min-height: 52px;
   min-width: 180px;
   display: flex;
   justify-content: center;
   align-items: center;
+  width: 100%;
+}
+
+.tg-oauth-btn {
+  width: 100%;
+  min-width: 0;
+  text-align: center;
+  text-decoration: none;
+  box-sizing: border-box;
 }
 
 .tg-login-block[hidden] {

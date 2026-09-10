@@ -430,6 +430,31 @@ async function loadUserPublic(userId) {
   return rows[0] ? toPublicUser(rows[0]) : null;
 }
 
+let cachedTelegramBot = null;
+
+async function getTelegramBotInfo() {
+  if (cachedTelegramBot) return cachedTelegramBot;
+  if (!TELEGRAM_BOT_TOKEN) return null;
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN.trim()}/getMe`
+    );
+    const data = await res.json();
+    if (!data?.ok || !data.result?.id) {
+      console.warn("Telegram getMe failed:", data);
+      return null;
+    }
+    cachedTelegramBot = {
+      id: data.result.id,
+      username: String(data.result.username || "").replace(/^@/, ""),
+    };
+    return cachedTelegramBot;
+  } catch (err) {
+    console.warn("Telegram getMe error:", err.message);
+    return null;
+  }
+}
+
 /* ---------- Health / config ---------- */
 app.get("/api/health", async (_req, res) => {
   try {
@@ -440,10 +465,13 @@ app.get("/api/health", async (_req, res) => {
   }
 });
 
-app.get("/api/config", (_req, res) => {
+app.get("/api/config", async (_req, res) => {
+  const bot = await getTelegramBotInfo();
+  const username = bot?.username || TELEGRAM_BOT_USERNAME || "";
   res.json({
-    telegramBotUsername: TELEGRAM_BOT_USERNAME || "",
-    telegramLoginEnabled: Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_USERNAME),
+    telegramBotUsername: username,
+    telegramBotId: bot?.id || null,
+    telegramLoginEnabled: Boolean(TELEGRAM_BOT_TOKEN && username),
   });
 });
 
