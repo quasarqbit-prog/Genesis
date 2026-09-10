@@ -3,7 +3,10 @@
 require("dotenv").config();
 
 const path = require("path");
+const fs = require("fs");
+const crypto = require("crypto");
 const http = require("http");
+const https = require("https");
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
@@ -18,6 +21,13 @@ const BCRYPT_ROUNDS = 12;
 const MC_NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
 const TELEGRAM_RE = /^@?[A-Za-z0-9_]{5,32}$/;
 const MOD_API_KEY = process.env.MOD_API_KEY || "";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const TELEGRAM_BOT_USERNAME = (process.env.TELEGRAM_BOT_USERNAME || "").replace(
+  /^@/,
+  ""
+);
+const UPLOADS_DIR = path.join(__dirname, "uploads");
+const AVATARS_DIR = path.join(UPLOADS_DIR, "avatars");
 
 const app = express();
 const server = http.createServer(app);
@@ -34,6 +44,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: "1mb" }));
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 /** Локальная разработка: Express раздаёт статику. На VPS статику отдаёт Nginx. */
 if (process.env.NODE_ENV !== "production") {
@@ -50,6 +61,10 @@ const pool = mysql.createPool({
   connectionLimit: 10,
   namedPlaceholders: true,
 });
+
+function ensureUploadDirs() {
+  fs.mkdirSync(AVATARS_DIR, { recursive: true });
+}
 
 function signToken(user) {
   return jwt.sign(
@@ -95,6 +110,11 @@ function adminMiddleware(req, res, next) {
 
 function toPublicUser(rowOrUser) {
   const role = rowOrUser.role || "user";
+  const avatarPath =
+    rowOrUser.avatarUrl ||
+    rowOrUser.avatar_path ||
+    rowOrUser.avatarPath ||
+    "";
   return {
     id: rowOrUser.id,
     mcNick: rowOrUser.mcNick || rowOrUser.mc_nick || "",
@@ -102,6 +122,7 @@ function toPublicUser(rowOrUser) {
     accountType: rowOrUser.accountType || rowOrUser.account_type || "",
     role,
     isAdmin: role === "admin",
+    avatarUrl: avatarPath || "",
   };
 }
 
@@ -125,11 +146,24 @@ function parseFormJson(raw) {
   }
 }
 
+async function columnExists(table, column) {
+  const [rows] = await pool.query(
+    `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND COLUMN_NAME = ?`,
+    [table, column]
+  );
+  return rows.length > 0;
+}
+
 async function ensureSchema() {
+  ensureUploadDirs();
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id INT UNSIGNED NOT NULL AUTO_INCREMENT,
       telegram VARCHAR(64) NOT NULL,
+      telegram_id BIGINT NULL,
       mc_nick VARCHAR(16) NOT NULL,
       account_type ENUM('pirate', 'licensed') NOT NULL DEFAULT 'pirate',
       role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
@@ -137,7 +171,8 @@ async function ensureSchema() {
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       UNIQUE KEY uq_users_telegram (telegram),
-      UNIQUE KEY uq_users_mc_nick (mc_nick)
+      UNIQUE KEY uq_users_mc_nick (mc_nick),
+      UNIQUE KEY uq_users_telegram_id (telegram_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
   await pool.query(`
@@ -147,6 +182,7 @@ async function ensureSchema() {
       race_name VARCHAR(64) NULL,
       registered TINYINT(1) NOT NULL DEFAULT 0,
       form_json JSON NULL,
+      avatar_path VARCHAR(512) NULL,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (user_id),
       CONSTRAINT fk_profiles_user
@@ -168,17 +204,28 @@ async function ensureSchema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 
-  const [roleCols] = await pool.query(
-    `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'users'
-       AND COLUMN_NAME = 'role'`
-  );
-  if (!roleCols.length) {
+  if (!(await columnExists("users", "role"))) {
     await pool.query(
       `ALTER TABLE users
        ADD COLUMN role ENUM('user', 'admin') NOT NULL DEFAULT 'user'
        AFTER account_type`
+    );
+  }
+  if (!(await columnExists("users", "telegram_id"))) {
+    await pool.query(
+      `ALTER TABLE users ADD COLUMN telegram_id BIGINT NULL AFTER telegram`
+    );
+    try {
+      await pool.query(
+        `ALTER TABLE users ADD UNIQUE KEY uq_users_telegram_id (telegram_id)`
+      );
+    } catch {
+      /* index may already exist */
+    }
+  }
+  if (!(await columnExists("profiles", "avatar_path"))) {
+    await pool.query(
+      `ALTER TABLE profiles ADD COLUMN avatar_path VARCHAR(512) NULL AFTER form_json`
     );
   }
 }
@@ -249,13 +296,245 @@ async function ensureProfile(userId, mcNick = null) {
   );
 }
 
-/* ---------- Health ---------- */
+function verifyTelegramLoginPayload(data) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    return { ok: false, error: "TELEGRAM_BOT_TOKEN не настроен" };
+  }
+  const hash = String(data.hash || "");
+  if (!hash) return { ok: false, error: "Нет hash" };
+
+  const check = { ...data };
+  delete check.hash;
+  const dataCheckString = Object.keys(check)
+    .sort()
+    .map((key) => `${key}=${check[key]}`)
+    .join("\n");
+
+  const secretKey = crypto
+    .createHash("sha256")
+    .update(TELEGRAM_BOT_TOKEN)
+    .digest();
+  const computed = crypto
+    .createHmac("sha256", secretKey)
+    .update(dataCheckString)
+    .digest("hex");
+
+  if (computed !== hash) {
+    return { ok: false, error: "Неверная подпись Telegram" };
+  }
+
+  const authDate = Number(data.auth_date);
+  if (!Number.isFinite(authDate)) {
+    return { ok: false, error: "Некорректный auth_date" };
+  }
+  const ageSec = Math.floor(Date.now() / 1000) - authDate;
+  if (ageSec > 86400) {
+    return { ok: false, error: "Данные Telegram устарели" };
+  }
+
+  return { ok: true };
+}
+
+function downloadToFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith("https") ? https : http;
+    const req = client.get(url, { timeout: 15000 }, (res) => {
+      if (
+        res.statusCode >= 300 &&
+        res.statusCode < 400 &&
+        res.headers.location
+      ) {
+        res.resume();
+        downloadToFile(res.headers.location, destPath).then(resolve).catch(reject);
+        return;
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+      const file = fs.createWriteStream(destPath);
+      res.pipe(file);
+      file.on("finish", () => file.close(() => resolve(destPath)));
+      file.on("error", (err) => {
+        fs.unlink(destPath, () => reject(err));
+      });
+    });
+    req.on("error", reject);
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("timeout"));
+    });
+  });
+}
+
+async function saveTelegramAvatar(userId, photoUrl) {
+  if (!photoUrl) return "";
+  ensureUploadDirs();
+  const extMatch = String(photoUrl).match(/\.(jpe?g|png|webp|gif)(?:\?|$)/i);
+  const ext = extMatch
+    ? extMatch[1].toLowerCase().replace("jpeg", "jpg")
+    : "jpg";
+  const fileName = `${userId}.${ext}`;
+  const absPath = path.join(AVATARS_DIR, fileName);
+  const publicPath = `/uploads/avatars/${fileName}`;
+  try {
+    await downloadToFile(String(photoUrl), absPath);
+    await pool.execute(
+      `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
+      { avatarPath: publicPath, userId }
+    );
+    return publicPath;
+  } catch (err) {
+    console.warn("avatar download failed:", err.message);
+    return "";
+  }
+}
+
+async function allocateMcNick(preferred, telegramId) {
+  const candidates = [];
+  const clean = String(preferred || "").replace(/[^A-Za-z0-9_]/g, "");
+  if (clean.length >= 3) candidates.push(clean.slice(0, 16));
+  candidates.push(`tg${telegramId}`.slice(0, 16));
+  candidates.push(`u${String(telegramId)}`.slice(0, 16));
+
+  for (const base of candidates) {
+    if (!MC_NICK_RE.test(base)) continue;
+    let nick = base;
+    for (let i = 0; i < 30; i += 1) {
+      const [rows] = await pool.execute(
+        `SELECT id FROM users WHERE mc_nick = :nick LIMIT 1`,
+        { nick }
+      );
+      if (!rows[0]) return nick;
+      const suffix = String(i + 1);
+      nick = `${base.slice(0, Math.max(3, 16 - suffix.length))}${suffix}`;
+      if (!MC_NICK_RE.test(nick)) break;
+    }
+  }
+  return `u${Date.now().toString(36)}`.slice(0, 16);
+}
+
+async function loadUserPublic(userId) {
+  const [rows] = await pool.execute(
+    `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role, p.avatar_path
+     FROM users u
+     LEFT JOIN profiles p ON p.user_id = u.id
+     WHERE u.id = :userId
+     LIMIT 1`,
+    { userId }
+  );
+  return rows[0] ? toPublicUser(rows[0]) : null;
+}
+
+/* ---------- Health / config ---------- */
 app.get("/api/health", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
     res.json({ ok: true, db: true });
   } catch (err) {
     res.status(503).json({ ok: false, db: false, error: err.message });
+  }
+});
+
+app.get("/api/config", (_req, res) => {
+  res.json({
+    telegramBotUsername: TELEGRAM_BOT_USERNAME || "",
+    telegramLoginEnabled: Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_USERNAME),
+  });
+});
+
+app.post("/api/auth/telegram", async (req, res) => {
+  try {
+    const payload = {
+      id: req.body?.id,
+      first_name: req.body?.first_name,
+      last_name: req.body?.last_name,
+      username: req.body?.username,
+      photo_url: req.body?.photo_url,
+      auth_date: req.body?.auth_date,
+      hash: req.body?.hash,
+    };
+
+    // Telegram widget sends numbers as numbers; HMAC string must match original form
+    const verifyPayload = {};
+    for (const [key, value] of Object.entries(payload)) {
+      if (value === undefined || value === null || value === "") continue;
+      verifyPayload[key] = String(value);
+    }
+
+    const verified = verifyTelegramLoginPayload(verifyPayload);
+    if (!verified.ok) {
+      return res.status(401).json({ error: verified.error });
+    }
+
+    const telegramId = Number(verifyPayload.id);
+    if (!Number.isFinite(telegramId)) {
+      return res.status(400).json({ error: "Некорректный Telegram id" });
+    }
+
+    const username = String(verifyPayload.username || "").trim();
+    const telegram = username
+      ? normalizeTelegram(username)
+      : `@tg${telegramId}`;
+    const photoUrl = verifyPayload.photo_url || "";
+
+    let userId = null;
+    let created = false;
+
+    const [byId] = await pool.execute(
+      `SELECT id FROM users WHERE telegram_id = :telegramId LIMIT 1`,
+      { telegramId }
+    );
+    if (byId[0]) {
+      userId = byId[0].id;
+      await pool.execute(
+        `UPDATE users SET telegram = :telegram WHERE id = :userId`,
+        { telegram, userId }
+      );
+    } else {
+      const [byName] = await pool.execute(
+        `SELECT id FROM users WHERE telegram = :telegram LIMIT 1`,
+        { telegram }
+      );
+      if (byName[0]) {
+        userId = byName[0].id;
+        await pool.execute(
+          `UPDATE users SET telegram_id = :telegramId WHERE id = :userId`,
+          { telegramId, userId }
+        );
+      }
+    }
+
+    if (!userId) {
+      const mcNick = await allocateMcNick(username, telegramId);
+      const randomPass = crypto.randomBytes(18).toString("base64url");
+      const hash = await bcrypt.hash(randomPass, BCRYPT_ROUNDS);
+      const [result] = await pool.execute(
+        `INSERT INTO users
+          (telegram, telegram_id, mc_nick, account_type, role, password_hash)
+         VALUES
+          (:telegram, :telegramId, :mcNick, 'pirate', 'user', :hash)`,
+        { telegram, telegramId, mcNick, hash }
+      );
+      userId = result.insertId;
+      created = true;
+    }
+
+    await ensureProfile(userId, null);
+    const avatarUrl = await saveTelegramAvatar(userId, photoUrl);
+    const user = await loadUserPublic(userId);
+    if (avatarUrl && user) user.avatarUrl = avatarUrl;
+
+    return res.json({
+      token: signToken(user),
+      user,
+      created,
+      needsMcSetup: created,
+    });
+  } catch (err) {
+    console.error("telegram auth:", err);
+    return res.status(500).json({ error: "Ошибка входа через Telegram" });
   }
 });
 
@@ -396,7 +675,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     await ensureProfile(row.id, row.mc_nick);
-    const user = toPublicUser(row);
+    const user = (await loadUserPublic(row.id)) || toPublicUser(row);
     return res.json({ token: signToken(user), user });
   } catch (err) {
     console.error("login:", err);
@@ -457,7 +736,7 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
     );
     const u = userRows[0] || {};
     const [rows] = await pool.execute(
-      `SELECT p.registered, p.mc_nick, p.race_name, p.form_json,
+      `SELECT p.registered, p.mc_nick, p.race_name, p.form_json, p.avatar_path,
               p.updated_at, g.score, g.inventory_json, g.meta_json
        FROM profiles p
        LEFT JOIN game_stats g ON g.user_id = p.user_id
@@ -472,6 +751,7 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
       mc_nick: u.mc_nick || req.user.mcNick || "",
       account_type: u.account_type || "",
       role: u.role || req.user.role || "user",
+      avatar_path: row.avatar_path || "",
     });
     return res.json({
       user,

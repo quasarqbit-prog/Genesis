@@ -11,11 +11,13 @@ CREATE TABLE IF NOT EXISTS users (
   mc_nick VARCHAR(16) NOT NULL,
   account_type ENUM('pirate', 'licensed') NOT NULL DEFAULT 'pirate',
   role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
+  telegram_id BIGINT NULL,
   password_hash VARCHAR(255) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_users_telegram (telegram),
-  UNIQUE KEY uq_users_mc_nick (mc_nick)
+  UNIQUE KEY uq_users_mc_nick (mc_nick),
+  UNIQUE KEY uq_users_telegram_id (telegram_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS profiles (
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   race_name VARCHAR(64) NULL,
   registered TINYINT(1) NOT NULL DEFAULT 0,
   form_json JSON NULL,
+  avatar_path VARCHAR(512) NULL,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id),
   CONSTRAINT fk_profiles_user

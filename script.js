@@ -506,6 +506,8 @@
 
   function applyAuthUi() {
     const displayNick = authUser?.mcNick || authUser?.username || "";
+    const displayTg = authUser?.telegram || "";
+    const avatarUrl = authUser?.avatarUrl || "";
     const loggedIn = Boolean(authToken && displayNick);
     const sessionPending = Boolean(authToken && !displayNick);
     const isAdmin = Boolean(authUser?.isAdmin || authUser?.role === "admin");
@@ -513,9 +515,13 @@
     const topbar = document.getElementById("topbar");
     const stage = document.getElementById("app-stage");
     const footer = document.getElementById("app-footer");
-    const nickEl = document.getElementById("corner-nick");
+    const nickEl = document.getElementById("profile-nick");
+    const tgEl = document.getElementById("profile-telegram");
+    const avatarImg = document.getElementById("profile-avatar-img");
+    const avatarFallback = document.getElementById("profile-avatar-fallback");
     const adminBtn = document.getElementById("admin-open-btn");
     const adminShell = document.getElementById("admin-shell");
+    const profileMenu = document.getElementById("profile-menu");
 
     if (stage) stage.hidden = true;
     if (footer) footer.hidden = true;
@@ -547,15 +553,92 @@
         if (adminShell?.classList.contains("is-open")) {
           setLayerOpen(adminShell, false);
         }
+        if (profileMenu) profileMenu.hidden = true;
       }
     }
 
     if (nickEl) nickEl.textContent = displayNick;
+    if (tgEl) tgEl.textContent = displayTg;
+    if (avatarImg && avatarFallback) {
+      if (avatarUrl) {
+        avatarImg.src = avatarUrl;
+        avatarImg.hidden = false;
+        avatarFallback.hidden = true;
+      } else {
+        avatarImg.removeAttribute("src");
+        avatarImg.hidden = true;
+        avatarFallback.hidden = false;
+        avatarFallback.textContent = (displayNick || "?").slice(0, 1).toUpperCase();
+      }
+    }
     if (adminBtn) adminBtn.hidden = !isAdmin;
   }
 
   function updateAuthChrome() {
     applyAuthUi();
+  }
+
+  async function mountTelegramWidgets() {
+    let botUsername = "";
+    try {
+      const cfg = await api("/api/config");
+      botUsername = cfg.telegramBotUsername || "";
+      if (!cfg.telegramLoginEnabled || !botUsername) {
+        document.querySelectorAll(".tg-login-block").forEach((el) => {
+          el.hidden = true;
+        });
+        return;
+      }
+    } catch {
+      document.querySelectorAll(".tg-login-block").forEach((el) => {
+        el.hidden = true;
+      });
+      return;
+    }
+
+    window.onTelegramAuth = async (user) => {
+      try {
+        const data = await api("/api/auth/telegram", {
+          method: "POST",
+          body: JSON.stringify(user),
+        });
+        setAuthSession(data.token, data.user);
+        await loadProfileFromServer();
+        closeAuthModal();
+        applyAuthUi();
+        showToast(
+          data.created
+            ? "Аккаунт создан через Telegram"
+            : "Вход через Telegram"
+        );
+        if (data.needsMcSetup) {
+          showToast("Задайте ник и пароль Minecraft через регистрацию позже");
+        }
+      } catch (err) {
+        showAuthStatus(err.message || "Ошибка Telegram");
+        showToast(err.message || "Ошибка Telegram");
+      }
+    };
+
+    const hosts = [
+      ["tg-widget-gate", "large"],
+      ["tg-widget-login", "medium"],
+    ];
+    hosts.forEach(([hostId, size]) => {
+      const host = document.getElementById(hostId);
+      if (!host || host.dataset.mounted === "1") return;
+      host.innerHTML = "";
+      const script = document.createElement("script");
+      script.async = true;
+      script.src = "https://telegram.org/js/telegram-widget.js?22";
+      script.setAttribute("data-telegram-login", botUsername);
+      script.setAttribute("data-size", size);
+      script.setAttribute("data-radius", "0");
+      script.setAttribute("data-onauth", "onTelegramAuth(user)");
+      script.setAttribute("data-request-access", "write");
+      host.appendChild(script);
+      host.dataset.mounted = "1";
+    });
   }
 
   function enforceTelegramAtPrefix() {
@@ -809,11 +892,28 @@
     openAuthModal("register");
   });
   document.getElementById("auth-modal-close")?.addEventListener("click", closeAuthModal);
+  document.getElementById("profile-avatar-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = document.getElementById("profile-menu");
+    if (!menu) return;
+    menu.hidden = !menu.hidden;
+  });
+  document.addEventListener("click", () => {
+    const menu = document.getElementById("profile-menu");
+    if (menu) menu.hidden = true;
+  });
+  document.getElementById("profile-menu")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
   document.getElementById("admin-open-btn")?.addEventListener("click", () => {
+    const menu = document.getElementById("profile-menu");
+    if (menu) menu.hidden = true;
     openAdminShell();
   });
   document.getElementById("admin-close-btn")?.addEventListener("click", closeAdminShell);
   document.getElementById("auth-logout-btn")?.addEventListener("click", () => {
+    const menu = document.getElementById("profile-menu");
+    if (menu) menu.hidden = true;
     clearAuthSession();
     applyAuthUi();
     showToast("Вы вышли");
@@ -930,6 +1030,7 @@
 
   connectSocket();
   updateAuthChrome();
+  mountTelegramWidgets();
   profileCache = readLocalStorageFallback();
 
   const panels = document.getElementById("panels");
