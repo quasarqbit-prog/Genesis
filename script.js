@@ -506,6 +506,7 @@
     const modal = document.getElementById("auth-modal");
     if (!modal) return;
     modal.hidden = false;
+    clearAuthFieldErrors();
     setAuthTab(tab);
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
@@ -524,14 +525,166 @@
     const regForm = document.getElementById("auth-register-form");
     if (loginForm) loginForm.hidden = tab !== "login";
     if (regForm) regForm.hidden = tab !== "register";
+    clearAuthFieldErrors();
+    const status = document.getElementById("auth-status");
+    if (status) status.hidden = true;
   }
 
   function showAuthStatus(message, ok = false) {
     const status = document.getElementById("auth-status");
     if (!status) return;
-    status.hidden = false;
+    status.hidden = !message;
     status.classList.toggle("is-ok", ok);
-    status.textContent = message;
+    status.textContent = message || "";
+  }
+
+  const AUTH_TELEGRAM_RE = /^@?[A-Za-z0-9_]{5,32}$/;
+  const AUTH_MC_NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
+  const AUTH_FIELD_IDS = [
+    "auth-login-user",
+    "auth-login-pass",
+    "auth-reg-telegram",
+    "auth-reg-nick",
+    "auth-reg-pass",
+    "auth-reg-pass2",
+  ];
+
+  function setFieldError(inputId, message) {
+    const input = document.getElementById(inputId);
+    const err = document.getElementById(`${inputId}-error`);
+    if (input) input.classList.toggle("is-invalid", Boolean(message));
+    if (err) {
+      err.hidden = !message;
+      err.textContent = message || "";
+    }
+  }
+
+  function setAccountTypeError(message) {
+    const err = document.getElementById("auth-reg-account-error");
+    if (err) {
+      err.hidden = !message;
+      err.textContent = message || "";
+    }
+  }
+
+  function clearAuthFieldErrors() {
+    AUTH_FIELD_IDS.forEach((id) => setFieldError(id, ""));
+    setAccountTypeError("");
+    showAuthStatus("");
+  }
+
+  function validateLoginFields(showEmpty = false) {
+    const login = document.getElementById("auth-login-user")?.value.trim() || "";
+    const password = document.getElementById("auth-login-pass")?.value || "";
+    let ok = true;
+
+    if (!login) {
+      if (showEmpty) setFieldError("auth-login-user", "Введите Telegram или ник");
+      else setFieldError("auth-login-user", "");
+      if (showEmpty) ok = false;
+    } else {
+      setFieldError("auth-login-user", "");
+    }
+
+    if (!password) {
+      if (showEmpty) setFieldError("auth-login-pass", "Введите пароль");
+      else setFieldError("auth-login-pass", "");
+      if (showEmpty) ok = false;
+    } else {
+      setFieldError("auth-login-pass", "");
+    }
+
+    return ok && Boolean(login && password);
+  }
+
+  function validateRegisterFields(showEmpty = false) {
+    const telegram = document.getElementById("auth-reg-telegram")?.value.trim() || "";
+    const mcNick = document.getElementById("auth-reg-nick")?.value.trim() || "";
+    const accountType =
+      document.querySelector('#auth-register-form input[name="accountType"]:checked')
+        ?.value || "";
+    const password = document.getElementById("auth-reg-pass")?.value || "";
+    const passwordConfirm = document.getElementById("auth-reg-pass2")?.value || "";
+    let ok = true;
+
+    if (!telegram) {
+      if (showEmpty) {
+        setFieldError("auth-reg-telegram", "Укажите Telegram");
+        ok = false;
+      } else setFieldError("auth-reg-telegram", "");
+    } else if (!AUTH_TELEGRAM_RE.test(telegram)) {
+      setFieldError(
+        "auth-reg-telegram",
+        "Формат @example · латиница, цифры и _, 5–32 символа"
+      );
+      ok = false;
+    } else {
+      setFieldError("auth-reg-telegram", "");
+    }
+
+    if (!mcNick) {
+      if (showEmpty) {
+        setFieldError("auth-reg-nick", "Укажите ник Minecraft");
+        ok = false;
+      } else setFieldError("auth-reg-nick", "");
+    } else if (!AUTH_MC_NICK_RE.test(mcNick)) {
+      setFieldError("auth-reg-nick", "3–16 символов · латиница, цифры и _");
+      ok = false;
+    } else {
+      setFieldError("auth-reg-nick", "");
+    }
+
+    if (!accountType) {
+      setAccountTypeError("Выберите тип аккаунта");
+      ok = false;
+    } else {
+      setAccountTypeError("");
+    }
+
+    if (!password) {
+      if (showEmpty) {
+        setFieldError("auth-reg-pass", "Введите пароль");
+        ok = false;
+      } else setFieldError("auth-reg-pass", "");
+    } else if (password.length < 6 || password.length > 72) {
+      setFieldError("auth-reg-pass", "От 6 до 72 символов");
+      ok = false;
+    } else {
+      setFieldError("auth-reg-pass", "");
+    }
+
+    if (!passwordConfirm) {
+      if (showEmpty) {
+        setFieldError("auth-reg-pass2", "Повторите пароль");
+        ok = false;
+      } else setFieldError("auth-reg-pass2", "");
+    } else if (password && passwordConfirm !== password) {
+      setFieldError("auth-reg-pass2", "Пароли не совпадают");
+      ok = false;
+    } else {
+      setFieldError("auth-reg-pass2", "");
+    }
+
+    return ok;
+  }
+
+  function applyServerFieldError(field, message) {
+    const map = {
+      telegram: "auth-reg-telegram",
+      mcNick: "auth-reg-nick",
+      mc_nick: "auth-reg-nick",
+      password: "auth-reg-pass",
+      passwordConfirm: "auth-reg-pass2",
+      login: "auth-login-user",
+      username: "auth-login-user",
+    };
+    if (field === "accountType") {
+      setAccountTypeError(message);
+      return;
+    }
+    const id = map[field];
+    if (id) setFieldError(id, message);
+    else showAuthStatus(message);
   }
 
   document.getElementById("gate-login-btn")?.addEventListener("click", () => {
@@ -563,8 +716,33 @@
     });
   });
 
+  ["auth-login-user", "auth-login-pass"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      validateLoginFields(false);
+      showAuthStatus("");
+    });
+  });
+  [
+    "auth-reg-telegram",
+    "auth-reg-nick",
+    "auth-reg-pass",
+    "auth-reg-pass2",
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+      validateRegisterFields(false);
+      showAuthStatus("");
+    });
+  });
+  document
+    .querySelectorAll('#auth-register-form input[name="accountType"]')
+    .forEach((el) => {
+      el.addEventListener("change", () => validateRegisterFields(false));
+    });
+
   document.getElementById("auth-login-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    showAuthStatus("");
+    if (!validateLoginFields(true)) return;
     const login = document.getElementById("auth-login-user")?.value.trim() || "";
     const password = document.getElementById("auth-login-pass")?.value || "";
     try {
@@ -578,16 +756,25 @@
       applyAuthUi();
       showToast("Вход выполнен");
     } catch (err) {
-      showAuthStatus(err.message || "Ошибка входа");
+      const msg = err.message || "Ошибка входа";
+      if (err.data?.field) applyServerFieldError(err.data.field, msg);
+      else {
+        setFieldError("auth-login-user", msg);
+        setFieldError("auth-login-pass", msg);
+      }
+      showAuthStatus(msg);
     }
   });
 
   document.getElementById("auth-register-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    showAuthStatus("");
+    if (!validateRegisterFields(true)) return;
     const telegram = document.getElementById("auth-reg-telegram")?.value.trim() || "";
     const mcNick = document.getElementById("auth-reg-nick")?.value.trim() || "";
     const accountType =
-      document.querySelector('input[name="accountType"]:checked')?.value || "";
+      document.querySelector('#auth-register-form input[name="accountType"]:checked')
+        ?.value || "";
     const password = document.getElementById("auth-reg-pass")?.value || "";
     const passwordConfirm = document.getElementById("auth-reg-pass2")?.value || "";
     try {
@@ -607,7 +794,9 @@
       applyAuthUi();
       showToast("Аккаунт создан");
     } catch (err) {
-      showAuthStatus(err.message || "Ошибка регистрации");
+      const msg = err.message || "Ошибка регистрации";
+      if (err.data?.field) applyServerFieldError(err.data.field, msg);
+      showAuthStatus(msg);
     }
   });
 

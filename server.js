@@ -143,21 +143,34 @@ app.post("/api/register", async (req, res) => {
     const passwordConfirm = String(req.body?.passwordConfirm || req.body?.password_confirm || "");
 
     if (!TELEGRAM_RE.test(telegram)) {
-      return res.status(400).json({ error: "Telegram: формат @example (5–32 символа)" });
+      return res.status(400).json({
+        error: "Telegram: формат @example (латиница, 5–32 символа)",
+        field: "telegram",
+      });
     }
     if (!MC_NICK_RE.test(mcNick)) {
       return res.status(400).json({
         error: "Ник Minecraft: 3–16 символов, латиница, цифры и _",
+        field: "mcNick",
       });
     }
     if (accountType !== "pirate" && accountType !== "licensed") {
-      return res.status(400).json({ error: "Выберите тип аккаунта" });
+      return res.status(400).json({
+        error: "Выберите тип аккаунта",
+        field: "accountType",
+      });
     }
     if (password.length < 6 || password.length > 72) {
-      return res.status(400).json({ error: "Пароль: от 6 до 72 символов" });
+      return res.status(400).json({
+        error: "Пароль: от 6 до 72 символов",
+        field: "password",
+      });
     }
     if (password !== passwordConfirm) {
-      return res.status(400).json({ error: "Пароли не совпадают" });
+      return res.status(400).json({
+        error: "Пароли не совпадают",
+        field: "passwordConfirm",
+      });
     }
 
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -167,7 +180,16 @@ app.post("/api/register", async (req, res) => {
       { telegram, mcNick, accountType, hash }
     );
     const userId = result.insertId;
-    await ensureProfile(userId, mcNick);
+    try {
+      await ensureProfile(userId, mcNick);
+    } catch (profileErr) {
+      console.error("register profile:", profileErr);
+      return res.status(500).json({
+        error:
+          "Аккаунт создан, но профиль не записался. Проверьте таблицы profiles/game_stats.",
+        field: null,
+      });
+    }
 
     const user = { id: userId, mcNick, telegram, accountType };
     return res.status(201).json({ token: signToken(user), user });
@@ -175,15 +197,37 @@ app.post("/api/register", async (req, res) => {
     if (err && err.code === "ER_DUP_ENTRY") {
       const msg = String(err.message || "");
       if (msg.includes("telegram")) {
-        return res.status(409).json({ error: "Этот Telegram уже зарегистрирован" });
+        return res.status(409).json({
+          error: "Этот Telegram уже зарегистрирован",
+          field: "telegram",
+        });
       }
       if (msg.includes("mc_nick")) {
-        return res.status(409).json({ error: "Этот ник Minecraft уже занят" });
+        return res.status(409).json({
+          error: "Этот ник Minecraft уже занят",
+          field: "mcNick",
+        });
       }
       return res.status(409).json({ error: "Аккаунт уже существует" });
     }
+    if (
+      err &&
+      (err.code === "ER_BAD_FIELD_ERROR" ||
+        err.code === "ER_NO_SUCH_TABLE" ||
+        err.code === "ER_WRONG_VALUE_COUNT_ON_ROW")
+    ) {
+      console.error("register schema:", err);
+      return res.status(500).json({
+        error:
+          "База данных не обновлена. На сервере выполните: mysql -u genesis -p genesis < sql/migrate_auth_v2.sql",
+        field: null,
+      });
+    }
     console.error("register:", err);
-    return res.status(500).json({ error: "Ошибка регистрации" });
+    return res.status(500).json({
+      error: "Ошибка регистрации",
+      detail: err?.code || err?.message || null,
+    });
   }
 });
 

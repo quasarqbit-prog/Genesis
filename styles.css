@@ -563,10 +563,24 @@ h3,
   gap: 8px;
 }
 
+.auth-form[hidden] {
+  display: none !important;
+}
+
 .auth-form .mc-btn {
   margin-top: 8px;
   width: 100%;
   min-width: 0;
+}
+
+.auth-form .field-error {
+  margin-top: 0;
+  margin-bottom: 2px;
+  min-height: 0;
+}
+
+.auth-form .field-error:not([hidden]) {
+  margin-top: 2px;
 }
 
 .pass-row {

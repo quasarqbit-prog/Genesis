@@ -50,30 +50,38 @@
         <button type="button" class="auth-modal__close" id="auth-modal-close" aria-label="Закрыть">×</button>
       </div>
 
-      <form class="auth-form" id="auth-login-form">
+      <form class="auth-form" id="auth-login-form" novalidate>
         <label class="field-label" for="auth-login-user">Telegram или ник Minecraft</label>
         <input class="field-input" id="auth-login-user" type="text" maxlength="64" autocomplete="username" required />
+        <p class="field-error" id="auth-login-user-error" hidden></p>
+
         <label class="field-label" for="auth-login-pass">Пароль</label>
         <div class="pass-row">
           <input class="field-input" id="auth-login-pass" type="password" maxlength="72" autocomplete="current-password" required />
           <button type="button" class="pass-toggle" data-toggle-pass="auth-login-pass" aria-label="Показать пароль">👁</button>
         </div>
+        <p class="field-error" id="auth-login-pass-error" hidden></p>
+
         <button type="submit" class="mc-btn">ВОЙТИ</button>
       </form>
 
-      <form class="auth-form" id="auth-register-form" hidden>
+      <form class="auth-form" id="auth-register-form" hidden novalidate>
         <label class="field-label" for="auth-reg-telegram">Айди Telegram <span class="req">*</span></label>
         <input class="field-input" id="auth-reg-telegram" type="text" maxlength="33" placeholder="@example" autocomplete="off" required />
-        <p class="field-hint">@example</p>
+        <p class="field-hint">Формат: @example (латиница, 5–32 символа)</p>
+        <p class="field-error" id="auth-reg-telegram-error" hidden></p>
 
         <label class="field-label" for="auth-reg-nick">Ник внутри игры Minecraft <span class="req">*</span></label>
         <input class="field-input" id="auth-reg-nick" type="text" maxlength="16" autocomplete="off" spellcheck="false" required />
+        <p class="field-hint">3–16 символов · латиница, цифры и _</p>
+        <p class="field-error" id="auth-reg-nick-error" hidden></p>
 
         <div class="field-label">Аккаунт <span class="req">*</span></div>
         <div class="choice-grid choice-grid--2" role="radiogroup" aria-label="Тип аккаунта">
           <label class="choice-chip"><input type="radio" name="accountType" value="pirate" checked /><span>Пиратский</span></label>
           <label class="choice-chip"><input type="radio" name="accountType" value="licensed" /><span>Лицензионный</span></label>
         </div>
+        <p class="field-error" id="auth-reg-account-error" hidden></p>
 
         <label class="field-label" for="auth-reg-pass">Пароль <span class="req">*</span></label>
         <div class="pass-row">
@@ -81,6 +89,7 @@
           <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass" aria-label="Показать пароль">👁</button>
         </div>
         <p class="field-hint">Этот пароль будет использоваться в Minecraft при входе.</p>
+        <p class="field-error" id="auth-reg-pass-error" hidden></p>
 
         <label class="field-label" for="auth-reg-pass2">Повтор пароля <span class="req">*</span></label>
         <div class="pass-row">
@@ -88,6 +97,7 @@
           <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass2" aria-label="Показать пароль">👁</button>
         </div>
         <p class="field-hint">Для подтверждения</p>
+        <p class="field-error" id="auth-reg-pass2-error" hidden></p>
 
         <button type="submit" class="mc-btn">ЗАРЕГИСТРИРОВАТЬСЯ</button>
       </form>
