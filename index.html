@@ -82,44 +82,42 @@
 
       <form class="auth-form" id="auth-register-form" novalidate>
         <div class="field-label">Telegram <span class="req">*</span></div>
-        <p class="field-hint">Обязательно войдите через Telegram</p>
+        <p class="field-hint">Привяжите Telegram через кнопку ниже</p>
         <div class="tg-login-block tg-login-block--modal" id="reg-tg-block">
           <div class="tg-widget-host" id="tg-widget-register"></div>
         </div>
         <p class="reg-tg-status" id="reg-tg-status" hidden></p>
         <p class="field-error" id="auth-reg-telegram-error" hidden></p>
 
-        <div id="reg-details" class="reg-details" hidden>
-          <label class="field-label" for="auth-reg-nick">Ник внутри игры Minecraft <span class="req">*</span></label>
-          <input class="field-input" id="auth-reg-nick" type="text" maxlength="16" autocomplete="off" spellcheck="false" required />
-          <p class="field-hint">3–16 символов · латиница, цифры и _</p>
-          <p class="field-error" id="auth-reg-nick-error" hidden></p>
+        <label class="field-label" for="auth-reg-nick">Ник внутри игры Minecraft <span class="req">*</span></label>
+        <input class="field-input" id="auth-reg-nick" type="text" maxlength="16" autocomplete="off" spellcheck="false" required />
+        <p class="field-hint">3–16 символов · латиница, цифры и _</p>
+        <p class="field-error" id="auth-reg-nick-error" hidden></p>
 
-          <div class="field-label">Аккаунт <span class="req">*</span></div>
-          <div class="choice-grid choice-grid--2" role="radiogroup" aria-label="Тип аккаунта">
-            <label class="choice-chip"><input type="radio" name="accountType" value="pirate" checked /><span>Пиратский</span></label>
-            <label class="choice-chip"><input type="radio" name="accountType" value="licensed" /><span>Лицензионный</span></label>
-          </div>
-          <p class="field-error" id="auth-reg-account-error" hidden></p>
-
-          <label class="field-label" for="auth-reg-pass">Пароль <span class="req">*</span></label>
-          <div class="pass-row">
-            <input class="field-input" id="auth-reg-pass" type="password" maxlength="72" autocomplete="new-password" required />
-            <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass" aria-label="Показать пароль">*</button>
-          </div>
-          <p class="field-hint">Этот пароль будет использоваться в Minecraft при входе.</p>
-          <p class="field-error" id="auth-reg-pass-error" hidden></p>
-
-          <label class="field-label" for="auth-reg-pass2">Повтор пароля <span class="req">*</span></label>
-          <div class="pass-row">
-            <input class="field-input" id="auth-reg-pass2" type="password" maxlength="72" autocomplete="new-password" required />
-            <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass2" aria-label="Показать пароль">*</button>
-          </div>
-          <p class="field-hint">Для подтверждения</p>
-          <p class="field-error" id="auth-reg-pass2-error" hidden></p>
-
-          <button type="submit" class="mc-btn">ЗАРЕГИСТРИРОВАТЬСЯ</button>
+        <div class="field-label">Аккаунт <span class="req">*</span></div>
+        <div class="choice-grid choice-grid--2" role="radiogroup" aria-label="Тип аккаунта">
+          <label class="choice-chip"><input type="radio" name="accountType" value="pirate" checked /><span>Пиратский</span></label>
+          <label class="choice-chip"><input type="radio" name="accountType" value="licensed" /><span>Лицензионный</span></label>
         </div>
+        <p class="field-error" id="auth-reg-account-error" hidden></p>
+
+        <label class="field-label" for="auth-reg-pass">Пароль <span class="req">*</span></label>
+        <div class="pass-row">
+          <input class="field-input" id="auth-reg-pass" type="password" maxlength="72" autocomplete="new-password" required />
+          <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass" aria-label="Показать пароль">*</button>
+        </div>
+        <p class="field-hint">Этот пароль будет использоваться в Minecraft при входе.</p>
+        <p class="field-error" id="auth-reg-pass-error" hidden></p>
+
+        <label class="field-label" for="auth-reg-pass2">Повтор пароля <span class="req">*</span></label>
+        <div class="pass-row">
+          <input class="field-input" id="auth-reg-pass2" type="password" maxlength="72" autocomplete="new-password" required />
+          <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass2" aria-label="Показать пароль">*</button>
+        </div>
+        <p class="field-hint">Для подтверждения</p>
+        <p class="field-error" id="auth-reg-pass2-error" hidden></p>
+
+        <button type="submit" class="mc-btn">ЗАРЕГИСТРИРОВАТЬСЯ</button>
       </form>
       </div>
 

@@ -22,6 +22,10 @@
     (async function () {
       const msg = document.getElementById("msg");
       const params = new URLSearchParams(window.location.search);
+      const intent =
+        params.get("intent") ||
+        sessionStorage.getItem("genesis_tg_intent") ||
+        "login";
       const user = {};
       ["id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"].forEach((k) => {
         if (params.has(k)) user[k] = params.get(k);
@@ -39,6 +43,23 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Ошибка входа");
 
+        if (intent === "register") {
+          if (data.registered) {
+            sessionStorage.removeItem("genesis_pending_tg");
+            window.location.replace("/?login=1");
+            return;
+          }
+          sessionStorage.setItem(
+            "genesis_pending_tg",
+            JSON.stringify({
+              telegramAuth: data.telegramAuth || user,
+              telegram: data.telegram || "",
+            })
+          );
+          window.location.replace("/?register=1");
+          return;
+        }
+
         if (data.registered && data.token) {
           localStorage.setItem("genesis_auth_token", data.token || "");
           sessionStorage.removeItem("genesis_pending_tg");
@@ -53,7 +74,7 @@
             telegram: data.telegram || "",
           })
         );
-        window.location.replace("/?register=1");
+        window.location.replace("/?register=1&needreg=1");
       } catch (err) {
         msg.textContent = err.message || "Ошибка входа";
       }

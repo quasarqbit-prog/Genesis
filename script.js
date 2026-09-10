@@ -579,7 +579,9 @@
   }
 
   const PENDING_TG_KEY = "genesis_pending_tg";
+  const TG_INTENT_KEY = "genesis_tg_intent";
   let pendingTelegramAuth = null;
+  let telegramAuthIntent = "login";
 
   function readPendingTelegram() {
     try {
@@ -600,7 +602,6 @@
 
   function updateRegisterTelegramUi() {
     const status = document.getElementById("reg-tg-status");
-    const details = document.getElementById("reg-details");
     const tgBlock = document.getElementById("reg-tg-block");
     const err = document.getElementById("auth-reg-telegram-error");
     const handle =
@@ -614,7 +615,6 @@
         status.hidden = false;
         status.textContent = `Telegram подключён: ${handle}`;
       }
-      if (details) details.hidden = false;
       if (tgBlock) tgBlock.hidden = true;
       if (err) {
         err.hidden = true;
@@ -622,17 +622,34 @@
       }
     } else {
       if (status) status.hidden = true;
-      if (details) details.hidden = true;
       if (tgBlock) tgBlock.hidden = false;
     }
   }
 
-  async function handleTelegramAuthResult(user) {
+  async function handleTelegramAuthResult(user, intent = telegramAuthIntent) {
     const data = await api("/api/auth/telegram", {
       method: "POST",
       body: JSON.stringify(user),
     });
 
+    const pending = {
+      telegramAuth: data.telegramAuth || user,
+      telegram: data.telegram || "",
+    };
+
+    if (intent === "register") {
+      if (data.registered) {
+        showToast("Этот Telegram уже зарегистрирован — войдите");
+        openAuthModal("login");
+        return;
+      }
+      writePendingTelegram(pending);
+      openAuthModal("register");
+      showToast("Telegram подключён");
+      return;
+    }
+
+    // Вход: только если аккаунт уже есть
     if (data.registered && data.token) {
       writePendingTelegram(null);
       setAuthSession(data.token, data.user);
@@ -643,21 +660,20 @@
       return;
     }
 
-    writePendingTelegram({
-      telegramAuth: data.telegramAuth || user,
-      telegram: data.telegram || "",
-    });
+    writePendingTelegram(pending);
     openAuthModal("register");
-    showToast("Telegram подтверждён — завершите регистрацию");
+    showAuthStatus("Сначала зарегистрируйте аккаунт с этим Telegram");
+    showToast("Сначала зарегистрируйтесь");
   }
 
   let tgBotUsername = "";
 
-  function mountTelegramWidgetIn(hostId, size = "medium") {
+  function mountTelegramWidgetIn(hostId, size = "medium", intent = "login") {
     const host = document.getElementById(hostId);
     if (!host || !tgBotUsername) return;
     host.innerHTML = "";
-    const authUrl = `${window.location.origin}/telegram-callback.html`;
+    sessionStorage.setItem(TG_INTENT_KEY, intent);
+    const authUrl = `${window.location.origin}/telegram-callback.html?intent=${encodeURIComponent(intent)}`;
     const script = document.createElement("script");
     script.src = `https://telegram.org/js/telegram-widget.js?22&host=${encodeURIComponent(hostId)}&ts=${Date.now()}`;
     script.setAttribute("data-telegram-login", tgBotUsername);
@@ -676,7 +692,8 @@
     const regBlock = document.getElementById("reg-tg-block");
 
     if (loginForm?.classList.contains("is-active") && !loginForm.hidden) {
-      mountTelegramWidgetIn("tg-widget-login", "medium");
+      telegramAuthIntent = "login";
+      mountTelegramWidgetIn("tg-widget-login", "medium", "login");
     }
     if (
       regForm?.classList.contains("is-active") &&
@@ -685,7 +702,8 @@
       regBlock &&
       !regBlock.hidden
     ) {
-      mountTelegramWidgetIn("tg-widget-register", "medium");
+      telegramAuthIntent = "register";
+      mountTelegramWidgetIn("tg-widget-register", "medium", "register");
     }
   }
 
@@ -710,7 +728,7 @@
 
     window.onTelegramAuth = async (user) => {
       try {
-        await handleTelegramAuthResult(user);
+        await handleTelegramAuthResult(user, telegramAuthIntent);
       } catch (err) {
         showAuthStatus(err.message || "Ошибка Telegram");
         showToast(err.message || "Ошибка Telegram");
@@ -729,7 +747,7 @@
     if (status) status.hidden = true;
     updateRegisterTelegramUi();
     setLayerOpen(modal, true).then(() => {
-      window.requestAnimationFrame(() => remountVisibleTelegramWidgets());
+      window.setTimeout(() => remountVisibleTelegramWidgets(), 80);
     });
   }
 
@@ -757,7 +775,7 @@
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
     updateRegisterTelegramUi();
-    window.requestAnimationFrame(() => remountVisibleTelegramWidgets());
+    window.setTimeout(() => remountVisibleTelegramWidgets(), 60);
   }
 
   async function openAdminShell() {
@@ -1089,12 +1107,25 @@
   pendingTelegramAuth = readPendingTelegram();
   connectSocket();
   updateAuthChrome();
-  mountTelegramWidgets();
   updateRegisterTelegramUi();
-  if (pendingTelegramAuth?.telegramAuth && !authToken) {
-    openAuthModal("register");
-  }
   profileCache = readLocalStorageFallback();
+
+  (async () => {
+    await mountTelegramWidgets();
+    if (authToken) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("register") === "1" || pendingTelegramAuth?.telegramAuth) {
+      openAuthModal("register");
+      if (params.get("needreg") === "1") {
+        showToast("Сначала зарегистрируйте аккаунт");
+      }
+    } else if (params.get("login") === "1") {
+      openAuthModal("login");
+    }
+    if (params.has("register") || params.has("login") || params.has("needreg")) {
+      window.history.replaceState({}, "", "/");
+    }
+  })();
 
   const panels = document.getElementById("panels");
   const stageEl = document.querySelector(".stage");
