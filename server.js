@@ -1079,6 +1079,110 @@ app.post("/api/user/avatar/refresh", authMiddleware, async (req, res) => {
   }
 });
 
+app.patch("/api/user/mc-nick", authMiddleware, async (req, res) => {
+  try {
+    const mcNick = normalizeMcNick(req.body?.mcNick || req.body?.mc_nick);
+    if (!MC_NICK_RE.test(mcNick)) {
+      return res.status(400).json({
+        error: "Ник: 3–16 символов, латиница, цифры и _",
+        field: "mcNick",
+      });
+    }
+
+    const [mine] = await pool.execute(
+      `SELECT mc_nick FROM users WHERE id = :userId LIMIT 1`,
+      { userId: req.user.id }
+    );
+    const current = mine[0]?.mc_nick || "";
+    if (current === mcNick) {
+      const user = await loadUserPublic(req.user.id);
+      return res.json({ ok: true, user, token: signToken(user) });
+    }
+
+    const [taken] = await pool.execute(
+      `SELECT id FROM users WHERE mc_nick = :mcNick AND id <> :userId LIMIT 1`,
+      { mcNick, userId: req.user.id }
+    );
+    if (taken[0]) {
+      return res.status(409).json({
+        error: "Этот ник уже занят",
+        field: "mcNick",
+      });
+    }
+
+    await pool.execute(
+      `UPDATE users SET mc_nick = :mcNick WHERE id = :userId`,
+      { mcNick, userId: req.user.id }
+    );
+    await ensureProfile(req.user.id, mcNick);
+    const user = await loadUserPublic(req.user.id);
+    return res.json({ ok: true, user, token: signToken(user) });
+  } catch (err) {
+    console.error("mc-nick update:", err);
+    const msg = String(err?.message || "");
+    if (msg.includes("Duplicate") || msg.includes("uq_users_mc_nick")) {
+      return res.status(409).json({ error: "Этот ник уже занят", field: "mcNick" });
+    }
+    return res.status(500).json({ error: "Не удалось сменить ник" });
+  }
+});
+
+app.patch("/api/user/password", authMiddleware, async (req, res) => {
+  try {
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    const newPasswordConfirm = String(
+      req.body?.newPasswordConfirm || req.body?.passwordConfirm || ""
+    );
+
+    if (!currentPassword) {
+      return res.status(400).json({
+        error: "Введите текущий пароль",
+        field: "currentPassword",
+      });
+    }
+    if (newPassword.length < 6 || newPassword.length > 72) {
+      return res.status(400).json({
+        error: "Новый пароль: 6–72 символа",
+        field: "newPassword",
+      });
+    }
+    if (newPassword !== newPasswordConfirm) {
+      return res.status(400).json({
+        error: "Пароли не совпадают",
+        field: "newPasswordConfirm",
+      });
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT password_hash FROM users WHERE id = :userId LIMIT 1`,
+      { userId: req.user.id }
+    );
+    const row = rows[0];
+    if (!row) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+
+    const ok = await bcrypt.compare(currentPassword, row.password_hash);
+    if (!ok) {
+      return res.status(401).json({
+        error: "Неверный текущий пароль",
+        field: "currentPassword",
+      });
+    }
+
+    const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await pool.execute(
+      `UPDATE users SET password_hash = :hash WHERE id = :userId`,
+      { hash, userId: req.user.id }
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("password update:", err);
+    return res.status(500).json({ error: "Не удалось сменить пароль" });
+  }
+});
+
 /* ---------- Admin stub ---------- */
 app.get("/api/admin/status", adminMiddleware, async (_req, res) => {
   try {

@@ -339,10 +339,13 @@ h3,
   top: 0;
   left: 0;
   right: 0;
+  bottom: 0;
   z-index: 50;
   display: flex;
   justify-content: center;
-  padding: 18px 16px 0;
+  align-items: flex-start;
+  padding: 18px 16px 24px;
+  overflow-y: auto;
   pointer-events: none;
   opacity: 0;
   transform: translateY(-10px);
@@ -363,8 +366,16 @@ h3,
   display: none !important;
 }
 
-.profile-card {
+.profile-stack {
   pointer-events: auto;
+  width: min(720px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-card {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -374,14 +385,12 @@ h3,
 }
 
 .profile-avatar {
-  appearance: none;
   width: 88px;
   height: 88px;
   padding: 0;
   border: 3px solid var(--border-hi);
   background: rgba(20, 12, 36, 0.9);
   box-shadow: 4px 4px 0 var(--border-lo);
-  cursor: pointer;
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -418,41 +427,143 @@ h3,
   color: var(--muted);
 }
 
-.profile-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 140px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  background: rgba(20, 12, 36, 0.95);
-  border: 2px solid var(--border-hi);
-  box-shadow: 4px 4px 0 var(--border-lo);
-  z-index: 5;
+.hub-panel {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 148px 1fr;
+  min-height: 320px;
+  background: rgba(20, 12, 36, 0.92);
+  border: 3px solid var(--border-hi);
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.04),
+    6px 6px 0 var(--border-lo);
+  animation: hub-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.profile-menu[hidden] {
+@keyframes hub-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hub-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 10px;
+  border-right: 3px solid var(--panel-edge);
+  background: rgba(10, 6, 18, 0.55);
+}
+
+.hub-nav__btn {
+  appearance: none;
+  font-family: var(--font-ded);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--muted);
+  background: transparent;
+  border: 2px solid transparent;
+  padding: 12px 10px;
+  cursor: pointer;
+}
+
+.hub-nav__btn:hover {
+  color: var(--text);
+  border-color: var(--panel-edge);
+}
+
+.hub-nav__btn.is-active {
+  color: var(--accent);
+  border-color: var(--border-hi);
+  background: rgba(196, 255, 77, 0.06);
+}
+
+.hub-body {
+  padding: 16px 18px 18px;
+  min-width: 0;
+}
+
+.hub-view[hidden] {
   display: none !important;
 }
 
-.profile-menu__item {
-  appearance: none;
+.hub-title {
   font-family: var(--font-ded);
-  font-size: 10px;
-  color: var(--text);
-  background: transparent;
-  border: 2px solid var(--panel-edge);
-  padding: 10px 12px;
-  cursor: pointer;
+  font-size: 14px;
+  font-weight: normal;
+  color: var(--accent);
+  letter-spacing: 1px;
   text-transform: uppercase;
+  margin-bottom: 14px;
 }
 
-.profile-menu__item:hover {
-  color: var(--accent);
-  border-color: var(--border-hi);
+.hub-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.hub-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.hub-actions .mc-btn {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.hub-empty {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.mc-btn--compact {
+  padding-left: 14px;
+  padding-right: 14px;
+  white-space: nowrap;
+  width: auto;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .hub-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-nav {
+    flex-direction: row;
+    border-right: none;
+    border-bottom: 3px solid var(--panel-edge);
+    overflow-x: auto;
+  }
+
+  .hub-nav__btn {
+    flex: 1 0 auto;
+    text-align: center;
+  }
+
+  .hub-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .tg-login-block {
@@ -876,6 +987,7 @@ h3,
   .auth-modal,
   .auth-modal__panel,
   .profile-bar,
+  .hub-panel,
   .admin-shell,
   .admin-shell__panel,
   .auth-form.is-active {

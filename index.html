@@ -23,19 +23,100 @@
   </div>
 
   <header class="profile-bar ui-layer" id="topbar" hidden>
-    <div class="profile-card" id="profile-card">
-      <button type="button" class="profile-avatar" id="profile-avatar-btn" aria-label="Меню профиля">
-        <img id="profile-avatar-img" alt="" hidden />
-        <span class="profile-avatar__fallback" id="profile-avatar-fallback">?</span>
-      </button>
-      <div class="profile-meta">
-        <div class="profile-nick" id="profile-nick"></div>
-        <div class="profile-telegram" id="profile-telegram"></div>
+    <div class="profile-stack" id="profile-card">
+      <div class="profile-card">
+        <div class="profile-avatar" id="profile-avatar-btn" aria-hidden="true">
+          <img id="profile-avatar-img" alt="" hidden />
+          <span class="profile-avatar__fallback" id="profile-avatar-fallback">?</span>
+        </div>
+        <div class="profile-meta">
+          <div class="profile-nick" id="profile-nick"></div>
+          <div class="profile-telegram" id="profile-telegram"></div>
+        </div>
       </div>
-      <div class="profile-menu" id="profile-menu" hidden>
-        <button type="button" class="profile-menu__item" id="avatar-refresh-btn">Обновить аватар</button>
-        <button type="button" class="profile-menu__item" id="admin-open-btn" hidden>Админ</button>
-        <button type="button" class="profile-menu__item" id="auth-logout-btn">Выйти</button>
+
+      <div class="hub-panel" id="hub-panel">
+        <nav class="hub-nav" aria-label="Разделы">
+          <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
+          <button type="button" class="hub-nav__btn" data-hub-tab="creation">Создание</button>
+        </nav>
+
+        <div class="hub-body">
+          <section class="hub-view is-active" id="hub-view-profile" data-hub-view="profile">
+            <h2 class="hub-title">Профиль</h2>
+
+            <form class="hub-form" id="hub-nick-form" novalidate>
+              <label class="field-label" for="hub-nick">Игровой ник</label>
+              <div class="hub-row">
+                <input
+                  class="field-input"
+                  id="hub-nick"
+                  type="text"
+                  maxlength="16"
+                  autocomplete="username"
+                  spellcheck="false"
+                  required
+                />
+                <button type="submit" class="mc-btn mc-btn--compact">СОХРАНИТЬ</button>
+              </div>
+              <p class="field-hint">3–16 символов · латиница, цифры и _</p>
+              <p class="field-error" id="hub-nick-error" hidden></p>
+            </form>
+
+            <form class="hub-form" id="hub-pass-form" novalidate>
+              <label class="field-label" for="hub-pass-current">Сменить пароль</label>
+              <div class="pass-row">
+                <input
+                  class="field-input"
+                  id="hub-pass-current"
+                  type="password"
+                  maxlength="72"
+                  autocomplete="current-password"
+                  placeholder="Текущий пароль"
+                  required
+                />
+                <button type="button" class="pass-toggle" data-toggle-pass="hub-pass-current" aria-label="Показать пароль">*</button>
+              </div>
+              <div class="pass-row">
+                <input
+                  class="field-input"
+                  id="hub-pass-new"
+                  type="password"
+                  maxlength="72"
+                  autocomplete="new-password"
+                  placeholder="Новый пароль"
+                  required
+                />
+                <button type="button" class="pass-toggle" data-toggle-pass="hub-pass-new" aria-label="Показать пароль">*</button>
+              </div>
+              <div class="pass-row">
+                <input
+                  class="field-input"
+                  id="hub-pass-confirm"
+                  type="password"
+                  maxlength="72"
+                  autocomplete="new-password"
+                  placeholder="Повтор нового пароля"
+                  required
+                />
+                <button type="button" class="pass-toggle" data-toggle-pass="hub-pass-confirm" aria-label="Показать пароль">*</button>
+              </div>
+              <button type="submit" class="mc-btn mc-btn--compact">СМЕНИТЬ ПАРОЛЬ</button>
+              <p class="field-error" id="hub-pass-error" hidden></p>
+            </form>
+
+            <div class="hub-actions">
+              <button type="button" class="mc-btn mc-btn--ghost" id="avatar-refresh-btn">ОБНОВИТЬ АВАТАР</button>
+              <button type="button" class="mc-btn mc-btn--ghost" id="admin-open-btn" hidden>АДМИН</button>
+              <button type="button" class="mc-btn" id="auth-logout-btn">ВЫЙТИ</button>
+            </div>
+          </section>
+
+          <section class="hub-view" id="hub-view-creation" data-hub-view="creation" hidden>
+            <h2 class="hub-title">Создание</h2>
+            <p class="hub-empty">Раздел в разработке</p>
+          </section>
+        </div>
       </div>
     </div>
   </header>

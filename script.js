@@ -521,7 +521,7 @@
     const avatarFallback = document.getElementById("profile-avatar-fallback");
     const adminBtn = document.getElementById("admin-open-btn");
     const adminShell = document.getElementById("admin-shell");
-    const profileMenu = document.getElementById("profile-menu");
+    const hubNick = document.getElementById("hub-nick");
 
     if (stage) stage.hidden = true;
     if (footer) footer.hidden = true;
@@ -553,12 +553,14 @@
         if (adminShell?.classList.contains("is-open")) {
           setLayerOpen(adminShell, false);
         }
-        if (profileMenu) profileMenu.hidden = true;
       }
     }
 
     if (nickEl) nickEl.textContent = displayNick;
     if (tgEl) tgEl.textContent = displayTg;
+    if (hubNick && document.activeElement !== hubNick) {
+      hubNick.value = displayNick;
+    }
     if (avatarImg && avatarFallback) {
       if (avatarUrl) {
         const src = avatarUrl.includes("?")
@@ -1029,22 +1031,97 @@
     openAuthModal("register");
   });
   document.getElementById("auth-modal-close")?.addEventListener("click", closeAuthModal);
-  document.getElementById("profile-avatar-btn")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const menu = document.getElementById("profile-menu");
-    if (!menu) return;
-    menu.hidden = !menu.hidden;
+
+  function setHubTab(tab) {
+    const name = tab === "creation" ? "creation" : "profile";
+    document.querySelectorAll(".hub-nav__btn").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.hubTab === name);
+    });
+    document.querySelectorAll("[data-hub-view]").forEach((view) => {
+      const active = view.dataset.hubView === name;
+      view.classList.toggle("is-active", active);
+      view.hidden = !active;
+    });
+  }
+
+  document.querySelectorAll(".hub-nav__btn").forEach((btn) => {
+    btn.addEventListener("click", () => setHubTab(btn.dataset.hubTab));
   });
-  document.addEventListener("click", () => {
-    const menu = document.getElementById("profile-menu");
-    if (menu) menu.hidden = true;
+
+  function setHubFieldError(id, message) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!message) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    el.hidden = false;
+    el.textContent = message;
+  }
+
+  document.getElementById("hub-nick-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    setHubFieldError("hub-nick-error", "");
+    const mcNick = String(document.getElementById("hub-nick")?.value || "").trim();
+    if (!/^[A-Za-z0-9_]{3,16}$/.test(mcNick)) {
+      setHubFieldError("hub-nick-error", "Ник: 3–16 символов, латиница, цифры и _");
+      return;
+    }
+    try {
+      const data = await api("/api/user/mc-nick", {
+        method: "PATCH",
+        body: JSON.stringify({ mcNick }),
+      });
+      if (data.token) setAuthSession(data.token, data.user || authUser);
+      else if (data.user) authUser = data.user;
+      applyAuthUi();
+      showToast("Ник обновлён");
+    } catch (err) {
+      setHubFieldError("hub-nick-error", err.message || "Не удалось сменить ник");
+    }
   });
-  document.getElementById("profile-menu")?.addEventListener("click", (e) => {
-    e.stopPropagation();
+
+  document.getElementById("hub-pass-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    setHubFieldError("hub-pass-error", "");
+    const currentPassword = String(
+      document.getElementById("hub-pass-current")?.value || ""
+    );
+    const newPassword = String(document.getElementById("hub-pass-new")?.value || "");
+    const newPasswordConfirm = String(
+      document.getElementById("hub-pass-confirm")?.value || ""
+    );
+    if (!currentPassword) {
+      setHubFieldError("hub-pass-error", "Введите текущий пароль");
+      return;
+    }
+    if (newPassword.length < 6 || newPassword.length > 72) {
+      setHubFieldError("hub-pass-error", "Новый пароль: 6–72 символа");
+      return;
+    }
+    if (newPassword !== newPasswordConfirm) {
+      setHubFieldError("hub-pass-error", "Пароли не совпадают");
+      return;
+    }
+    try {
+      await api("/api/user/password", {
+        method: "PATCH",
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+          newPasswordConfirm,
+        }),
+      });
+      const form = document.getElementById("hub-pass-form");
+      if (form) form.reset();
+      showToast("Пароль изменён");
+    } catch (err) {
+      setHubFieldError("hub-pass-error", err.message || "Не удалось сменить пароль");
+    }
   });
+
   document.getElementById("avatar-refresh-btn")?.addEventListener("click", async () => {
-    const menu = document.getElementById("profile-menu");
-    if (menu) menu.hidden = true;
     try {
       const data = await api("/api/user/avatar/refresh", { method: "POST", body: "{}" });
       if (data.user) authUser = data.user;
@@ -1056,14 +1133,10 @@
     }
   });
   document.getElementById("admin-open-btn")?.addEventListener("click", () => {
-    const menu = document.getElementById("profile-menu");
-    if (menu) menu.hidden = true;
     openAdminShell();
   });
   document.getElementById("admin-close-btn")?.addEventListener("click", closeAdminShell);
   document.getElementById("auth-logout-btn")?.addEventListener("click", () => {
-    const menu = document.getElementById("profile-menu");
-    if (menu) menu.hidden = true;
     clearAuthSession();
     applyAuthUi();
     showToast("Вы вышли");
