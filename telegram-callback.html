@@ -13,42 +13,111 @@
       background: #12081c;
       color: #e8e0f0;
       font-family: sans-serif;
+      text-align: center;
+      padding: 24px;
+    }
+    a {
+      color: #b6ff3b;
+      margin-top: 16px;
+      display: inline-block;
     }
   </style>
 </head>
 <body>
-  <p id="msg">Вход через Telegram…</p>
+  <div>
+    <p id="msg">Вход через Telegram…</p>
+    <a href="/">На главную</a>
+  </div>
   <script>
-    (async function () {
+    (function () {
       const msg = document.getElementById("msg");
-      const params = new URLSearchParams(window.location.search);
-      const intent =
-        params.get("intent") ||
-        sessionStorage.getItem("genesis_tg_intent") ||
-        "login";
-      const user = {};
-      ["id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"].forEach((k) => {
-        if (params.has(k)) user[k] = params.get(k);
-      });
-      if (!user.hash || !user.id) {
-        msg.textContent = "Нет данных Telegram. Вернитесь на главную.";
-        return;
-      }
-      try {
-        const res = await fetch("/api/auth/telegram", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(user),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "Ошибка входа");
 
-        if (intent === "register") {
-          if (data.registered) {
-            sessionStorage.removeItem("genesis_pending_tg");
-            window.location.replace("/?login=1");
+      function parseUserFromLocation() {
+        const params = new URLSearchParams(window.location.search);
+        const user = {};
+        ["id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"].forEach((k) => {
+          if (params.has(k)) user[k] = params.get(k);
+        });
+        if (user.hash && user.id) return user;
+
+        const hash = window.location.hash || "";
+        const marker = "tgAuthResult=";
+        const idx = hash.indexOf(marker);
+        if (idx === -1) return null;
+
+        let raw = hash.slice(idx + marker.length);
+        // иногда после результата есть & или ;
+        raw = raw.split("&")[0].split(";")[0];
+        try {
+          raw = decodeURIComponent(raw);
+        } catch {
+          /* keep raw */
+        }
+
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") return parsed;
+        } catch {
+          /* try base64 */
+        }
+
+        try {
+          const decoded = atob(raw.replace(/-/g, "+").replace(/_/g, "/"));
+          const parsed = JSON.parse(decoded);
+          if (parsed && typeof parsed === "object") return parsed;
+        } catch {
+          /* ignore */
+        }
+
+        return null;
+      }
+
+      (async function run() {
+        const intent =
+          new URLSearchParams(window.location.search).get("intent") ||
+          sessionStorage.getItem("genesis_tg_intent") ||
+          "login";
+
+        const user = parseUserFromLocation();
+        if (!user || !user.hash || !user.id) {
+          msg.textContent =
+            "Не удалось получить данные Telegram. Вернитесь и нажмите кнопку ещё раз.";
+          return;
+        }
+
+        try {
+          const res = await fetch("/api/auth/telegram", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(user),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "Ошибка входа");
+
+          if (intent === "register") {
+            if (data.registered) {
+              sessionStorage.removeItem("genesis_pending_tg");
+              window.location.replace("/?login=1");
+              return;
+            }
+            sessionStorage.setItem(
+              "genesis_pending_tg",
+              JSON.stringify({
+                telegramAuth: data.telegramAuth || user,
+                telegram: data.telegram || "",
+              })
+            );
+            window.location.replace("/?register=1");
             return;
           }
+
+          if (data.registered && data.token) {
+            localStorage.setItem("genesis_auth_token", data.token || "");
+            sessionStorage.removeItem("genesis_pending_tg");
+            window.location.replace("/");
+            return;
+          }
+
           sessionStorage.setItem(
             "genesis_pending_tg",
             JSON.stringify({
@@ -56,28 +125,11 @@
               telegram: data.telegram || "",
             })
           );
-          window.location.replace("/?register=1");
-          return;
+          window.location.replace("/?register=1&needreg=1");
+        } catch (err) {
+          msg.textContent = err.message || "Ошибка входа";
         }
-
-        if (data.registered && data.token) {
-          localStorage.setItem("genesis_auth_token", data.token || "");
-          sessionStorage.removeItem("genesis_pending_tg");
-          window.location.replace("/");
-          return;
-        }
-
-        sessionStorage.setItem(
-          "genesis_pending_tg",
-          JSON.stringify({
-            telegramAuth: data.telegramAuth || user,
-            telegram: data.telegram || "",
-          })
-        );
-        window.location.replace("/?register=1&needreg=1");
-      } catch (err) {
-        msg.textContent = err.message || "Ошибка входа";
-      }
+      })();
     })();
   </script>
 </body>

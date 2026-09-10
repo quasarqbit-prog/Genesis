@@ -682,8 +682,9 @@
     }
 
     const origin = encodeURIComponent(window.location.origin);
+    // Без ?intent= в return_to — Telegram ломает query; intent храним в sessionStorage
     const returnTo = encodeURIComponent(
-      `${window.location.origin}/telegram-callback.html?intent=${encodeURIComponent(intent)}`
+      `${window.location.origin}/telegram-callback.html`
     );
 
     const btn = document.createElement("a");
