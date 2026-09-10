@@ -651,21 +651,60 @@
     showToast("Telegram подтверждён — завершите регистрацию");
   }
 
+  let tgBotUsername = "";
+
+  function mountTelegramWidgetIn(hostId, size = "medium") {
+    const host = document.getElementById(hostId);
+    if (!host || !tgBotUsername) return;
+    host.innerHTML = "";
+    const authUrl = `${window.location.origin}/telegram-callback.html`;
+    const script = document.createElement("script");
+    script.src = `https://telegram.org/js/telegram-widget.js?22&host=${encodeURIComponent(hostId)}&ts=${Date.now()}`;
+    script.setAttribute("data-telegram-login", tgBotUsername);
+    script.setAttribute("data-size", size);
+    script.setAttribute("data-radius", "0");
+    script.setAttribute("data-onauth", "onTelegramAuth(user)");
+    script.setAttribute("data-auth-url", authUrl);
+    script.setAttribute("data-request-access", "write");
+    host.appendChild(script);
+  }
+
+  function remountVisibleTelegramWidgets() {
+    if (!tgBotUsername) return;
+    const loginForm = document.getElementById("auth-login-form");
+    const regForm = document.getElementById("auth-register-form");
+    const regBlock = document.getElementById("reg-tg-block");
+
+    if (loginForm?.classList.contains("is-active") && !loginForm.hidden) {
+      mountTelegramWidgetIn("tg-widget-login", "medium");
+    }
+    if (
+      regForm?.classList.contains("is-active") &&
+      !regForm.hidden &&
+      !pendingTelegramAuth?.telegramAuth &&
+      regBlock &&
+      !regBlock.hidden
+    ) {
+      mountTelegramWidgetIn("tg-widget-register", "medium");
+    }
+  }
+
   async function mountTelegramWidgets() {
-    let botUsername = "";
     try {
       const cfg = await api("/api/config");
-      botUsername = String(cfg.telegramBotUsername || "").replace(/^@/, "");
-      if (!cfg.telegramLoginEnabled || !botUsername) {
+      tgBotUsername = String(cfg.telegramBotUsername || "").replace(/^@/, "");
+      if (!cfg.telegramLoginEnabled || !tgBotUsername) {
         document.querySelectorAll(".tg-login-block").forEach((el) => {
           el.hidden = true;
         });
+        tgBotUsername = "";
         return;
       }
     } catch {
       document.querySelectorAll(".tg-login-block").forEach((el) => {
         el.hidden = true;
       });
+      tgBotUsername = "";
       return;
     }
 
@@ -678,28 +717,7 @@
       }
     };
 
-    const authUrl = `${window.location.origin}/telegram-callback.html`;
-    const hosts = [
-      ["tg-widget-gate", "large"],
-      ["tg-widget-login", "medium"],
-      ["tg-widget-register", "medium"],
-    ];
-    hosts.forEach(([hostId, size]) => {
-      const host = document.getElementById(hostId);
-      if (!host) return;
-      host.innerHTML = "";
-      delete host.dataset.mounted;
-      const script = document.createElement("script");
-      script.src = `https://telegram.org/js/telegram-widget.js?22&host=${encodeURIComponent(hostId)}`;
-      script.setAttribute("data-telegram-login", botUsername);
-      script.setAttribute("data-size", size);
-      script.setAttribute("data-radius", "0");
-      script.setAttribute("data-onauth", "onTelegramAuth(user)");
-      script.setAttribute("data-auth-url", authUrl);
-      script.setAttribute("data-request-access", "write");
-      host.appendChild(script);
-      host.dataset.mounted = "1";
-    });
+    remountVisibleTelegramWidgets();
   }
 
   function openAuthModal(tab = "login") {
@@ -710,7 +728,9 @@
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
     updateRegisterTelegramUi();
-    setLayerOpen(modal, true);
+    setLayerOpen(modal, true).then(() => {
+      window.requestAnimationFrame(() => remountVisibleTelegramWidgets());
+    });
   }
 
   function closeAuthModal() {
@@ -737,6 +757,7 @@
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
     updateRegisterTelegramUi();
+    window.requestAnimationFrame(() => remountVisibleTelegramWidgets());
   }
 
   async function openAdminShell() {

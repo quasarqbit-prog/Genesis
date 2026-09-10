@@ -473,9 +473,11 @@ h3,
 }
 
 .tg-widget-host {
-  min-height: 40px;
+  min-height: 44px;
+  min-width: 180px;
   display: flex;
   justify-content: center;
+  align-items: center;
 }
 
 .tg-login-block[hidden] {
