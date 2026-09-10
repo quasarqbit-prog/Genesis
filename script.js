@@ -479,23 +479,79 @@
     });
   }
 
+  const UI_TRANSITION_MS = 380;
+
+  function prefersReducedMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function setLayerOpen(el, open) {
+    if (!el) return Promise.resolve();
+    const ms = prefersReducedMotion() ? 0 : UI_TRANSITION_MS;
+    if (open) {
+      el.hidden = false;
+      // reflow so CSS transition runs from closed state
+      void el.offsetWidth;
+      el.classList.add("is-open");
+      return new Promise((resolve) => window.setTimeout(resolve, ms));
+    }
+    el.classList.remove("is-open");
+    return new Promise((resolve) => {
+      window.setTimeout(() => {
+        el.hidden = true;
+        resolve();
+      }, ms);
+    });
+  }
+
   function applyAuthUi() {
     const displayNick = authUser?.mcNick || authUser?.username || "";
     const loggedIn = Boolean(authToken && displayNick);
     const sessionPending = Boolean(authToken && !displayNick);
+    const isAdmin = Boolean(authUser?.isAdmin || authUser?.role === "admin");
     const gate = document.getElementById("auth-gate");
     const topbar = document.getElementById("topbar");
     const stage = document.getElementById("app-stage");
     const footer = document.getElementById("app-footer");
     const nickEl = document.getElementById("corner-nick");
+    const adminBtn = document.getElementById("admin-open-btn");
+    const adminShell = document.getElementById("admin-shell");
 
-    // Пока скрываем весь старый интерфейс — только фон + auth / ник
     if (stage) stage.hidden = true;
     if (footer) footer.hidden = true;
 
-    if (gate) gate.hidden = loggedIn || sessionPending;
-    if (topbar) topbar.hidden = !loggedIn;
+    const showGate = !(loggedIn || sessionPending);
+    if (gate) {
+      if (showGate) {
+        gate.hidden = false;
+        void gate.offsetWidth;
+        gate.classList.add("is-open");
+      } else {
+        gate.classList.remove("is-open");
+        window.setTimeout(() => {
+          if (!gate.classList.contains("is-open")) gate.hidden = true;
+        }, UI_TRANSITION_MS);
+      }
+    }
+
+    if (topbar) {
+      if (loggedIn) {
+        topbar.hidden = false;
+        void topbar.offsetWidth;
+        topbar.classList.add("is-open");
+      } else {
+        topbar.classList.remove("is-open");
+        window.setTimeout(() => {
+          if (!topbar.classList.contains("is-open")) topbar.hidden = true;
+        }, UI_TRANSITION_MS);
+        if (adminShell?.classList.contains("is-open")) {
+          setLayerOpen(adminShell, false);
+        }
+      }
+    }
+
     if (nickEl) nickEl.textContent = displayNick;
+    if (adminBtn) adminBtn.hidden = !isAdmin;
   }
 
   function updateAuthChrome() {
@@ -524,17 +580,18 @@
   function openAuthModal(tab = "login") {
     const modal = document.getElementById("auth-modal");
     if (!modal) return;
-    modal.hidden = false;
     clearAuthFieldErrors();
     setAuthTab(tab);
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
     if (tab === "register") enforceTelegramAtPrefix();
+    setLayerOpen(modal, true);
   }
 
   function closeAuthModal() {
     const modal = document.getElementById("auth-modal");
-    if (modal) modal.hidden = true;
+    if (!modal) return;
+    setLayerOpen(modal, false);
   }
 
   function setAuthTab(tab) {
@@ -543,12 +600,49 @@
     });
     const loginForm = document.getElementById("auth-login-form");
     const regForm = document.getElementById("auth-register-form");
-    if (loginForm) loginForm.hidden = tab !== "login";
-    if (regForm) regForm.hidden = tab !== "register";
+    if (loginForm) {
+      loginForm.classList.toggle("is-active", tab === "login");
+      loginForm.hidden = tab !== "login";
+    }
+    if (regForm) {
+      regForm.classList.toggle("is-active", tab === "register");
+      regForm.hidden = tab !== "register";
+    }
     clearAuthFieldErrors();
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
     if (tab === "register") enforceTelegramAtPrefix();
+  }
+
+  async function openAdminShell() {
+    const shell = document.getElementById("admin-shell");
+    const statusEl = document.getElementById("admin-status-text");
+    const listEl = document.getElementById("admin-users-list");
+    if (!shell) return;
+    await setLayerOpen(shell, true);
+    if (statusEl) statusEl.textContent = "Загрузка…";
+    if (listEl) listEl.innerHTML = "";
+    try {
+      const status = await api("/api/admin/status");
+      if (statusEl) {
+        statusEl.textContent = `${status.message || "Админ"} · пользователей: ${status.users ?? "—"}`;
+      }
+      const data = await api("/api/admin/users");
+      if (listEl && Array.isArray(data.users)) {
+        listEl.innerHTML = data.users
+          .map(
+            (u) =>
+              `<li>${u.mcNick || "—"} · ${u.telegram || "—"} · ${u.accountType || "—"} · ${u.role || "user"}</li>`
+          )
+          .join("");
+      }
+    } catch (err) {
+      if (statusEl) statusEl.textContent = err.message || "Ошибка админ API";
+    }
+  }
+
+  function closeAdminShell() {
+    setLayerOpen(document.getElementById("admin-shell"), false);
   }
 
   function showAuthStatus(message, ok = false) {
@@ -715,6 +809,10 @@
     openAuthModal("register");
   });
   document.getElementById("auth-modal-close")?.addEventListener("click", closeAuthModal);
+  document.getElementById("admin-open-btn")?.addEventListener("click", () => {
+    openAdminShell();
+  });
+  document.getElementById("admin-close-btn")?.addEventListener("click", closeAdminShell);
   document.getElementById("auth-logout-btn")?.addEventListener("click", () => {
     clearAuthSession();
     applyAuthUi();

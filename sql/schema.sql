@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   telegram VARCHAR(64) NOT NULL,
   mc_nick VARCHAR(16) NOT NULL,
   account_type ENUM('pirate', 'licensed') NOT NULL DEFAULT 'pirate',
+  role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
   password_hash VARCHAR(255) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),

@@ -57,6 +57,7 @@ function signToken(user) {
       sub: user.id,
       mcNick: user.mcNick,
       telegram: user.telegram,
+      role: user.role || "user",
     },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
@@ -75,11 +76,33 @@ function authMiddleware(req, res, next) {
       id: payload.sub,
       mcNick: payload.mcNick,
       telegram: payload.telegram,
+      role: payload.role || "user",
     };
     return next();
   } catch {
     return res.status(401).json({ error: "Сессия недействительна" });
   }
+}
+
+function adminMiddleware(req, res, next) {
+  authMiddleware(req, res, () => {
+    if (req.user?.role !== "admin") {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    return next();
+  });
+}
+
+function toPublicUser(rowOrUser) {
+  const role = rowOrUser.role || "user";
+  return {
+    id: rowOrUser.id,
+    mcNick: rowOrUser.mcNick || rowOrUser.mc_nick || "",
+    telegram: rowOrUser.telegram || "",
+    accountType: rowOrUser.accountType || rowOrUser.account_type || "",
+    role,
+    isAdmin: role === "admin",
+  };
 }
 
 function normalizeTelegram(raw) {
@@ -109,6 +132,7 @@ async function ensureSchema() {
       telegram VARCHAR(64) NOT NULL,
       mc_nick VARCHAR(16) NOT NULL,
       account_type ENUM('pirate', 'licensed') NOT NULL DEFAULT 'pirate',
+      role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
       password_hash VARCHAR(255) NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -143,6 +167,67 @@ async function ensureSchema() {
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  const [roleCols] = await pool.query(
+    `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'users'
+       AND COLUMN_NAME = 'role'`
+  );
+  if (!roleCols.length) {
+    await pool.query(
+      `ALTER TABLE users
+       ADD COLUMN role ENUM('user', 'admin') NOT NULL DEFAULT 'user'
+       AFTER account_type`
+    );
+  }
+}
+
+async function ensureAdminSeed() {
+  const telegram = normalizeTelegram(
+    process.env.ADMIN_TELEGRAM || "@kunvutikmurmurmurrr"
+  );
+  const mcNick = normalizeMcNick(process.env.ADMIN_MC_NICK || "DapRatt");
+  const accountType = String(
+    process.env.ADMIN_ACCOUNT_TYPE || "licensed"
+  ).toLowerCase();
+  const password = String(process.env.ADMIN_PASSWORD || "ilovecuw");
+  if (!TELEGRAM_RE.test(telegram) || !MC_NICK_RE.test(mcNick) || password.length < 6) {
+    console.warn("Admin seed skipped: invalid ADMIN_* config");
+    return;
+  }
+
+  const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  const [rows] = await pool.execute(
+    `SELECT id FROM users
+     WHERE telegram = :telegram OR mc_nick = :mcNick
+     LIMIT 1`,
+    { telegram, mcNick }
+  );
+
+  if (rows[0]) {
+    await pool.execute(
+      `UPDATE users
+       SET telegram = :telegram,
+           mc_nick = :mcNick,
+           account_type = :accountType,
+           role = 'admin',
+           password_hash = :hash
+       WHERE id = :id`,
+      { telegram, mcNick, accountType, hash, id: rows[0].id }
+    );
+    await ensureProfile(rows[0].id, mcNick);
+    console.log(`Admin seed updated: ${telegram} / ${mcNick}`);
+    return;
+  }
+
+  const [result] = await pool.execute(
+    `INSERT INTO users (telegram, mc_nick, account_type, role, password_hash)
+     VALUES (:telegram, :mcNick, :accountType, 'admin', :hash)`,
+    { telegram, mcNick, accountType, hash }
+  );
+  await ensureProfile(result.insertId, mcNick);
+  console.log(`Admin seed created: ${telegram} / ${mcNick}`);
 }
 
 async function ensureProfile(userId, mcNick = null) {
@@ -218,8 +303,8 @@ app.post("/api/register", async (req, res) => {
 
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const [result] = await pool.execute(
-      `INSERT INTO users (telegram, mc_nick, account_type, password_hash)
-       VALUES (:telegram, :mcNick, :accountType, :hash)`,
+      `INSERT INTO users (telegram, mc_nick, account_type, role, password_hash)
+       VALUES (:telegram, :mcNick, :accountType, 'user', :hash)`,
       { telegram, mcNick, accountType, hash }
     );
     const userId = result.insertId;
@@ -236,7 +321,13 @@ app.post("/api/register", async (req, res) => {
       }
     }
 
-    const user = { id: userId, mcNick, telegram, accountType };
+    const user = toPublicUser({
+      id: userId,
+      mcNick,
+      telegram,
+      accountType,
+      role: "user",
+    });
     return res.status(201).json({ token: signToken(user), user });
   } catch (err) {
     if (err && err.code === "ER_DUP_ENTRY") {
@@ -288,7 +379,7 @@ app.post("/api/login", async (req, res) => {
     const loginNick = normalizeMcNick(loginRaw);
 
     const [rows] = await pool.execute(
-      `SELECT id, telegram, mc_nick, account_type, password_hash
+      `SELECT id, telegram, mc_nick, account_type, role, password_hash
        FROM users
        WHERE telegram = :loginTg OR mc_nick = :loginNick
        LIMIT 1`,
@@ -305,12 +396,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     await ensureProfile(row.id, row.mc_nick);
-    const user = {
-      id: row.id,
-      mcNick: row.mc_nick,
-      telegram: row.telegram,
-      accountType: row.account_type,
-    };
+    const user = toPublicUser(row);
     return res.json({ token: signToken(user), user });
   } catch (err) {
     console.error("login:", err);
@@ -366,7 +452,7 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
   try {
     await ensureProfile(req.user.id, req.user.mcNick || null);
     const [userRows] = await pool.execute(
-      `SELECT telegram, mc_nick, account_type FROM users WHERE id = :userId LIMIT 1`,
+      `SELECT telegram, mc_nick, account_type, role FROM users WHERE id = :userId LIMIT 1`,
       { userId: req.user.id }
     );
     const u = userRows[0] || {};
@@ -380,15 +466,17 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
       { userId: req.user.id }
     );
     const row = rows[0] || {};
+    const user = toPublicUser({
+      id: req.user.id,
+      telegram: u.telegram || req.user.telegram || "",
+      mc_nick: u.mc_nick || req.user.mcNick || "",
+      account_type: u.account_type || "",
+      role: u.role || req.user.role || "user",
+    });
     return res.json({
-      user: {
-        id: req.user.id,
-        mcNick: u.mc_nick || req.user.mcNick || "",
-        telegram: u.telegram || req.user.telegram || "",
-        accountType: u.account_type || "",
-      },
+      user,
       registered: Boolean(row.registered),
-      mcNick: u.mc_nick || row.mc_nick || "",
+      mcNick: user.mcNick,
       raceName: row.race_name || "",
       form: parseFormJson(row.form_json),
       stats: {
@@ -401,6 +489,45 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("profile get:", err);
     return res.status(500).json({ error: "Не удалось загрузить профиль" });
+  }
+});
+
+/* ---------- Admin stub ---------- */
+app.get("/api/admin/status", adminMiddleware, async (_req, res) => {
+  try {
+    const [[usersCount]] = await pool.query(
+      `SELECT COUNT(*) AS c FROM users`
+    );
+    return res.json({
+      ok: true,
+      stub: true,
+      message: "Админ-панель в разработке",
+      users: Number(usersCount?.c) || 0,
+    });
+  } catch (err) {
+    console.error("admin status:", err);
+    return res.status(500).json({ error: "Ошибка админ API" });
+  }
+});
+
+app.get("/api/admin/users", adminMiddleware, async (_req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id, telegram, mc_nick, account_type, role, created_at
+       FROM users
+       ORDER BY id ASC
+       LIMIT 200`
+    );
+    return res.json({
+      stub: true,
+      users: rows.map((r) => toPublicUser(r)).map((u, i) => ({
+        ...u,
+        createdAt: rows[i].created_at || null,
+      })),
+    });
+  } catch (err) {
+    console.error("admin users:", err);
+    return res.status(500).json({ error: "Ошибка списка пользователей" });
   }
 });
 
@@ -534,6 +661,7 @@ io.on("connection", (socket) => {
 server.listen(PORT, async () => {
   try {
     await ensureSchema();
+    await ensureAdminSeed();
     console.log("DB schema OK");
   } catch (err) {
     console.error("DB schema ensure failed:", err.message);

@@ -22,14 +22,15 @@
     <div class="fireflies" id="fireflies"></div>
   </div>
 
-  <header class="topbar topbar--minimal" id="topbar" hidden>
+  <header class="topbar topbar--minimal ui-layer" id="topbar" hidden>
     <div class="corner-user" id="corner-user">
+      <button type="button" class="auth-btn" id="admin-open-btn" hidden title="Админ">ADM</button>
       <span class="corner-nick" id="corner-nick"></span>
       <button type="button" class="auth-btn auth-btn--ghost" id="auth-logout-btn" title="Выйти">×</button>
     </div>
   </header>
 
-  <div class="auth-gate" id="auth-gate">
+  <div class="auth-gate ui-layer is-open" id="auth-gate">
     <div class="auth-gate__panel">
       <h1 class="auth-gate__brand">GENESIS</h1>
       <p class="auth-gate__lead">Вход на сервер</p>
@@ -40,7 +41,7 @@
     </div>
   </div>
 
-  <div class="auth-modal" id="auth-modal" hidden>
+  <div class="auth-modal ui-layer" id="auth-modal" hidden>
     <div class="auth-modal__panel" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
       <div class="auth-modal__head">
         <div class="auth-tabs" role="tablist">
@@ -50,7 +51,8 @@
         <button type="button" class="auth-modal__close" id="auth-modal-close" aria-label="Закрыть">×</button>
       </div>
 
-      <form class="auth-form" id="auth-login-form" novalidate>
+      <div class="auth-form-stack" id="auth-form-stack">
+      <form class="auth-form is-active" id="auth-login-form" novalidate>
         <label class="field-label" for="auth-login-user">Telegram или ник Minecraft</label>
         <input class="field-input" id="auth-login-user" type="text" maxlength="64" autocomplete="username" required />
         <p class="field-error" id="auth-login-user-error" hidden></p>
@@ -65,7 +67,7 @@
         <button type="submit" class="mc-btn">ВОЙТИ</button>
       </form>
 
-      <form class="auth-form" id="auth-register-form" hidden novalidate>
+      <form class="auth-form" id="auth-register-form" novalidate>
         <label class="field-label" for="auth-reg-telegram">Айди Telegram <span class="req">*</span></label>
         <input class="field-input" id="auth-reg-telegram" type="text" maxlength="33" value="@" placeholder="@example" autocomplete="off" required />
         <p class="field-hint">Формат: @example (латиница, 5–32 символа)</p>
@@ -101,10 +103,23 @@
 
         <button type="submit" class="mc-btn">ЗАРЕГИСТРИРОВАТЬСЯ</button>
       </form>
+      </div>
 
       <p class="form-status" id="auth-status" hidden></p>
     </div>
   </div>
+
+  <aside class="admin-shell ui-layer" id="admin-shell" hidden>
+    <div class="admin-shell__panel">
+      <div class="admin-shell__head">
+        <h2 class="admin-shell__title">Админ</h2>
+        <button type="button" class="auth-modal__close" id="admin-close-btn" aria-label="Закрыть">×</button>
+      </div>
+      <p class="admin-shell__lead">Заготовка панели. Полный функционал появится позже.</p>
+      <p class="admin-shell__meta" id="admin-status-text">Загрузка…</p>
+      <ul class="admin-shell__list" id="admin-users-list"></ul>
+    </div>
+  </aside>
 
   <main class="stage" id="app-stage" hidden>
     <div class="panels stage-view is-active" id="panels">

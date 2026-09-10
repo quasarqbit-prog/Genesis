@@ -360,6 +360,19 @@ h3,
   grid-template-columns: 1fr;
   justify-items: end;
   padding: 16px 20px;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0.35s ease;
+  visibility: hidden;
+}
+
+.topbar--minimal.is-open {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
 }
 
 .topbar--minimal .corner-user,
@@ -397,6 +410,16 @@ h3,
   place-items: center;
   padding: 20px;
   pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.38s ease,
+    visibility 0.38s ease;
+}
+
+.auth-gate.is-open {
+  opacity: 1;
+  visibility: visible;
 }
 
 .auth-gate[hidden] {
@@ -413,6 +436,16 @@ h3,
   box-shadow:
     inset 3px 3px 0 rgba(255, 255, 255, 0.05),
     6px 6px 0 var(--border-lo);
+  opacity: 0;
+  transform: translateY(18px) scale(0.97);
+  transition:
+    opacity 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.auth-gate.is-open .auth-gate__panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .auth-gate__brand {
@@ -486,6 +519,18 @@ h3,
   place-items: center;
   padding: 20px;
   background: rgba(8, 4, 16, 0.72);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.32s ease,
+    visibility 0.32s ease;
+}
+
+.auth-modal.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .auth-modal[hidden] {
@@ -506,6 +551,16 @@ h3,
   display: flex;
   flex-direction: column;
   gap: 12px;
+  opacity: 0;
+  transform: translateY(22px) scale(0.96);
+  transition:
+    opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.auth-modal.is-open .auth-modal__panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .auth-modal__head {
@@ -558,13 +613,31 @@ h3,
 }
 
 .auth-form {
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 8px;
+  opacity: 0;
+  transform: translateX(12px);
+}
+
+.auth-form.is-active {
+  display: flex;
+  animation: auth-form-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .auth-form[hidden] {
   display: none !important;
+}
+
+@keyframes auth-form-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .auth-form .mc-btn {
@@ -581,6 +654,105 @@ h3,
 
 .auth-form .field-error:not([hidden]) {
   margin-top: 2px;
+}
+
+.admin-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(8, 4, 16, 0.78);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.32s ease,
+    visibility 0.32s ease;
+}
+
+.admin-shell.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.admin-shell[hidden] {
+  display: none !important;
+}
+
+.admin-shell__panel {
+  width: min(520px, 100%);
+  max-height: min(85vh, 640px);
+  overflow: auto;
+  padding: 18px;
+  background: var(--panel);
+  border: 3px solid var(--border-hi);
+  box-shadow: 6px 6px 0 var(--border-lo);
+  opacity: 0;
+  transform: translateY(18px) scale(0.97);
+  transition:
+    opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.admin-shell.is-open .admin-shell__panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.admin-shell__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.admin-shell__title {
+  font-family: var(--font-ded);
+  font-size: 16px;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+
+.admin-shell__lead,
+.admin-shell__meta {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.admin-shell__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-shell__list li {
+  font-size: 12px;
+  color: var(--text);
+  padding: 8px 10px;
+  border: 2px solid var(--panel-edge);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-gate,
+  .auth-gate__panel,
+  .auth-modal,
+  .auth-modal__panel,
+  .topbar--minimal,
+  .admin-shell,
+  .admin-shell__panel,
+  .auth-form.is-active {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 .pass-row {
