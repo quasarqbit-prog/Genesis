@@ -459,7 +459,6 @@ app.post("/api/auth/telegram", async (req, res) => {
       hash: req.body?.hash,
     };
 
-    // Telegram widget sends numbers as numbers; HMAC string must match original form
     const verifyPayload = {};
     for (const [key, value] of Object.entries(payload)) {
       if (value === undefined || value === null || value === "") continue;
@@ -483,8 +482,6 @@ app.post("/api/auth/telegram", async (req, res) => {
     const photoUrl = verifyPayload.photo_url || "";
 
     let userId = null;
-    let created = false;
-
     const [byId] = await pool.execute(
       `SELECT id FROM users WHERE telegram_id = :telegramId LIMIT 1`,
       { telegramId }
@@ -509,19 +506,15 @@ app.post("/api/auth/telegram", async (req, res) => {
       }
     }
 
+    // Нет аккаунта — только данные Telegram для завершения регистрации
     if (!userId) {
-      const mcNick = await allocateMcNick(username, telegramId);
-      const randomPass = crypto.randomBytes(18).toString("base64url");
-      const hash = await bcrypt.hash(randomPass, BCRYPT_ROUNDS);
-      const [result] = await pool.execute(
-        `INSERT INTO users
-          (telegram, telegram_id, mc_nick, account_type, role, password_hash)
-         VALUES
-          (:telegram, :telegramId, :mcNick, 'pirate', 'user', :hash)`,
-        { telegram, telegramId, mcNick, hash }
-      );
-      userId = result.insertId;
-      created = true;
+      return res.json({
+        registered: false,
+        telegramAuth: verifyPayload,
+        telegram,
+        telegramId,
+        photoUrl,
+      });
     }
 
     await ensureProfile(userId, null);
@@ -530,10 +523,9 @@ app.post("/api/auth/telegram", async (req, res) => {
     if (avatarUrl && user) user.avatarUrl = avatarUrl;
 
     return res.json({
+      registered: true,
       token: signToken(user),
       user,
-      created,
-      needsMcSetup: created,
     });
   } catch (err) {
     console.error("telegram auth:", err);
@@ -544,20 +536,43 @@ app.post("/api/auth/telegram", async (req, res) => {
 /* ---------- Auth ---------- */
 app.post("/api/register", async (req, res) => {
   try {
-    const telegram = normalizeTelegram(req.body?.telegram);
+    const telegramAuthRaw = req.body?.telegramAuth || {};
+    const verifyPayload = {};
+    for (const [key, value] of Object.entries(telegramAuthRaw)) {
+      if (value === undefined || value === null || value === "") continue;
+      verifyPayload[key] = String(value);
+    }
+    const verified = verifyTelegramLoginPayload(verifyPayload);
+    if (!verified.ok) {
+      return res.status(401).json({
+        error: verified.error || "Сначала войдите через Telegram",
+        field: "telegram",
+      });
+    }
+
+    const telegramId = Number(verifyPayload.id);
+    if (!Number.isFinite(telegramId)) {
+      return res.status(400).json({
+        error: "Некорректный Telegram id",
+        field: "telegram",
+      });
+    }
+
+    const username = String(verifyPayload.username || "").trim();
+    const telegram = username
+      ? normalizeTelegram(username)
+      : `@tg${telegramId}`;
+    const photoUrl = verifyPayload.photo_url || "";
+
     const mcNick = normalizeMcNick(req.body?.mcNick || req.body?.mc_nick);
     const accountType = String(req.body?.accountType || req.body?.account_type || "")
       .trim()
       .toLowerCase();
     const password = String(req.body?.password || "");
-    const passwordConfirm = String(req.body?.passwordConfirm || req.body?.password_confirm || "");
+    const passwordConfirm = String(
+      req.body?.passwordConfirm || req.body?.password_confirm || ""
+    );
 
-    if (!TELEGRAM_RE.test(telegram)) {
-      return res.status(400).json({
-        error: "Telegram: формат @example (латиница, 5–32 символа)",
-        field: "telegram",
-      });
-    }
     if (!MC_NICK_RE.test(mcNick)) {
       return res.status(400).json({
         error: "Ник Minecraft: 3–16 символов, латиница, цифры и _",
@@ -583,11 +598,26 @@ app.post("/api/register", async (req, res) => {
       });
     }
 
+    const [existingTg] = await pool.execute(
+      `SELECT id FROM users
+       WHERE telegram_id = :telegramId OR telegram = :telegram
+       LIMIT 1`,
+      { telegramId, telegram }
+    );
+    if (existingTg[0]) {
+      return res.status(409).json({
+        error: "Этот Telegram уже зарегистрирован. Войдите.",
+        field: "telegram",
+      });
+    }
+
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const [result] = await pool.execute(
-      `INSERT INTO users (telegram, mc_nick, account_type, role, password_hash)
-       VALUES (:telegram, :mcNick, :accountType, 'user', :hash)`,
-      { telegram, mcNick, accountType, hash }
+      `INSERT INTO users
+        (telegram, telegram_id, mc_nick, account_type, role, password_hash)
+       VALUES
+        (:telegram, :telegramId, :mcNick, :accountType, 'user', :hash)`,
+      { telegram, telegramId, mcNick, accountType, hash }
     );
     const userId = result.insertId;
     try {
@@ -599,17 +629,22 @@ app.post("/api/register", async (req, res) => {
         await ensureProfile(userId, mcNick);
       } catch (retryErr) {
         console.error("register profile retry:", retryErr);
-        // Аккаунт уже в users — вход и /api/mc/verify работают без profiles
       }
     }
 
-    const user = toPublicUser({
-      id: userId,
-      mcNick,
-      telegram,
-      accountType,
-      role: "user",
-    });
+    const avatarUrl = await saveTelegramAvatar(userId, photoUrl);
+    const user =
+      (await loadUserPublic(userId)) ||
+      toPublicUser({
+        id: userId,
+        mcNick,
+        telegram,
+        accountType,
+        role: "user",
+        avatar_path: avatarUrl,
+      });
+    if (avatarUrl) user.avatarUrl = avatarUrl;
+
     return res.status(201).json({ token: signToken(user), user });
   } catch (err) {
     if (err && err.code === "ER_DUP_ENTRY") {
@@ -654,27 +689,32 @@ app.post("/api/login", async (req, res) => {
     const loginRaw = String(req.body?.login || req.body?.username || "").trim();
     const password = String(req.body?.password || "");
     if (!loginRaw || !password) {
-      return res.status(400).json({ error: "Введите логин и пароль" });
+      return res.status(400).json({ error: "Введите ник и пароль" });
     }
 
-    const loginTg = normalizeTelegram(loginRaw);
     const loginNick = normalizeMcNick(loginRaw);
+    if (!MC_NICK_RE.test(loginNick)) {
+      return res.status(400).json({
+        error: "Ник Minecraft: 3–16 символов, латиница, цифры и _",
+        field: "login",
+      });
+    }
 
     const [rows] = await pool.execute(
       `SELECT id, telegram, mc_nick, account_type, role, password_hash
        FROM users
-       WHERE telegram = :loginTg OR mc_nick = :loginNick
+       WHERE mc_nick = :loginNick
        LIMIT 1`,
-      { loginTg, loginNick }
+      { loginNick }
     );
     const row = rows[0];
     if (!row) {
-      return res.status(401).json({ error: "Неверный логин или пароль" });
+      return res.status(401).json({ error: "Неверный ник или пароль" });
     }
 
     const ok = await bcrypt.compare(password, row.password_hash);
     if (!ok) {
-      return res.status(401).json({ error: "Неверный логин или пароль" });
+      return res.status(401).json({ error: "Неверный ник или пароль" });
     }
 
     await ensureProfile(row.id, row.mc_nick);

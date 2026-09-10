@@ -482,6 +482,22 @@ h3,
   display: none !important;
 }
 
+.reg-tg-status {
+  font-size: 13px;
+  color: var(--accent);
+  margin: 4px 0 10px;
+}
+
+.reg-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reg-details[hidden] {
+  display: none !important;
+}
+
 .topbar {
   position: relative;
   z-index: 2;

@@ -38,8 +38,22 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Ошибка входа");
-        localStorage.setItem("genesis_auth_token", data.token || "");
-        window.location.replace("/");
+
+        if (data.registered && data.token) {
+          localStorage.setItem("genesis_auth_token", data.token || "");
+          sessionStorage.removeItem("genesis_pending_tg");
+          window.location.replace("/");
+          return;
+        }
+
+        sessionStorage.setItem(
+          "genesis_pending_tg",
+          JSON.stringify({
+            telegramAuth: data.telegramAuth || user,
+            telegram: data.telegram || "",
+          })
+        );
+        window.location.replace("/?register=1");
       } catch (err) {
         msg.textContent = err.message || "Ошибка входа";
       }

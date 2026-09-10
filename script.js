@@ -578,6 +578,79 @@
     applyAuthUi();
   }
 
+  const PENDING_TG_KEY = "genesis_pending_tg";
+  let pendingTelegramAuth = null;
+
+  function readPendingTelegram() {
+    try {
+      const raw = sessionStorage.getItem(PENDING_TG_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function writePendingTelegram(data) {
+    pendingTelegramAuth = data || null;
+    if (data) sessionStorage.setItem(PENDING_TG_KEY, JSON.stringify(data));
+    else sessionStorage.removeItem(PENDING_TG_KEY);
+    updateRegisterTelegramUi();
+  }
+
+  function updateRegisterTelegramUi() {
+    const status = document.getElementById("reg-tg-status");
+    const details = document.getElementById("reg-details");
+    const tgBlock = document.getElementById("reg-tg-block");
+    const err = document.getElementById("auth-reg-telegram-error");
+    const handle =
+      pendingTelegramAuth?.telegram ||
+      (pendingTelegramAuth?.telegramAuth?.username
+        ? `@${pendingTelegramAuth.telegramAuth.username}`
+        : "");
+
+    if (pendingTelegramAuth?.telegramAuth) {
+      if (status) {
+        status.hidden = false;
+        status.textContent = `Telegram подключён: ${handle}`;
+      }
+      if (details) details.hidden = false;
+      if (tgBlock) tgBlock.hidden = true;
+      if (err) {
+        err.hidden = true;
+        err.textContent = "";
+      }
+    } else {
+      if (status) status.hidden = true;
+      if (details) details.hidden = true;
+      if (tgBlock) tgBlock.hidden = false;
+    }
+  }
+
+  async function handleTelegramAuthResult(user) {
+    const data = await api("/api/auth/telegram", {
+      method: "POST",
+      body: JSON.stringify(user),
+    });
+
+    if (data.registered && data.token) {
+      writePendingTelegram(null);
+      setAuthSession(data.token, data.user);
+      await loadProfileFromServer();
+      closeAuthModal();
+      applyAuthUi();
+      showToast("Вход через Telegram");
+      return;
+    }
+
+    writePendingTelegram({
+      telegramAuth: data.telegramAuth || user,
+      telegram: data.telegram || "",
+    });
+    openAuthModal("register");
+    showToast("Telegram подтверждён — завершите регистрацию");
+  }
+
   async function mountTelegramWidgets() {
     let botUsername = "";
     try {
@@ -598,22 +671,7 @@
 
     window.onTelegramAuth = async (user) => {
       try {
-        const data = await api("/api/auth/telegram", {
-          method: "POST",
-          body: JSON.stringify(user),
-        });
-        setAuthSession(data.token, data.user);
-        await loadProfileFromServer();
-        closeAuthModal();
-        applyAuthUi();
-        showToast(
-          data.created
-            ? "Аккаунт создан через Telegram"
-            : "Вход через Telegram"
-        );
-        if (data.needsMcSetup) {
-          showToast("Задайте ник и пароль Minecraft через регистрацию позже");
-        }
+        await handleTelegramAuthResult(user);
       } catch (err) {
         showAuthStatus(err.message || "Ошибка Telegram");
         showToast(err.message || "Ошибка Telegram");
@@ -624,13 +682,13 @@
     const hosts = [
       ["tg-widget-gate", "large"],
       ["tg-widget-login", "medium"],
+      ["tg-widget-register", "medium"],
     ];
     hosts.forEach(([hostId, size]) => {
       const host = document.getElementById(hostId);
       if (!host) return;
       host.innerHTML = "";
       delete host.dataset.mounted;
-      // Без async: иначе document.currentScript=null и виджет не поднимается
       const script = document.createElement("script");
       script.src = `https://telegram.org/js/telegram-widget.js?22&host=${encodeURIComponent(hostId)}`;
       script.setAttribute("data-telegram-login", botUsername);
@@ -644,25 +702,6 @@
     });
   }
 
-  function enforceTelegramAtPrefix() {
-    const input = document.getElementById("auth-reg-telegram");
-    if (!input) return;
-    let v = input.value.replace(/^@+/, "");
-    v = v.replace(/[^A-Za-z0-9_]/g, "");
-    const next = `@${v}`;
-    if (input.value !== next) {
-      const wasAtEnd = input.selectionStart === input.value.length;
-      input.value = next;
-      if (wasAtEnd || input.selectionStart < 1) {
-        const pos = input.value.length;
-        input.setSelectionRange(pos, pos);
-      } else {
-        const pos = Math.max(1, input.selectionStart);
-        input.setSelectionRange(pos, pos);
-      }
-    }
-  }
-
   function openAuthModal(tab = "login") {
     const modal = document.getElementById("auth-modal");
     if (!modal) return;
@@ -670,7 +709,7 @@
     setAuthTab(tab);
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
-    if (tab === "register") enforceTelegramAtPrefix();
+    updateRegisterTelegramUi();
     setLayerOpen(modal, true);
   }
 
@@ -697,7 +736,7 @@
     clearAuthFieldErrors();
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
-    if (tab === "register") enforceTelegramAtPrefix();
+    updateRegisterTelegramUi();
   }
 
   async function openAdminShell() {
@@ -739,12 +778,10 @@
     status.textContent = message || "";
   }
 
-  const AUTH_TELEGRAM_RE = /^@?[A-Za-z0-9_]{5,32}$/;
   const AUTH_MC_NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
   const AUTH_FIELD_IDS = [
     "auth-login-user",
     "auth-login-pass",
-    "auth-reg-telegram",
     "auth-reg-nick",
     "auth-reg-pass",
     "auth-reg-pass2",
@@ -770,6 +807,11 @@
 
   function clearAuthFieldErrors() {
     AUTH_FIELD_IDS.forEach((id) => setFieldError(id, ""));
+    const tgErr = document.getElementById("auth-reg-telegram-error");
+    if (tgErr) {
+      tgErr.hidden = true;
+      tgErr.textContent = "";
+    }
     setAccountTypeError("");
     showAuthStatus("");
   }
@@ -780,26 +822,30 @@
     let ok = true;
 
     if (!login) {
-      if (showEmpty) setFieldError("auth-login-user", "Введите Telegram или ник");
-      else setFieldError("auth-login-user", "");
-      if (showEmpty) ok = false;
+      if (showEmpty) {
+        setFieldError("auth-login-user", "Введите ник Minecraft");
+        ok = false;
+      } else setFieldError("auth-login-user", "");
+    } else if (!AUTH_MC_NICK_RE.test(login)) {
+      setFieldError("auth-login-user", "3–16 символов · латиница, цифры и _");
+      ok = false;
     } else {
       setFieldError("auth-login-user", "");
     }
 
     if (!password) {
-      if (showEmpty) setFieldError("auth-login-pass", "Введите пароль");
-      else setFieldError("auth-login-pass", "");
-      if (showEmpty) ok = false;
+      if (showEmpty) {
+        setFieldError("auth-login-pass", "Введите пароль");
+        ok = false;
+      } else setFieldError("auth-login-pass", "");
     } else {
       setFieldError("auth-login-pass", "");
     }
 
-    return ok && Boolean(login && password);
+    return ok && Boolean(login && password && AUTH_MC_NICK_RE.test(login));
   }
 
   function validateRegisterFields(showEmpty = false) {
-    const telegram = document.getElementById("auth-reg-telegram")?.value.trim() || "";
     const mcNick = document.getElementById("auth-reg-nick")?.value.trim() || "";
     const accountType =
       document.querySelector('#auth-register-form input[name="accountType"]:checked')
@@ -807,20 +853,17 @@
     const password = document.getElementById("auth-reg-pass")?.value || "";
     const passwordConfirm = document.getElementById("auth-reg-pass2")?.value || "";
     let ok = true;
+    const tgErr = document.getElementById("auth-reg-telegram-error");
 
-    if (!telegram || telegram === "@") {
-      if (showEmpty) {
-        setFieldError("auth-reg-telegram", "Укажите Telegram");
-        ok = false;
-      } else setFieldError("auth-reg-telegram", "");
-    } else if (!AUTH_TELEGRAM_RE.test(telegram)) {
-      setFieldError(
-        "auth-reg-telegram",
-        "Формат @example · латиница, цифры и _, 5–32 символа"
-      );
+    if (!pendingTelegramAuth?.telegramAuth) {
+      if (showEmpty && tgErr) {
+        tgErr.hidden = false;
+        tgErr.textContent = "Сначала войдите через Telegram";
+      }
       ok = false;
-    } else {
-      setFieldError("auth-reg-telegram", "");
+    } else if (tgErr) {
+      tgErr.hidden = true;
+      tgErr.textContent = "";
     }
 
     if (!mcNick) {
@@ -870,8 +913,15 @@
   }
 
   function applyServerFieldError(field, message) {
+    if (field === "telegram") {
+      const err = document.getElementById("auth-reg-telegram-error");
+      if (err) {
+        err.hidden = !message;
+        err.textContent = message || "";
+      } else showAuthStatus(message);
+      return;
+    }
     const map = {
-      telegram: "auth-reg-telegram",
       mcNick: "auth-reg-nick",
       mc_nick: "auth-reg-nick",
       password: "auth-reg-pass",
@@ -942,22 +992,6 @@
       showAuthStatus("");
     });
   });
-  document.getElementById("auth-reg-telegram")?.addEventListener("input", () => {
-    enforceTelegramAtPrefix();
-    validateRegisterFields(false);
-    showAuthStatus("");
-  });
-  document.getElementById("auth-reg-telegram")?.addEventListener("keydown", (e) => {
-    const input = e.target;
-    if (
-      (e.key === "Backspace" || e.key === "Delete") &&
-      input.selectionStart <= 1 &&
-      input.selectionEnd <= 1 &&
-      input.value === "@"
-    ) {
-      e.preventDefault();
-    }
-  });
   ["auth-reg-nick", "auth-reg-pass", "auth-reg-pass2"].forEach((id) => {
     document.getElementById(id)?.addEventListener("input", () => {
       validateRegisterFields(false);
@@ -1001,7 +1035,6 @@
     e.preventDefault();
     showAuthStatus("");
     if (!validateRegisterFields(true)) return;
-    const telegram = document.getElementById("auth-reg-telegram")?.value.trim() || "";
     const mcNick = document.getElementById("auth-reg-nick")?.value.trim() || "";
     const accountType =
       document.querySelector('#auth-register-form input[name="accountType"]:checked')
@@ -1012,13 +1045,14 @@
       const data = await api("/api/register", {
         method: "POST",
         body: JSON.stringify({
-          telegram,
+          telegramAuth: pendingTelegramAuth.telegramAuth,
           mcNick,
           accountType,
           password,
           passwordConfirm,
         }),
       });
+      writePendingTelegram(null);
       setAuthSession(data.token, data.user);
       await loadProfileFromServer();
       closeAuthModal();
@@ -1031,9 +1065,14 @@
     }
   });
 
+  pendingTelegramAuth = readPendingTelegram();
   connectSocket();
   updateAuthChrome();
   mountTelegramWidgets();
+  updateRegisterTelegramUi();
+  if (pendingTelegramAuth?.telegramAuth && !authToken) {
+    openAuthModal("register");
+  }
   profileCache = readLocalStorageFallback();
 
   const panels = document.getElementById("panels");
