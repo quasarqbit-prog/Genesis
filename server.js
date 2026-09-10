@@ -341,37 +341,20 @@ function verifyTelegramLoginPayload(data) {
   return { ok: true };
 }
 
-function downloadToFile(url, destPath) {
-  return new Promise((resolve, reject) => {
-    const client = url.startsWith("https") ? https : http;
-    const req = client.get(url, { timeout: 15000 }, (res) => {
-      if (
-        res.statusCode >= 300 &&
-        res.statusCode < 400 &&
-        res.headers.location
-      ) {
-        res.resume();
-        downloadToFile(res.headers.location, destPath).then(resolve).catch(reject);
-        return;
-      }
-      if (res.statusCode !== 200) {
-        res.resume();
-        reject(new Error(`HTTP ${res.statusCode}`));
-        return;
-      }
-      const file = fs.createWriteStream(destPath);
-      res.pipe(file);
-      file.on("finish", () => file.close(() => resolve(destPath)));
-      file.on("error", (err) => {
-        fs.unlink(destPath, () => reject(err));
-      });
-    });
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy();
-      reject(new Error("timeout"));
-    });
+async function downloadToFile(url, destPath) {
+  const res = await fetch(String(url), {
+    redirect: "follow",
+    headers: { "User-Agent": "GenesisWeb/1.0" },
   });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length < 32) {
+    throw new Error("file too small");
+  }
+  await fs.promises.writeFile(destPath, buf);
+  return destPath;
 }
 
 async function telegramApi(method, payload = null) {
@@ -379,13 +362,14 @@ async function telegramApi(method, payload = null) {
     throw new Error("TELEGRAM_BOT_TOKEN не настроен");
   }
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN.trim()}/${method}`;
-  const init = payload
-    ? {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    : { method: "GET" };
+  const init =
+    payload == null
+      ? { method: "GET" }
+      : {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        };
   const res = await fetch(url, init);
   const data = await res.json().catch(() => ({}));
   if (!data.ok) {
@@ -395,26 +379,60 @@ async function telegramApi(method, payload = null) {
   return data.result;
 }
 
+async function fileUrlFromTelegramFileId(fileId) {
+  if (!fileId) return "";
+  const fileData = await telegramApi("getFile", { file_id: fileId });
+  const filePath = fileData?.file_path;
+  if (!filePath) return "";
+  return `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN.trim()}/${filePath}`;
+}
+
 async function resolveTelegramPhotoUrl(telegramId, widgetPhotoUrl) {
-  if (widgetPhotoUrl) return String(widgetPhotoUrl);
+  const widget = String(widgetPhotoUrl || "").trim();
+  if (widget) return widget;
   if (!TELEGRAM_BOT_TOKEN || !telegramId) return "";
+
+  const uid = Number(telegramId);
+  if (!Number.isFinite(uid)) return "";
+
+  // 1) Альбом фото профиля
   try {
-    const photos = await telegramApi(
-      `getUserProfilePhotos?user_id=${telegramId}&limit=1`
-    );
+    const photos = await telegramApi("getUserProfilePhotos", {
+      user_id: uid,
+      limit: 1,
+    });
     const sizes = photos?.photos?.[0];
-    if (!Array.isArray(sizes) || !sizes.length) return "";
-    const best = sizes[sizes.length - 1];
-    const fileData = await telegramApi(
-      `getFile?file_id=${encodeURIComponent(best.file_id)}`
-    );
-    const filePath = fileData?.file_path;
-    if (!filePath) return "";
-    return `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN.trim()}/${filePath}`;
+    if (Array.isArray(sizes) && sizes.length) {
+      const best = sizes[sizes.length - 1];
+      const url = await fileUrlFromTelegramFileId(best.file_id);
+      if (url) return url;
+    }
   } catch (err) {
-    console.warn("resolveTelegramPhotoUrl:", err.message);
-    return "";
+    console.warn("getUserProfilePhotos:", err.message);
   }
+
+  // 2) Фото личного чата с ботом (появляется после /start)
+  try {
+    const chat = await telegramApi("getChat", { chat_id: uid });
+    const fileId = chat?.photo?.big_file_id || chat?.photo?.small_file_id;
+    const url = await fileUrlFromTelegramFileId(fileId);
+    if (url) return url;
+  } catch (err) {
+    console.warn("getChat photo:", err.message);
+  }
+
+  return "";
+}
+
+async function syncAvatarByTelegramId(telegramId, photoUrl = "") {
+  const tid = Number(telegramId);
+  if (!Number.isFinite(tid)) return "";
+  const [rows] = await pool.execute(
+    `SELECT id FROM users WHERE telegram_id = :telegramId LIMIT 1`,
+    { telegramId: tid }
+  );
+  if (!rows[0]) return "";
+  return saveTelegramAvatar(rows[0].id, photoUrl, tid);
 }
 
 async function handleTelegramUpdate(update) {
@@ -427,13 +445,24 @@ async function handleTelegramUpdate(update) {
   const botName = TELEGRAM_BOT_USERNAME
     ? `@${TELEGRAM_BOT_USERNAME}`
     : "бот Genesis";
-  const reply =
-    `Привет! Это ${botName}.\n\n` +
-    `Авторизация и аватарка работают через сайт Genesis.\n` +
-    `1) Открой сайт\n` +
-    `2) Нажми «Войти через Telegram»\n` +
-    `3) Вернись на сайт — аватар подтянется сам\n\n` +
-    `Команда /start нужна только чтобы бот мог читать твоё фото профиля.`;
+  const fromId = Number(msg.from?.id);
+  let avatarSynced = false;
+  if (Number.isFinite(fromId)) {
+    try {
+      const avatarUrl = await syncAvatarByTelegramId(fromId, "");
+      avatarSynced = Boolean(avatarUrl);
+    } catch (err) {
+      console.warn("avatar sync on /start:", err.message);
+    }
+  }
+
+  const reply = avatarSynced
+    ? `Готово! Аватар подтянут.\nОбнови страницу сайта или нажми «Обновить аватар».`
+    : `Привет! Это ${botName}.\n\n` +
+      `Если аватар на сайте пустой:\n` +
+      `1) Убедись, что в Telegram есть фото профиля\n` +
+      `2) Настройки → Конфиденциальность → Фотографии профиля → не «Никто»\n` +
+      `3) На сайте: Выйти → Войти через Telegram`;
 
   try {
     await telegramApi("sendMessage", {
@@ -499,7 +528,12 @@ async function saveTelegramAvatar(userId, photoUrl, telegramId = null) {
   if (!url && telegramId) {
     url = await resolveTelegramPhotoUrl(telegramId, "");
   }
-  if (!url) return "";
+  if (!url) {
+    console.warn(
+      `avatar missing for user ${userId}: no photo_url and bot could not resolve photo (tg=${telegramId || "-"})`
+    );
+    return "";
+  }
 
   const extMatch = String(url).match(/\.(jpe?g|png|webp|gif)(?:\?|$)/i);
   const ext = extMatch
@@ -521,15 +555,21 @@ async function saveTelegramAvatar(userId, photoUrl, telegramId = null) {
 
   try {
     await downloadToFile(String(url), absPath);
+    console.log(`avatar saved locally for user ${userId}: ${publicPath}`);
     return await persistPath(publicPath);
   } catch (err) {
     console.warn("avatar download failed:", err.message);
   }
 
-  // Bot API fallback
+  // Bot API fallback (если пришёл widget URL, а скачать не вышло)
   if (telegramId) {
     try {
       const botUrl = await resolveTelegramPhotoUrl(telegramId, "");
+      if (botUrl && botUrl !== url) {
+        await downloadToFile(botUrl, absPath);
+        console.log(`avatar saved via bot API for user ${userId}`);
+        return await persistPath(publicPath);
+      }
       if (botUrl) {
         await downloadToFile(botUrl, absPath);
         return await persistPath(publicPath);
@@ -539,9 +579,10 @@ async function saveTelegramAvatar(userId, photoUrl, telegramId = null) {
     }
   }
 
-  // Последний запасной вариант — прямая ссылка Telegram CDN
+  // Последний запасной вариант — прямая ссылка (браузер сможет открыть)
   if (url.startsWith("http://") || url.startsWith("https://")) {
     try {
+      console.log(`avatar stored as remote URL for user ${userId}`);
       return await persistPath(url);
     } catch (err3) {
       console.warn("avatar remote persist failed:", err3.message);
@@ -1026,7 +1067,7 @@ app.post("/api/user/avatar/refresh", authMiddleware, async (req, res) => {
     if (!avatarUrl) {
       return res.status(404).json({
         error:
-          "Фото не найдено. Напиши боту /start, убедись что в Telegram есть аватар, затем на сайте нажми «Войти через Telegram»",
+          "Telegram не отдал фото. Проверь: есть ли аватар в профиле TG, в конфиденциальности фото не «Никто», затем напиши боту /start и обнови страницу",
       });
     }
     const user = await loadUserPublic(req.user.id);
