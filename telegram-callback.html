@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telegram Login…</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #12081c;
+      color: #e8e0f0;
+      font-family: sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <p id="msg">Вход через Telegram…</p>
+  <script>
+    (async function () {
+      const msg = document.getElementById("msg");
+      const params = new URLSearchParams(window.location.search);
+      const user = {};
+      ["id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"].forEach((k) => {
+        if (params.has(k)) user[k] = params.get(k);
+      });
+      if (!user.hash || !user.id) {
+        msg.textContent = "Нет данных Telegram. Вернитесь на главную.";
+        return;
+      }
+      try {
+        const res = await fetch("/api/auth/telegram", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(user),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Ошибка входа");
+        localStorage.setItem("genesis_auth_token", data.token || "");
+        window.location.replace("/");
+      } catch (err) {
+        msg.textContent = err.message || "Ошибка входа";
+      }
+    })();
+  </script>
+</body>
+</html>

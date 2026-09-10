@@ -306,21 +306,24 @@ function verifyTelegramLoginPayload(data) {
   const check = { ...data };
   delete check.hash;
   const dataCheckString = Object.keys(check)
+    .filter((key) => check[key] !== undefined && check[key] !== null && check[key] !== "")
     .sort()
     .map((key) => `${key}=${check[key]}`)
     .join("\n");
 
   const secretKey = crypto
     .createHash("sha256")
-    .update(TELEGRAM_BOT_TOKEN)
+    .update(TELEGRAM_BOT_TOKEN.trim())
     .digest();
   const computed = crypto
     .createHmac("sha256", secretKey)
     .update(dataCheckString)
     .digest("hex");
 
-  if (computed !== hash) {
-    return { ok: false, error: "Неверная подпись Telegram" };
+  const a = Buffer.from(computed, "hex");
+  const b = Buffer.from(hash, "hex");
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return { ok: false, error: "Неверная подпись Telegram (проверьте BOT_TOKEN)" };
   }
 
   const authDate = Number(data.auth_date);
@@ -329,7 +332,7 @@ function verifyTelegramLoginPayload(data) {
   }
   const ageSec = Math.floor(Date.now() / 1000) - authDate;
   if (ageSec > 86400) {
-    return { ok: false, error: "Данные Telegram устарели" };
+    return { ok: false, error: "Данные Telegram устарели. Войдите ещё раз" };
   }
 
   return { ok: true };
