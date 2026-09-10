@@ -502,6 +502,25 @@
     applyAuthUi();
   }
 
+  function enforceTelegramAtPrefix() {
+    const input = document.getElementById("auth-reg-telegram");
+    if (!input) return;
+    let v = input.value.replace(/^@+/, "");
+    v = v.replace(/[^A-Za-z0-9_]/g, "");
+    const next = `@${v}`;
+    if (input.value !== next) {
+      const wasAtEnd = input.selectionStart === input.value.length;
+      input.value = next;
+      if (wasAtEnd || input.selectionStart < 1) {
+        const pos = input.value.length;
+        input.setSelectionRange(pos, pos);
+      } else {
+        const pos = Math.max(1, input.selectionStart);
+        input.setSelectionRange(pos, pos);
+      }
+    }
+  }
+
   function openAuthModal(tab = "login") {
     const modal = document.getElementById("auth-modal");
     if (!modal) return;
@@ -510,6 +529,7 @@
     setAuthTab(tab);
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
+    if (tab === "register") enforceTelegramAtPrefix();
   }
 
   function closeAuthModal() {
@@ -528,6 +548,7 @@
     clearAuthFieldErrors();
     const status = document.getElementById("auth-status");
     if (status) status.hidden = true;
+    if (tab === "register") enforceTelegramAtPrefix();
   }
 
   function showAuthStatus(message, ok = false) {
@@ -607,7 +628,7 @@
     const passwordConfirm = document.getElementById("auth-reg-pass2")?.value || "";
     let ok = true;
 
-    if (!telegram) {
+    if (!telegram || telegram === "@") {
       if (showEmpty) {
         setFieldError("auth-reg-telegram", "Укажите Telegram");
         ok = false;
@@ -720,12 +741,23 @@
       showAuthStatus("");
     });
   });
-  [
-    "auth-reg-telegram",
-    "auth-reg-nick",
-    "auth-reg-pass",
-    "auth-reg-pass2",
-  ].forEach((id) => {
+  document.getElementById("auth-reg-telegram")?.addEventListener("input", () => {
+    enforceTelegramAtPrefix();
+    validateRegisterFields(false);
+    showAuthStatus("");
+  });
+  document.getElementById("auth-reg-telegram")?.addEventListener("keydown", (e) => {
+    const input = e.target;
+    if (
+      (e.key === "Backspace" || e.key === "Delete") &&
+      input.selectionStart <= 1 &&
+      input.selectionEnd <= 1 &&
+      input.value === "@"
+    ) {
+      e.preventDefault();
+    }
+  });
+  ["auth-reg-nick", "auth-reg-pass", "auth-reg-pass2"].forEach((id) => {
     document.getElementById(id)?.addEventListener("input", () => {
       validateRegisterFields(false);
       showAuthStatus("");
