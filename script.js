@@ -694,9 +694,6 @@
     openAuthModal("register");
   });
   document.getElementById("auth-modal-close")?.addEventListener("click", closeAuthModal);
-  document.getElementById("auth-modal")?.addEventListener("click", (e) => {
-    if (e.target?.id === "auth-modal") closeAuthModal();
-  });
   document.getElementById("auth-logout-btn")?.addEventListener("click", () => {
     clearAuthSession();
     applyAuthUi();
@@ -712,7 +709,8 @@
       if (!input) return;
       const show = input.type === "password";
       input.type = show ? "text" : "password";
-      btn.textContent = show ? "✕" : "👁";
+      btn.textContent = show ? "×" : "*";
+      btn.setAttribute("aria-label", show ? "Скрыть пароль" : "Показать пароль");
     });
   });
 

@@ -102,10 +102,53 @@ function parseFormJson(raw) {
   }
 }
 
+async function ensureSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      telegram VARCHAR(64) NOT NULL,
+      mc_nick VARCHAR(16) NOT NULL,
+      account_type ENUM('pirate', 'licensed') NOT NULL DEFAULT 'pirate',
+      password_hash VARCHAR(255) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY uq_users_telegram (telegram),
+      UNIQUE KEY uq_users_mc_nick (mc_nick)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS profiles (
+      user_id INT UNSIGNED NOT NULL,
+      mc_nick VARCHAR(16) NULL,
+      race_name VARCHAR(64) NULL,
+      registered TINYINT(1) NOT NULL DEFAULT 0,
+      form_json JSON NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id),
+      CONSTRAINT fk_profiles_user
+        FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS game_stats (
+      user_id INT UNSIGNED NOT NULL,
+      score INT NOT NULL DEFAULT 0,
+      inventory_json JSON NULL,
+      meta_json JSON NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id),
+      CONSTRAINT fk_game_stats_user
+        FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
 async function ensureProfile(userId, mcNick = null) {
   await pool.execute(
     `INSERT IGNORE INTO profiles (user_id, mc_nick, registered, form_json)
-     VALUES (:userId, :mcNick, 0, CAST('{}' AS JSON))`,
+     VALUES (:userId, :mcNick, 0, '{}')`,
     { userId, mcNick }
   );
   if (mcNick) {
@@ -116,7 +159,7 @@ async function ensureProfile(userId, mcNick = null) {
   }
   await pool.execute(
     `INSERT IGNORE INTO game_stats (user_id, score, inventory_json, meta_json)
-     VALUES (:userId, 0, CAST('{}' AS JSON), CAST('{}' AS JSON))`,
+     VALUES (:userId, 0, '{}', '{}')`,
     { userId }
   );
 }
@@ -184,11 +227,13 @@ app.post("/api/register", async (req, res) => {
       await ensureProfile(userId, mcNick);
     } catch (profileErr) {
       console.error("register profile:", profileErr);
-      return res.status(500).json({
-        error:
-          "Аккаунт создан, но профиль не записался. Проверьте таблицы profiles/game_stats.",
-        field: null,
-      });
+      try {
+        await ensureSchema();
+        await ensureProfile(userId, mcNick);
+      } catch (retryErr) {
+        console.error("register profile retry:", retryErr);
+        // Аккаунт уже в users — вход и /api/mc/verify работают без profiles
+      }
     }
 
     const user = { id: userId, mcNick, telegram, accountType };
@@ -486,7 +531,13 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
+  try {
+    await ensureSchema();
+    console.log("DB schema OK");
+  } catch (err) {
+    console.error("DB schema ensure failed:", err.message);
+  }
   console.log(`Genesis API + Socket.io on :${PORT}`);
 });
 
