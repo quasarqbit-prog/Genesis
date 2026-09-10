@@ -608,12 +608,16 @@
       pendingTelegramAuth?.telegram ||
       (pendingTelegramAuth?.telegramAuth?.username
         ? `@${pendingTelegramAuth.telegramAuth.username}`
-        : "");
+        : pendingTelegramAuth?.telegramAuth?.id
+          ? `id ${pendingTelegramAuth.telegramAuth.id}`
+          : "");
 
     if (pendingTelegramAuth?.telegramAuth) {
       if (status) {
         status.hidden = false;
-        status.textContent = `Telegram подключён: ${handle}`;
+        status.textContent = handle
+          ? `Данные Telegram получены: ${handle}`
+          : "Данные Telegram получены";
       }
       if (tgBlock) tgBlock.hidden = true;
       if (err) {
@@ -1143,15 +1147,42 @@
     await mountTelegramWidgets();
     if (authToken) return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("register") === "1" || pendingTelegramAuth?.telegramAuth) {
+    const wantRegister =
+      params.get("register") === "1" || Boolean(pendingTelegramAuth?.telegramAuth);
+    const wantLogin = params.get("login") === "1";
+    const tgOk = params.get("tg") === "ok";
+    const tgExists = params.get("tg") === "exists";
+    const needReg = params.get("needreg") === "1";
+
+    if (wantRegister) {
       openAuthModal("register");
-      if (params.get("needreg") === "1") {
+      updateRegisterTelegramUi();
+      if (tgOk || pendingTelegramAuth?.telegramAuth) {
+        showAuthStatus(
+          pendingTelegramAuth?.telegram
+            ? `Данные Telegram получены: ${pendingTelegramAuth.telegram}`
+            : "Данные Telegram получены",
+          true
+        );
+        showToast("Данные Telegram получены");
+      }
+      if (needReg) {
         showToast("Сначала зарегистрируйте аккаунт");
       }
-    } else if (params.get("login") === "1") {
+    } else if (wantLogin) {
       openAuthModal("login");
+      if (tgExists) {
+        showAuthStatus("Этот Telegram уже зарегистрирован — войдите", true);
+        showToast("Войдите в существующий аккаунт");
+      }
     }
-    if (params.has("register") || params.has("login") || params.has("needreg")) {
+
+    if (
+      params.has("register") ||
+      params.has("login") ||
+      params.has("needreg") ||
+      params.has("tg")
+    ) {
       window.history.replaceState({}, "", "/");
     }
   })();

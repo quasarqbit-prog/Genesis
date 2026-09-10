@@ -97,7 +97,7 @@
           if (intent === "register") {
             if (data.registered) {
               sessionStorage.removeItem("genesis_pending_tg");
-              window.location.replace("/?login=1");
+              window.location.replace("/?login=1&tg=exists");
               return;
             }
             sessionStorage.setItem(
@@ -107,7 +107,7 @@
                 telegram: data.telegram || "",
               })
             );
-            window.location.replace("/?register=1");
+            window.location.replace("/?register=1&tg=ok");
             return;
           }
 
@@ -125,7 +125,7 @@
               telegram: data.telegram || "",
             })
           );
-          window.location.replace("/?register=1&needreg=1");
+          window.location.replace("/?register=1&tg=ok&needreg=1");
         } catch (err) {
           msg.textContent = err.message || "Ошибка входа";
         }

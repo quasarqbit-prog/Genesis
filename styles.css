@@ -499,6 +499,10 @@ h3,
   margin: 4px 0 10px;
 }
 
+.form-status.is-ok {
+  color: var(--accent);
+}
+
 .reg-details {
   display: flex;
   flex-direction: column;
