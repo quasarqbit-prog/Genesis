@@ -374,28 +374,121 @@ function downloadToFile(url, destPath) {
   });
 }
 
+async function telegramApi(method, payload = null) {
+  if (!TELEGRAM_BOT_TOKEN) {
+    throw new Error("TELEGRAM_BOT_TOKEN не настроен");
+  }
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN.trim()}/${method}`;
+  const init = payload
+    ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    : { method: "GET" };
+  const res = await fetch(url, init);
+  const data = await res.json().catch(() => ({}));
+  if (!data.ok) {
+    const desc = data.description || `Telegram API ${method} failed`;
+    throw new Error(desc);
+  }
+  return data.result;
+}
+
 async function resolveTelegramPhotoUrl(telegramId, widgetPhotoUrl) {
   if (widgetPhotoUrl) return String(widgetPhotoUrl);
   if (!TELEGRAM_BOT_TOKEN || !telegramId) return "";
   try {
-    const photosRes = await fetch(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN.trim()}/getUserProfilePhotos?user_id=${telegramId}&limit=1`
+    const photos = await telegramApi(
+      `getUserProfilePhotos?user_id=${telegramId}&limit=1`
     );
-    const photos = await photosRes.json();
-    const sizes = photos?.result?.photos?.[0];
+    const sizes = photos?.photos?.[0];
     if (!Array.isArray(sizes) || !sizes.length) return "";
     const best = sizes[sizes.length - 1];
-    const fileRes = await fetch(
-      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN.trim()}/getFile?file_id=${encodeURIComponent(best.file_id)}`
+    const fileData = await telegramApi(
+      `getFile?file_id=${encodeURIComponent(best.file_id)}`
     );
-    const fileData = await fileRes.json();
-    const filePath = fileData?.result?.file_path;
+    const filePath = fileData?.file_path;
     if (!filePath) return "";
     return `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN.trim()}/${filePath}`;
   } catch (err) {
     console.warn("resolveTelegramPhotoUrl:", err.message);
     return "";
   }
+}
+
+async function handleTelegramUpdate(update) {
+  const msg = update?.message || update?.edited_message;
+  if (!msg?.chat?.id) return;
+  const text = String(msg.text || "").trim();
+  const chatId = msg.chat.id;
+  if (!text.startsWith("/start") && !text.startsWith("/help")) return;
+
+  const botName = TELEGRAM_BOT_USERNAME
+    ? `@${TELEGRAM_BOT_USERNAME}`
+    : "бот Genesis";
+  const reply =
+    `Привет! Это ${botName}.\n\n` +
+    `Авторизация и аватарка работают через сайт Genesis.\n` +
+    `1) Открой сайт\n` +
+    `2) Нажми «Войти через Telegram»\n` +
+    `3) Вернись на сайт — аватар подтянется сам\n\n` +
+    `Команда /start нужна только чтобы бот мог читать твоё фото профиля.`;
+
+  try {
+    await telegramApi("sendMessage", {
+      chat_id: chatId,
+      text: reply,
+    });
+  } catch (err) {
+    console.warn("telegram sendMessage:", err.message);
+  }
+}
+
+function startTelegramBotPolling() {
+  if (!TELEGRAM_BOT_TOKEN) {
+    console.warn("Telegram bot polling skipped: no TELEGRAM_BOT_TOKEN");
+    return;
+  }
+
+  let offset = 0;
+  let stopped = false;
+
+  const stop = () => {
+    stopped = true;
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+
+  (async () => {
+    try {
+      await telegramApi("deleteWebhook", { drop_pending_updates: false });
+      const me = await telegramApi("getMe");
+      console.log(
+        `Telegram bot polling: @${me.username || "?"} (id ${me.id})`
+      );
+    } catch (err) {
+      console.error("Telegram bot init failed:", err.message);
+      return;
+    }
+
+    while (!stopped) {
+      try {
+        const updates = await telegramApi("getUpdates", {
+          offset,
+          timeout: 25,
+          allowed_updates: ["message"],
+        });
+        for (const update of updates || []) {
+          offset = Math.max(offset, Number(update.update_id) + 1);
+          await handleTelegramUpdate(update);
+        }
+      } catch (err) {
+        console.warn("Telegram polling:", err.message);
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    }
+  })();
 }
 
 async function saveTelegramAvatar(userId, photoUrl, telegramId = null) {
@@ -933,7 +1026,7 @@ app.post("/api/user/avatar/refresh", authMiddleware, async (req, res) => {
     if (!avatarUrl) {
       return res.status(404).json({
         error:
-          "Не удалось получить фото. Откройте бота в Telegram (/start) и войдите через Telegram ещё раз",
+          "Фото не найдено. Напиши боту /start, убедись что в Telegram есть аватар, затем на сайте нажми «Войти через Telegram»",
       });
     }
     const user = await loadUserPublic(req.user.id);
@@ -1119,6 +1212,7 @@ server.listen(PORT, async () => {
   } catch (err) {
     console.error("DB schema ensure failed:", err.message);
   }
+  startTelegramBotPolling();
   console.log(`Genesis API + Socket.io on :${PORT}`);
 });
 
