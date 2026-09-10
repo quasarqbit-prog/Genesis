@@ -15,7 +15,9 @@ const PORT = Number(process.env.PORT) || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 const BCRYPT_ROUNDS = 12;
-const USERNAME_RE = /^[A-Za-z0-9_]{3,32}$/;
+const MC_NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
+const TELEGRAM_RE = /^@?[A-Za-z0-9_]{5,32}$/;
+const MOD_API_KEY = process.env.MOD_API_KEY || "";
 
 const app = express();
 const server = http.createServer(app);
@@ -50,9 +52,15 @@ const pool = mysql.createPool({
 });
 
 function signToken(user) {
-  return jwt.sign({ sub: user.id, username: user.username }, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
-  });
+  return jwt.sign(
+    {
+      sub: user.id,
+      mcNick: user.mcNick,
+      telegram: user.telegram,
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
 }
 
 function authMiddleware(req, res, next) {
@@ -63,11 +71,25 @@ function authMiddleware(req, res, next) {
   }
   try {
     const payload = jwt.verify(match[1], JWT_SECRET);
-    req.user = { id: payload.sub, username: payload.username };
+    req.user = {
+      id: payload.sub,
+      mcNick: payload.mcNick,
+      telegram: payload.telegram,
+    };
     return next();
   } catch {
     return res.status(401).json({ error: "Сессия недействительна" });
   }
+}
+
+function normalizeTelegram(raw) {
+  const t = String(raw || "").trim();
+  if (!t) return "";
+  return t.startsWith("@") ? t : `@${t}`;
+}
+
+function normalizeMcNick(raw) {
+  return String(raw || "").trim();
 }
 
 function parseFormJson(raw) {
@@ -80,12 +102,18 @@ function parseFormJson(raw) {
   }
 }
 
-async function ensureProfile(userId) {
+async function ensureProfile(userId, mcNick = null) {
   await pool.execute(
-    `INSERT IGNORE INTO profiles (user_id, registered, form_json)
-     VALUES (:userId, 0, CAST('{}' AS JSON))`,
-    { userId }
+    `INSERT IGNORE INTO profiles (user_id, mc_nick, registered, form_json)
+     VALUES (:userId, :mcNick, 0, CAST('{}' AS JSON))`,
+    { userId, mcNick }
   );
+  if (mcNick) {
+    await pool.execute(
+      `UPDATE profiles SET mc_nick = :mcNick WHERE user_id = :userId`,
+      { userId, mcNick }
+    );
+  }
   await pool.execute(
     `INSERT IGNORE INTO game_stats (user_id, score, inventory_json, meta_json)
      VALUES (:userId, 0, CAST('{}' AS JSON), CAST('{}' AS JSON))`,
@@ -106,32 +134,53 @@ app.get("/api/health", async (_req, res) => {
 /* ---------- Auth ---------- */
 app.post("/api/register", async (req, res) => {
   try {
-    const username = String(req.body?.username || "").trim();
+    const telegram = normalizeTelegram(req.body?.telegram);
+    const mcNick = normalizeMcNick(req.body?.mcNick || req.body?.mc_nick);
+    const accountType = String(req.body?.accountType || req.body?.account_type || "")
+      .trim()
+      .toLowerCase();
     const password = String(req.body?.password || "");
+    const passwordConfirm = String(req.body?.passwordConfirm || req.body?.password_confirm || "");
 
-    if (!USERNAME_RE.test(username)) {
+    if (!TELEGRAM_RE.test(telegram)) {
+      return res.status(400).json({ error: "Telegram: формат @example (5–32 символа)" });
+    }
+    if (!MC_NICK_RE.test(mcNick)) {
       return res.status(400).json({
-        error: "Логин: 3–32 символа, латиница, цифры и _",
+        error: "Ник Minecraft: 3–16 символов, латиница, цифры и _",
       });
+    }
+    if (accountType !== "pirate" && accountType !== "licensed") {
+      return res.status(400).json({ error: "Выберите тип аккаунта" });
     }
     if (password.length < 6 || password.length > 72) {
       return res.status(400).json({ error: "Пароль: от 6 до 72 символов" });
     }
+    if (password !== passwordConfirm) {
+      return res.status(400).json({ error: "Пароли не совпадают" });
+    }
 
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const [result] = await pool.execute(
-      `INSERT INTO users (username, password_hash) VALUES (:username, :hash)`,
-      { username, hash }
+      `INSERT INTO users (telegram, mc_nick, account_type, password_hash)
+       VALUES (:telegram, :mcNick, :accountType, :hash)`,
+      { telegram, mcNick, accountType, hash }
     );
     const userId = result.insertId;
-    await ensureProfile(userId);
+    await ensureProfile(userId, mcNick);
 
-    const user = { id: userId, username };
-    const token = signToken(user);
-    return res.status(201).json({ token, user });
+    const user = { id: userId, mcNick, telegram, accountType };
+    return res.status(201).json({ token: signToken(user), user });
   } catch (err) {
     if (err && err.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({ error: "Такой логин уже занят" });
+      const msg = String(err.message || "");
+      if (msg.includes("telegram")) {
+        return res.status(409).json({ error: "Этот Telegram уже зарегистрирован" });
+      }
+      if (msg.includes("mc_nick")) {
+        return res.status(409).json({ error: "Этот ник Minecraft уже занят" });
+      }
+      return res.status(409).json({ error: "Аккаунт уже существует" });
     }
     console.error("register:", err);
     return res.status(500).json({ error: "Ошибка регистрации" });
@@ -140,12 +189,21 @@ app.post("/api/register", async (req, res) => {
 
 app.post("/api/login", async (req, res) => {
   try {
-    const username = String(req.body?.username || "").trim();
+    const loginRaw = String(req.body?.login || req.body?.username || "").trim();
     const password = String(req.body?.password || "");
+    if (!loginRaw || !password) {
+      return res.status(400).json({ error: "Введите логин и пароль" });
+    }
+
+    const loginTg = normalizeTelegram(loginRaw);
+    const loginNick = normalizeMcNick(loginRaw);
 
     const [rows] = await pool.execute(
-      `SELECT id, username, password_hash FROM users WHERE username = :username LIMIT 1`,
-      { username }
+      `SELECT id, telegram, mc_nick, account_type, password_hash
+       FROM users
+       WHERE telegram = :loginTg OR mc_nick = :loginNick
+       LIMIT 1`,
+      { loginTg, loginNick }
     );
     const row = rows[0];
     if (!row) {
@@ -157,8 +215,13 @@ app.post("/api/login", async (req, res) => {
       return res.status(401).json({ error: "Неверный логин или пароль" });
     }
 
-    await ensureProfile(row.id);
-    const user = { id: row.id, username: row.username };
+    await ensureProfile(row.id, row.mc_nick);
+    const user = {
+      id: row.id,
+      mcNick: row.mc_nick,
+      telegram: row.telegram,
+      accountType: row.account_type,
+    };
     return res.json({ token: signToken(user), user });
   } catch (err) {
     console.error("login:", err);
@@ -166,10 +229,58 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
+/** Проверка пароля для Minecraft-мода */
+app.post("/api/mc/verify", async (req, res) => {
+  try {
+    if (MOD_API_KEY) {
+      const key = req.headers["x-mod-key"] || req.body?.apiKey;
+      if (key !== MOD_API_KEY) {
+        return res.status(403).json({ ok: false, error: "Forbidden" });
+      }
+    }
+
+    const nick = normalizeMcNick(req.body?.nick || req.body?.mcNick);
+    const password = String(req.body?.password || "");
+    if (!MC_NICK_RE.test(nick) || !password) {
+      return res.status(400).json({ ok: false, error: "Bad request" });
+    }
+
+    const [rows] = await pool.execute(
+      `SELECT password_hash, account_type, telegram
+       FROM users WHERE mc_nick = :nick LIMIT 1`,
+      { nick }
+    );
+    const row = rows[0];
+    if (!row) {
+      return res.status(401).json({ ok: false, error: "Unknown player" });
+    }
+
+    const ok = await bcrypt.compare(password, row.password_hash);
+    if (!ok) {
+      return res.status(401).json({ ok: false, error: "Wrong password" });
+    }
+
+    return res.json({
+      ok: true,
+      nick,
+      accountType: row.account_type,
+      telegram: row.telegram,
+    });
+  } catch (err) {
+    console.error("mc verify:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
 /* ---------- Profile / race data ---------- */
 app.get("/api/user/profile", authMiddleware, async (req, res) => {
   try {
-    await ensureProfile(req.user.id);
+    await ensureProfile(req.user.id, req.user.mcNick || null);
+    const [userRows] = await pool.execute(
+      `SELECT telegram, mc_nick, account_type FROM users WHERE id = :userId LIMIT 1`,
+      { userId: req.user.id }
+    );
+    const u = userRows[0] || {};
     const [rows] = await pool.execute(
       `SELECT p.registered, p.mc_nick, p.race_name, p.form_json,
               p.updated_at, g.score, g.inventory_json, g.meta_json
@@ -181,9 +292,14 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
     );
     const row = rows[0] || {};
     return res.json({
-      user: req.user,
+      user: {
+        id: req.user.id,
+        mcNick: u.mc_nick || req.user.mcNick || "",
+        telegram: u.telegram || req.user.telegram || "",
+        accountType: u.account_type || "",
+      },
       registered: Boolean(row.registered),
-      mcNick: row.mc_nick || "",
+      mcNick: u.mc_nick || row.mc_nick || "",
       raceName: row.race_name || "",
       form: parseFormJson(row.form_json),
       stats: {
@@ -283,7 +399,11 @@ io.use((socket, next) => {
   }
   try {
     const payload = jwt.verify(String(token), JWT_SECRET);
-    socket.data.user = { id: payload.sub, username: payload.username };
+    socket.data.user = {
+      id: payload.sub,
+      mcNick: payload.mcNick,
+      telegram: payload.telegram,
+    };
   } catch {
     socket.data.user = null;
   }
@@ -293,7 +413,7 @@ io.use((socket, next) => {
 io.on("connection", (socket) => {
   onlineUsers.set(socket.id, {
     userId: socket.data.user?.id || null,
-    username: socket.data.user?.username || null,
+    mcNick: socket.data.user?.mcNick || null,
   });
   broadcastPresence();
 
@@ -307,7 +427,7 @@ io.on("connection", (socket) => {
     const text = String(payload?.text || "").trim().slice(0, 300);
     if (!text) return;
     const username =
-      socket.data.user?.username ||
+      socket.data.user?.mcNick ||
       String(payload?.username || "Гость").slice(0, 32);
     io.emit("chat:message", {
       username,

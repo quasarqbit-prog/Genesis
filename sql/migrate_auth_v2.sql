@@ -1,11 +1,14 @@
--- Genesis MariaDB schema (auth v2)
-CREATE DATABASE IF NOT EXISTS genesis
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
+-- Миграция с старой схемы users(username) на telegram + mc_nick
+-- Выполнить на VPS: mysql -u genesis -p genesis < sql/migrate_auth_v2.sql
 
 USE genesis;
 
-CREATE TABLE IF NOT EXISTS users (
+-- Если таблица ещё старая — пересоздать users (ВНИМАНИЕ: удалит старых пользователей)
+DROP TABLE IF EXISTS game_stats;
+DROP TABLE IF EXISTS profiles;
+DROP TABLE IF EXISTS users;
+
+CREATE TABLE users (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT,
   telegram VARCHAR(64) NOT NULL,
   mc_nick VARCHAR(16) NOT NULL,
@@ -17,7 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   UNIQUE KEY uq_users_mc_nick (mc_nick)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS profiles (
+CREATE TABLE profiles (
   user_id INT UNSIGNED NOT NULL,
   mc_nick VARCHAR(16) NULL,
   race_name VARCHAR(64) NULL,
@@ -30,7 +33,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS game_stats (
+CREATE TABLE game_stats (
   user_id INT UNSIGNED NOT NULL,
   score INT NOT NULL DEFAULT 0,
   inventory_json JSON NULL,

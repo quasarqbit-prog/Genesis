@@ -437,6 +437,7 @@
   async function loadProfileFromServer() {
     if (!authToken) {
       profileCache = readLocalStorageFallback();
+      updateAuthChrome();
       return profileCache;
     }
     try {
@@ -447,9 +448,11 @@
         form: data.form && typeof data.form === "object" ? data.form : {},
       };
       writeLocalStorageFallback(profileCache);
+      updateAuthChrome();
       return profileCache;
     } catch (err) {
       if (err.status === 401) clearAuthSession();
+      else updateAuthChrome();
       profileCache = readLocalStorageFallback();
       return profileCache;
     }
@@ -476,17 +479,27 @@
     });
   }
 
+  function applyAuthUi() {
+    const displayNick = authUser?.mcNick || authUser?.username || "";
+    const loggedIn = Boolean(authToken && displayNick);
+    const sessionPending = Boolean(authToken && !displayNick);
+    const gate = document.getElementById("auth-gate");
+    const topbar = document.getElementById("topbar");
+    const stage = document.getElementById("app-stage");
+    const footer = document.getElementById("app-footer");
+    const nickEl = document.getElementById("corner-nick");
+
+    // Пока скрываем весь старый интерфейс — только фон + auth / ник
+    if (stage) stage.hidden = true;
+    if (footer) footer.hidden = true;
+
+    if (gate) gate.hidden = loggedIn || sessionPending;
+    if (topbar) topbar.hidden = !loggedIn;
+    if (nickEl) nickEl.textContent = displayNick;
+  }
+
   function updateAuthChrome() {
-    const userEl = document.getElementById("auth-user");
-    const openBtn = document.getElementById("auth-open-btn");
-    const logoutBtn = document.getElementById("auth-logout-btn");
-    const loggedIn = Boolean(authToken && authUser?.username);
-    if (userEl) {
-      userEl.hidden = !loggedIn;
-      userEl.textContent = loggedIn ? authUser.username : "";
-    }
-    if (openBtn) openBtn.hidden = loggedIn;
-    if (logoutBtn) logoutBtn.hidden = !loggedIn;
+    applyAuthUi();
   }
 
   function openAuthModal(tab = "login") {
@@ -521,8 +534,11 @@
     status.textContent = message;
   }
 
-  document.getElementById("auth-open-btn")?.addEventListener("click", () => {
+  document.getElementById("gate-login-btn")?.addEventListener("click", () => {
     openAuthModal("login");
+  });
+  document.getElementById("gate-register-btn")?.addEventListener("click", () => {
+    openAuthModal("register");
   });
   document.getElementById("auth-modal-close")?.addEventListener("click", closeAuthModal);
   document.getElementById("auth-modal")?.addEventListener("click", (e) => {
@@ -530,47 +546,66 @@
   });
   document.getElementById("auth-logout-btn")?.addEventListener("click", () => {
     clearAuthSession();
-    loadFormFromStorage();
-    updateRegisterChrome();
+    applyAuthUi();
     showToast("Вы вышли");
   });
   document.querySelectorAll(".auth-tab").forEach((btn) => {
     btn.addEventListener("click", () => setAuthTab(btn.dataset.authTab));
   });
+  document.querySelectorAll("[data-toggle-pass]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-toggle-pass");
+      const input = document.getElementById(id);
+      if (!input) return;
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      btn.textContent = show ? "✕" : "👁";
+    });
+  });
+
   document.getElementById("auth-login-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const username = document.getElementById("auth-login-user")?.value.trim() || "";
+    const login = document.getElementById("auth-login-user")?.value.trim() || "";
     const password = document.getElementById("auth-login-pass")?.value || "";
     try {
       const data = await api("/api/login", {
         method: "POST",
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ login, password }),
       });
       setAuthSession(data.token, data.user);
       await loadProfileFromServer();
-      loadFormFromStorage();
-      updateRegisterChrome();
       closeAuthModal();
+      applyAuthUi();
       showToast("Вход выполнен");
-      if (readStorage().registered) showCatalogView(true);
     } catch (err) {
       showAuthStatus(err.message || "Ошибка входа");
     }
   });
+
   document.getElementById("auth-register-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const username = document.getElementById("auth-reg-user")?.value.trim() || "";
+    const telegram = document.getElementById("auth-reg-telegram")?.value.trim() || "";
+    const mcNick = document.getElementById("auth-reg-nick")?.value.trim() || "";
+    const accountType =
+      document.querySelector('input[name="accountType"]:checked')?.value || "";
     const password = document.getElementById("auth-reg-pass")?.value || "";
+    const passwordConfirm = document.getElementById("auth-reg-pass2")?.value || "";
     try {
       const data = await api("/api/register", {
         method: "POST",
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          telegram,
+          mcNick,
+          accountType,
+          password,
+          passwordConfirm,
+        }),
       });
       setAuthSession(data.token, data.user);
       await loadProfileFromServer();
       closeAuthModal();
+      applyAuthUi();
       showToast("Аккаунт создан");
-      showAuthStatus("Аккаунт создан", true);
     } catch (err) {
       showAuthStatus(err.message || "Ошибка регистрации");
     }
@@ -2324,8 +2359,8 @@
     await loadProfileFromServer();
     loadFormFromStorage();
     updateRegisterChrome();
-    if (readStorage().registered) showCatalogView(false);
-    else showRegistrationShell(false);
+    // Старый UI (раса / каталог) скрыт — только фон и auth
+    applyAuthUi();
   })();
 
   /* ---------- Main loop ---------- */

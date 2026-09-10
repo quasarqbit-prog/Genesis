@@ -22,51 +22,81 @@
     <div class="fireflies" id="fireflies"></div>
   </div>
 
-  <header class="topbar">
-    <div class="brand-mark">GENESIS</div>
-    <nav class="nav">
-      <button type="button" class="nav-item" data-nav="server">СЕРВЕР</button>
-      <button type="button" class="nav-item" data-nav="rules">ПРАВИЛА</button>
-      <button type="button" class="nav-item" id="nav-register" data-nav="register">РЕГИСТРАЦИЯ</button>
-      <button type="button" class="nav-item" id="nav-catalog" data-nav="catalog">КАТАЛОГ</button>
-    </nav>
-    <div class="auth-bar" id="auth-bar">
-      <span class="auth-online" id="auth-online" hidden>онлайн: 0</span>
-      <span class="auth-user" id="auth-user" hidden></span>
-      <button type="button" class="auth-btn" id="auth-open-btn">ВХОД</button>
-      <button type="button" class="auth-btn auth-btn--ghost" id="auth-logout-btn" hidden>ВЫЙТИ</button>
+  <header class="topbar topbar--minimal" id="topbar" hidden>
+    <div class="corner-user" id="corner-user">
+      <span class="corner-nick" id="corner-nick"></span>
+      <button type="button" class="auth-btn auth-btn--ghost" id="auth-logout-btn" title="Выйти">×</button>
     </div>
   </header>
 
+  <div class="auth-gate" id="auth-gate">
+    <div class="auth-gate__panel">
+      <h1 class="auth-gate__brand">GENESIS</h1>
+      <p class="auth-gate__lead">Вход на сервер</p>
+      <div class="auth-gate__actions">
+        <button type="button" class="mc-btn" id="gate-login-btn">ВХОД</button>
+        <button type="button" class="mc-btn mc-btn--ghost" id="gate-register-btn">РЕГИСТРАЦИЯ</button>
+      </div>
+    </div>
+  </div>
+
   <div class="auth-modal" id="auth-modal" hidden>
     <div class="auth-modal__panel" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
-      <button type="button" class="auth-modal__close" id="auth-modal-close" aria-label="Закрыть">×</button>
-      <h2 class="auth-modal__title" id="auth-modal-title">Аккаунт</h2>
-      <div class="auth-tabs" role="tablist">
-        <button type="button" class="auth-tab is-active" data-auth-tab="login">Вход</button>
-        <button type="button" class="auth-tab" data-auth-tab="register">Регистрация</button>
+      <div class="auth-modal__head">
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="auth-tab is-active" data-auth-tab="login">Вход</button>
+          <button type="button" class="auth-tab" data-auth-tab="register">Регистрация</button>
+        </div>
+        <button type="button" class="auth-modal__close" id="auth-modal-close" aria-label="Закрыть">×</button>
       </div>
+
       <form class="auth-form" id="auth-login-form">
-        <label class="field-label" for="auth-login-user">Логин</label>
-        <input class="field-input" id="auth-login-user" type="text" maxlength="32" autocomplete="username" required />
+        <label class="field-label" for="auth-login-user">Telegram или ник Minecraft</label>
+        <input class="field-input" id="auth-login-user" type="text" maxlength="64" autocomplete="username" required />
         <label class="field-label" for="auth-login-pass">Пароль</label>
-        <input class="field-input" id="auth-login-pass" type="password" maxlength="72" autocomplete="current-password" required />
+        <div class="pass-row">
+          <input class="field-input" id="auth-login-pass" type="password" maxlength="72" autocomplete="current-password" required />
+          <button type="button" class="pass-toggle" data-toggle-pass="auth-login-pass" aria-label="Показать пароль">👁</button>
+        </div>
         <button type="submit" class="mc-btn">ВОЙТИ</button>
       </form>
+
       <form class="auth-form" id="auth-register-form" hidden>
-        <label class="field-label" for="auth-reg-user">Логин</label>
-        <input class="field-input" id="auth-reg-user" type="text" maxlength="32" autocomplete="username" required />
-        <p class="field-hint">3–32 · латиница, цифры и _</p>
-        <label class="field-label" for="auth-reg-pass">Пароль</label>
-        <input class="field-input" id="auth-reg-pass" type="password" maxlength="72" autocomplete="new-password" required />
-        <p class="field-hint">минимум 6 символов</p>
-        <button type="submit" class="mc-btn">СОЗДАТЬ</button>
+        <label class="field-label" for="auth-reg-telegram">Айди Telegram <span class="req">*</span></label>
+        <input class="field-input" id="auth-reg-telegram" type="text" maxlength="33" placeholder="@example" autocomplete="off" required />
+        <p class="field-hint">@example</p>
+
+        <label class="field-label" for="auth-reg-nick">Ник внутри игры Minecraft <span class="req">*</span></label>
+        <input class="field-input" id="auth-reg-nick" type="text" maxlength="16" autocomplete="off" spellcheck="false" required />
+
+        <div class="field-label">Аккаунт <span class="req">*</span></div>
+        <div class="choice-grid choice-grid--2" role="radiogroup" aria-label="Тип аккаунта">
+          <label class="choice-chip"><input type="radio" name="accountType" value="pirate" checked /><span>Пиратский</span></label>
+          <label class="choice-chip"><input type="radio" name="accountType" value="licensed" /><span>Лицензионный</span></label>
+        </div>
+
+        <label class="field-label" for="auth-reg-pass">Пароль <span class="req">*</span></label>
+        <div class="pass-row">
+          <input class="field-input" id="auth-reg-pass" type="password" maxlength="72" autocomplete="new-password" required />
+          <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass" aria-label="Показать пароль">👁</button>
+        </div>
+        <p class="field-hint">Этот пароль будет использоваться в Minecraft при входе.</p>
+
+        <label class="field-label" for="auth-reg-pass2">Повтор пароля <span class="req">*</span></label>
+        <div class="pass-row">
+          <input class="field-input" id="auth-reg-pass2" type="password" maxlength="72" autocomplete="new-password" required />
+          <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass2" aria-label="Показать пароль">👁</button>
+        </div>
+        <p class="field-hint">Для подтверждения</p>
+
+        <button type="submit" class="mc-btn">ЗАРЕГИСТРИРОВАТЬСЯ</button>
       </form>
+
       <p class="form-status" id="auth-status" hidden></p>
     </div>
   </div>
 
-  <main class="stage">
+  <main class="stage" id="app-stage" hidden>
     <div class="panels stage-view is-active" id="panels">
       <section class="hero panel" id="hero">
         <h1 class="logo">GENESIS</h1>
@@ -942,7 +972,7 @@
 
   <div class="toast" id="toast" hidden>IP скопирован</div>
 
-  <footer class="footer">
+  <footer class="footer" id="app-footer" hidden>
     <a
       class="footer-link"
       href="https://t.me/daps_dapratt"
