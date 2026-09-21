@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=16" />
+  <link rel="stylesheet" href="styles.css?v=17" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -220,6 +220,61 @@
                     autocomplete="off"
                   />
                   <button type="button" class="mc-btn mc-btn--compact" id="panel-unban-btn">РАЗБАН</button>
+                </div>
+              </div>
+
+              <div class="panel-sep panel-sep--admin" aria-hidden="true"></div>
+
+              <div class="panel-block panel-admin-only" id="panel-password-block">
+                <div class="panel-block__cmd">password &lt;ник&gt; unset | &lt;пароль&gt; &lt;повтор&gt;</div>
+                <div class="panel-block__body panel-block__body--ban">
+                  <input
+                    class="field-input"
+                    id="panel-password-nick"
+                    type="text"
+                    maxlength="32"
+                    placeholder="Ник"
+                    spellcheck="false"
+                    autocomplete="off"
+                  />
+                  <input
+                    class="field-input"
+                    id="panel-password-new"
+                    type="text"
+                    maxlength="72"
+                    placeholder="Новый пароль"
+                    spellcheck="false"
+                    autocomplete="off"
+                  />
+                  <input
+                    class="field-input"
+                    id="panel-password-confirm"
+                    type="text"
+                    maxlength="72"
+                    placeholder="Повтор"
+                    spellcheck="false"
+                    autocomplete="off"
+                  />
+                  <button type="button" class="mc-btn mc-btn--compact" id="panel-password-set-btn">ЗАДАТЬ</button>
+                  <button type="button" class="mc-btn mc-btn--compact" id="panel-password-unset-btn">UNSET</button>
+                </div>
+              </div>
+
+              <div class="panel-sep panel-sep--admin" aria-hidden="true"></div>
+
+              <div class="panel-block panel-admin-only" id="panel-password-show-block">
+                <div class="panel-block__cmd">password_show [ник]</div>
+                <div class="panel-block__body">
+                  <input
+                    class="field-input"
+                    id="panel-password-show-nick"
+                    type="text"
+                    maxlength="32"
+                    placeholder="Ник (пусто = все)"
+                    spellcheck="false"
+                    autocomplete="off"
+                  />
+                  <button type="button" class="mc-btn mc-btn--compact" id="panel-password-show-btn">ПОКАЗАТЬ</button>
                 </div>
               </div>
 
@@ -1235,6 +1290,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=16"></script>
+  <script src="script.js?v=17"></script>
 </body>
 </html>

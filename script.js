@@ -971,13 +971,18 @@
       if (activePanel) setHubTab("profile");
     }
     const permBlock = document.getElementById("panel-perm-block");
-    const canPerm = Boolean(
+    const canAdmin = Boolean(
       authUser?.isFounder ||
         authUser?.role === "founder" ||
-        authUser?.role === "admin" ||
-        (authUser?.isAdmin && authUser?.role !== "helper")
+        authUser?.role === "admin"
     );
-    if (permBlock) permBlock.hidden = !canPerm;
+    if (permBlock) permBlock.hidden = !canAdmin;
+    document.querySelectorAll(".panel-admin-only").forEach((el) => {
+      el.hidden = !canAdmin;
+    });
+    document.querySelectorAll(".panel-sep--admin").forEach((el) => {
+      el.hidden = !canAdmin;
+    });
   }
 
   function setHubTab(tab) {
@@ -1732,15 +1737,31 @@
       usage: "unban <ник>",
       hint: "Снять бан",
     },
+    {
+      name: "password",
+      usage: "password <ник> unset | <пароль> <повтор>",
+      hint: "Сменить/сбросить пароль (только админ)",
+      adminOnly: true,
+    },
+    {
+      name: "password_show",
+      usage: "password_show [ник]",
+      hint: "Показать пароли (только админ)",
+      adminOnly: true,
+    },
   ];
   let consoleSuggestIndex = -1;
 
-  function canUsePermissionCmd() {
+  function canUseAdminCmd() {
     return Boolean(
       authUser?.role === "founder" ||
         authUser?.role === "admin" ||
         authUser?.isFounder
     );
+  }
+
+  function canUsePermissionCmd() {
+    return canUseAdminCmd();
   }
 
   function readConsoleHistory() {
@@ -1822,6 +1843,22 @@
           hint: action,
           insert: `permission ${parts[1]} ${action}`,
         }));
+    }
+    if (head === "password" && parts.length === 2) {
+      return [
+        {
+          name: "unset",
+          usage: `password ${parts[1]} unset`,
+          hint: "Сбросить пароль",
+          insert: `password ${parts[1]} unset`,
+        },
+        {
+          name: "set",
+          usage: `password ${parts[1]} <пароль> <повтор>`,
+          hint: "Задать пароль",
+          insert: `password ${parts[1]} `,
+        },
+      ];
     }
     if (head === "ban" && parts.length >= 4) {
       return ["second", "minute", "hour", "day"]
@@ -2105,6 +2142,60 @@
         errEl.textContent = err.message || "Ошибка";
       }
     }
+  });
+
+  async function runControllerPassword(line) {
+    const errEl = document.getElementById("panel-controller-error");
+    const statusEl = document.getElementById("panel-controller-status");
+    if (errEl) {
+      errEl.hidden = true;
+      errEl.textContent = "";
+    }
+    try {
+      const data = await runPanelCommand(line);
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.textContent = data?.message || "Готово";
+      }
+    } catch (err) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = err.message || "Ошибка";
+      }
+    }
+  }
+
+  document.getElementById("panel-password-set-btn")?.addEventListener("click", async () => {
+    const nick = String(document.getElementById("panel-password-nick")?.value || "").trim();
+    const pass = String(document.getElementById("panel-password-new")?.value || "");
+    const confirm = String(document.getElementById("panel-password-confirm")?.value || "");
+    const errEl = document.getElementById("panel-controller-error");
+    if (!nick || !pass) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = "Укажи ник и пароль";
+      }
+      return;
+    }
+    await runControllerPassword(`password ${nick} ${pass} ${confirm}`);
+  });
+
+  document.getElementById("panel-password-unset-btn")?.addEventListener("click", async () => {
+    const nick = String(document.getElementById("panel-password-nick")?.value || "").trim();
+    const errEl = document.getElementById("panel-controller-error");
+    if (!nick) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = "Укажи ник";
+      }
+      return;
+    }
+    await runControllerPassword(`password ${nick} unset`);
+  });
+
+  document.getElementById("panel-password-show-btn")?.addEventListener("click", async () => {
+    const nick = String(document.getElementById("panel-password-show-nick")?.value || "").trim();
+    await runControllerPassword(nick ? `password_show ${nick}` : "password_show");
   });
 
   document.addEventListener("click", (e) => {

@@ -357,6 +357,20 @@ async function ensureSchema() {
         ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  try {
+    await pool.query(
+      `ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(255) NULL`
+    );
+  } catch (err) {
+    console.warn("password_hash null migrate:", err.message);
+  }
+  if (!(await columnExists("users", "password_plain"))) {
+    await pool.query(
+      `ALTER TABLE users
+       ADD COLUMN password_plain VARCHAR(72) NULL AFTER password_hash`
+    );
+  }
   if (!(await columnExists("users", "telegram_id"))) {
     await pool.query(
       `ALTER TABLE users ADD COLUMN telegram_id BIGINT NULL AFTER telegram`
@@ -1062,6 +1076,114 @@ async function applyUnbanCommand(actor, nick) {
   };
 }
 
+async function applyPasswordCommand(actor, nick, modeOrPass, confirmPass) {
+  if (!isAdminRole(actor.role)) {
+    const err = new Error("Команда password только для админов");
+    err.status = 403;
+    throw err;
+  }
+  const row = await findUserRowByNick(nick);
+  if (!row) {
+    const err = new Error("Пользователь не найден");
+    err.status = 404;
+    throw err;
+  }
+  const mode = String(modeOrPass || "").trim();
+  if (!mode) {
+    const err = new Error(
+      "Формат: password <ник> unset | password <ник> <пароль> <повтор>"
+    );
+    err.status = 400;
+    throw err;
+  }
+  if (mode.toLowerCase() === "unset") {
+    await pool.execute(
+      `UPDATE users SET password_hash = NULL, password_plain = NULL WHERE id = :userId`,
+      { userId: row.id }
+    );
+    return {
+      ok: true,
+      message: `Пароль ${row.mc_nick}: unset (вход только через Telegram)`,
+    };
+  }
+  const pass = mode;
+  const confirm = String(confirmPass || "");
+  if (pass.length < 6 || pass.length > 72) {
+    const err = new Error("Пароль: 6–72 символа");
+    err.status = 400;
+    throw err;
+  }
+  if (pass !== confirm) {
+    const err = new Error("Пароли не совпадают");
+    err.status = 400;
+    throw err;
+  }
+  const hash = await bcrypt.hash(pass, BCRYPT_ROUNDS);
+  await pool.execute(
+    `UPDATE users
+     SET password_hash = :hash, password_plain = :plain
+     WHERE id = :userId`,
+    { hash, plain: pass, userId: row.id }
+  );
+  return {
+    ok: true,
+    message: `Пароль ${row.mc_nick} установлен`,
+  };
+}
+
+async function applyPasswordShowCommand(actor, nickRaw) {
+  if (!isAdminRole(actor.role)) {
+    const err = new Error("Команда password_show только для админов");
+    err.status = 403;
+    throw err;
+  }
+  const nick = String(nickRaw || "").trim();
+  if (nick) {
+    const row = await findUserRowByNick(nick);
+    if (!row) {
+      const err = new Error("Пользователь не найден");
+      err.status = 404;
+      throw err;
+    }
+    const [rows] = await pool.execute(
+      `SELECT mc_nick, password_hash, password_plain
+       FROM users WHERE id = :userId LIMIT 1`,
+      { userId: row.id }
+    );
+    const u = rows[0];
+    const value = formatPasswordShowValue(u);
+    return {
+      ok: true,
+      message: `${u.mc_nick}: ${value}`,
+      entries: [{ nick: u.mc_nick, password: value }],
+    };
+  }
+
+  const [rows] = await pool.execute(
+    `SELECT mc_nick, password_hash, password_plain
+     FROM users
+     ORDER BY mc_nick ASC
+     LIMIT 500`
+  );
+  const entries = rows.map((u) => ({
+    nick: u.mc_nick,
+    password: formatPasswordShowValue(u),
+  }));
+  const message = entries.map((e) => `${e.nick}: ${e.password}`).join(", ");
+  return {
+    ok: true,
+    message: message || "Нет пользователей",
+    entries,
+  };
+}
+
+function formatPasswordShowValue(row) {
+  if (!row?.password_hash) return "unset";
+  const plain = String(row.password_plain || "");
+  if (plain) return plain;
+  return "set";
+}
+
 async function executePanelLine(actor, lineRaw) {
   const line = String(lineRaw || "").trim();
   if (!line) {
@@ -1093,6 +1215,12 @@ async function executePanelLine(actor, lineRaw) {
   }
   if (cmd === "unban") {
     return applyUnbanCommand(actor, parts[1]);
+  }
+  if (cmd === "password") {
+    return applyPasswordCommand(actor, parts[1], parts[2], parts[3]);
+  }
+  if (cmd === "password_show") {
+    return applyPasswordShowCommand(actor, parts[1] || "");
   }
   const err = new Error(`Неизвестная команда: ${cmd}`);
   err.status = 400;
@@ -1457,6 +1585,12 @@ app.post("/api/login", async (req, res) => {
     if (!row) {
       return res.status(401).json({ error: "Неверный ник или пароль" });
     }
+    if (!row.password_hash) {
+      return res.status(401).json({
+        error: "Вход по паролю отключён. Войдите через Telegram",
+        field: "password",
+      });
+    }
 
     const ok = await bcrypt.compare(password, row.password_hash);
     if (!ok) {
@@ -1499,6 +1633,9 @@ app.post("/api/mc/verify", async (req, res) => {
     const row = rows[0];
     if (!row) {
       return res.status(401).json({ ok: false, error: "Unknown player" });
+    }
+    if (!row.password_hash) {
+      return res.status(401).json({ ok: false, error: "Password unset" });
     }
 
     const ok = await bcrypt.compare(password, row.password_hash);
@@ -1835,7 +1972,9 @@ app.patch("/api/user/password", authMiddleware, async (req, res) => {
 
     const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await pool.execute(
-      `UPDATE users SET password_hash = :hash WHERE id = :userId`,
+      `UPDATE users
+       SET password_hash = :hash, password_plain = NULL
+       WHERE id = :userId`,
       { hash, userId: req.user.id }
     );
     return res.json({ ok: true });
