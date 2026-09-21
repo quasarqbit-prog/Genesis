@@ -552,13 +552,14 @@
 
   function renderPresenceUser(user) {
     const id = Number(user.id);
-    const nick = escapeHtml(user.mcNick || "—");
+    const displayNick = String(user.siteNick || user.mcNick || "—");
+    const nick = escapeHtml(displayNick);
     const tgRaw = String(user.telegram || "").trim();
     const tg = tgRaw
       ? escapeHtml(tgRaw.startsWith("@") ? tgRaw : `@${tgRaw}`)
       : "";
     const avatarUrl = playerAvatarSrc(user.avatarUrl);
-    const letter = escapeHtml((user.mcNick || "?").slice(0, 1).toUpperCase());
+    const letter = escapeHtml((displayNick || "?").slice(0, 1).toUpperCase());
     const avatarHtml = avatarUrl
       ? `<img src="${escapeHtml(avatarUrl)}" alt="" />`
       : `<span class="presence-avatar__fallback">${letter}</span>`;
@@ -649,19 +650,22 @@
 
   function applyAuthUi() {
     const displayNick = authUser?.mcNick || authUser?.username || "";
+    const siteNick = authUser?.siteNick || "";
     const avatarUrl = authUser?.avatarUrl || "";
     const loggedIn = Boolean(authToken && displayNick);
     const sessionPending = Boolean(authToken && !displayNick);
-    const isAdmin = Boolean(authUser?.isAdmin || authUser?.role === "admin");
     const gate = document.getElementById("auth-gate");
     const topbar = document.getElementById("topbar");
     const stage = document.getElementById("app-stage");
     const footer = document.getElementById("app-footer");
     const avatarImg = document.getElementById("profile-avatar-img");
     const avatarFallback = document.getElementById("profile-avatar-fallback");
-    const adminBtn = document.getElementById("admin-open-btn");
+    const hubAvatarImg = document.getElementById("hub-avatar-img");
+    const hubAvatarFallback = document.getElementById("hub-avatar-fallback");
     const adminShell = document.getElementById("admin-shell");
-    const hubNick = document.getElementById("hub-nick");
+    const hubSiteNick = document.getElementById("hub-site-nick");
+    const hubMcNick = document.getElementById("hub-mc-nick");
+    const profileFrame = document.getElementById("profile-frame");
 
     if (stage) stage.hidden = true;
     if (footer) footer.hidden = true;
@@ -696,35 +700,65 @@
       }
     }
 
-    if (hubNick && document.activeElement !== hubNick) {
-      hubNick.value = displayNick;
+    if (hubSiteNick && document.activeElement !== hubSiteNick) {
+      hubSiteNick.value = siteNick || String(authUser?.telegram || "").replace(/^@/, "");
     }
-    if (avatarImg && avatarFallback) {
+    if (hubMcNick && document.activeElement !== hubMcNick) {
+      hubMcNick.value = displayNick;
+    }
+
+    if (profileFrame) {
+      const shown = authUser?.showOnlineFrame !== false;
+      profileFrame.classList.toggle("is-shown", shown);
+      profileFrame.classList.toggle("is-hidden", !shown);
+    }
+
+    const syncAvatar = (img, fallback, nick) => {
+      if (!img || !fallback) return;
       if (avatarUrl) {
         const src = avatarUrl.includes("?")
           ? avatarUrl
           : `${avatarUrl}?v=${Date.now()}`;
-        avatarImg.onerror = () => {
-          avatarImg.hidden = true;
-          avatarFallback.hidden = false;
-          avatarFallback.textContent = (displayNick || "?").slice(0, 1).toUpperCase();
+        img.onerror = () => {
+          img.hidden = true;
+          fallback.hidden = false;
+          fallback.textContent = (nick || "?").slice(0, 1).toUpperCase();
         };
-        avatarImg.onload = () => {
-          avatarImg.hidden = false;
-          avatarFallback.hidden = true;
+        img.onload = () => {
+          img.hidden = false;
+          fallback.hidden = true;
         };
-        avatarImg.src = src;
-        avatarImg.hidden = false;
-        avatarFallback.hidden = true;
+        img.src = src;
+        img.hidden = false;
+        fallback.hidden = true;
       } else {
-        avatarImg.removeAttribute("src");
-        avatarImg.hidden = true;
-        avatarFallback.hidden = false;
-        avatarFallback.textContent = (displayNick || "?").slice(0, 1).toUpperCase();
+        img.removeAttribute("src");
+        img.hidden = true;
+        fallback.hidden = false;
+        fallback.textContent = (nick || "?").slice(0, 1).toUpperCase();
       }
-    }
-    if (adminBtn) adminBtn.hidden = !isAdmin;
+    };
+
+    syncAvatar(avatarImg, avatarFallback, displayNick);
+    syncAvatar(hubAvatarImg, hubAvatarFallback, displayNick);
+    syncPrivacyMarks();
     if (loggedIn) renderPlayersDirectory();
+  }
+
+  function syncPrivacyMarks() {
+    const marks = {
+      showSiteOnline: document.getElementById("privacy-site-mark"),
+      showServerOnline: document.getElementById("privacy-server-mark"),
+      showOnlineFrame: document.getElementById("privacy-frame-mark"),
+    };
+    const values = {
+      showSiteOnline: authUser?.showSiteOnline !== false,
+      showServerOnline: authUser?.showServerOnline !== false,
+      showOnlineFrame: authUser?.showOnlineFrame !== false,
+    };
+    Object.keys(marks).forEach((key) => {
+      if (marks[key]) marks[key].textContent = values[key] ? "X" : "";
+    });
   }
 
   function updateAuthChrome() {
@@ -1171,22 +1205,6 @@
   });
   document.getElementById("auth-modal-close")?.addEventListener("click", closeAuthModal);
 
-  function setHubTab(tab) {
-    const name = tab === "creation" ? "creation" : "profile";
-    document.querySelectorAll(".hub-nav__btn").forEach((btn) => {
-      btn.classList.toggle("is-active", btn.dataset.hubTab === name);
-    });
-    document.querySelectorAll("[data-hub-view]").forEach((view) => {
-      const active = view.dataset.hubView === name;
-      view.classList.toggle("is-active", active);
-      view.hidden = !active;
-    });
-  }
-
-  document.querySelectorAll(".hub-nav__btn").forEach((btn) => {
-    btn.addEventListener("click", () => setHubTab(btn.dataset.hubTab));
-  });
-
   function setHubFieldError(id, message) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -1199,12 +1217,137 @@
     el.textContent = message;
   }
 
-  document.getElementById("hub-nick-form")?.addEventListener("submit", async (e) => {
+  function closeHubMenus() {
+    const avatarMenu = document.getElementById("hub-avatar-menu");
+    const privacyMenu = document.getElementById("hub-privacy-menu");
+    if (avatarMenu) avatarMenu.hidden = true;
+    if (privacyMenu) privacyMenu.hidden = true;
+  }
+
+  function openHubMenu(id) {
+    closeHubMenus();
+    const menu = document.getElementById(id);
+    if (menu) menu.hidden = false;
+  }
+
+  document.getElementById("hub-avatar-edit-btn")?.addEventListener("click", (e) => {
     e.preventDefault();
-    setHubFieldError("hub-nick-error", "");
-    const mcNick = String(document.getElementById("hub-nick")?.value || "").trim();
-    if (!/^[A-Za-z0-9_]{3,16}$/.test(mcNick)) {
-      setHubFieldError("hub-nick-error", "Ник: 3–16 символов, латиница, цифры и _");
+    e.stopPropagation();
+    const menu = document.getElementById("hub-avatar-menu");
+    if (!menu) return;
+    if (menu.hidden) openHubMenu("hub-avatar-menu");
+    else menu.hidden = true;
+  });
+
+  document.getElementById("profile-frame")?.addEventListener("click", (e) => {
+    if (e.target.closest("#hub-avatar-edit-btn") || e.target.closest(".ctx-menu")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    syncPrivacyMarks();
+    const menu = document.getElementById("hub-privacy-menu");
+    if (!menu) return;
+    if (menu.hidden) openHubMenu("hub-privacy-menu");
+    else menu.hidden = true;
+  });
+
+  document.addEventListener("click", () => closeHubMenus());
+  document.getElementById("hub-avatar-menu")?.addEventListener("click", (e) => e.stopPropagation());
+  document.getElementById("hub-privacy-menu")?.addEventListener("click", (e) => e.stopPropagation());
+
+  document.getElementById("hub-avatar-upload-btn")?.addEventListener("click", () => {
+    closeHubMenus();
+    document.getElementById("hub-avatar-file")?.click();
+  });
+
+  document.getElementById("hub-avatar-file")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!/^image\/(png|jpeg|jpg|webp|gif)$/i.test(file.type)) {
+      showToast("Нужен файл PNG/JPEG/WebP/GIF");
+      return;
+    }
+    if (file.size > 2.5 * 1024 * 1024) {
+      showToast("Файл слишком большой (до 2.5 МБ)");
+      return;
+    }
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+        reader.readAsDataURL(file);
+      });
+      const data = await api("/api/user/avatar/upload", {
+        method: "POST",
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      if (data.user) authUser = data.user;
+      else if (data.avatarUrl && authUser) authUser.avatarUrl = data.avatarUrl;
+      applyAuthUi();
+      showToast("Аватар загружен");
+    } catch (err) {
+      showToast(err.message || "Не удалось загрузить аватар");
+    }
+  });
+
+  document.getElementById("hub-avatar-reset-btn")?.addEventListener("click", async () => {
+    closeHubMenus();
+    try {
+      const data = await api("/api/user/avatar/reset", {
+        method: "POST",
+        body: "{}",
+      });
+      if (data.user) authUser = data.user;
+      applyAuthUi();
+      showToast("Аватар сброшен");
+    } catch (err) {
+      showToast(err.message || "Не удалось сбросить аватар");
+    }
+  });
+
+  document.querySelectorAll("#hub-privacy-menu [data-privacy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const key = btn.getAttribute("data-privacy");
+      if (!key || !authUser) return;
+      const current = authUser[key] !== false;
+      const next = !current;
+      try {
+        const data = await api("/api/user/privacy", {
+          method: "PATCH",
+          body: JSON.stringify({ [key]: next }),
+        });
+        if (data.user) authUser = data.user;
+        else authUser[key] = next;
+        applyAuthUi();
+        await loadPlayersDirectory();
+      } catch (err) {
+        showToast(err.message || "Не удалось сохранить");
+      }
+    });
+  });
+
+  async function saveSiteNickFromInput() {
+    setHubFieldError("hub-site-nick-error", "");
+    const siteNick = String(document.getElementById("hub-site-nick")?.value || "").trim();
+    try {
+      const data = await api("/api/user/site-nick", {
+        method: "PATCH",
+        body: JSON.stringify({ siteNick }),
+      });
+      if (data.user) authUser = data.user;
+      applyAuthUi();
+      await loadPlayersDirectory();
+    } catch (err) {
+      setHubFieldError("hub-site-nick-error", err.message || "Не удалось сохранить ник");
+    }
+  }
+
+  async function saveMcNickFromInput() {
+    setHubFieldError("hub-mc-nick-error", "");
+    const mcNick = String(document.getElementById("hub-mc-nick")?.value || "").trim();
+    if (mcNick && !/^[A-Za-z0-9_]{3,16}$/.test(mcNick)) {
+      setHubFieldError("hub-mc-nick-error", "Ник: 3–16 символов, латиница, цифры и _");
       return;
     }
     try {
@@ -1215,26 +1358,47 @@
       if (data.token) setAuthSession(data.token, data.user || authUser);
       else if (data.user) authUser = data.user;
       applyAuthUi();
-      showToast("Ник обновлён");
+      await loadPlayersDirectory();
     } catch (err) {
-      setHubFieldError("hub-nick-error", err.message || "Не удалось сменить ник");
+      setHubFieldError("hub-mc-nick-error", err.message || "Не удалось сохранить ник");
     }
+  }
+
+  document.getElementById("hub-site-nick-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await saveSiteNickFromInput();
+  });
+  document.getElementById("hub-site-nick")?.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      await saveSiteNickFromInput();
+    }
+  });
+  document.getElementById("hub-site-nick")?.addEventListener("blur", async () => {
+    await saveSiteNickFromInput();
+  });
+
+  document.getElementById("hub-mc-nick-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await saveMcNickFromInput();
+  });
+  document.getElementById("hub-mc-nick")?.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      await saveMcNickFromInput();
+    }
+  });
+  document.getElementById("hub-mc-nick")?.addEventListener("blur", async () => {
+    await saveMcNickFromInput();
   });
 
   document.getElementById("hub-pass-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     setHubFieldError("hub-pass-error", "");
-    const currentPassword = String(
-      document.getElementById("hub-pass-current")?.value || ""
-    );
     const newPassword = String(document.getElementById("hub-pass-new")?.value || "");
     const newPasswordConfirm = String(
       document.getElementById("hub-pass-confirm")?.value || ""
     );
-    if (!currentPassword) {
-      setHubFieldError("hub-pass-error", "Введите текущий пароль");
-      return;
-    }
     if (newPassword.length < 6 || newPassword.length > 72) {
       setHubFieldError("hub-pass-error", "Новый пароль: 6–72 символа");
       return;
@@ -1247,7 +1411,6 @@
       await api("/api/user/password", {
         method: "PATCH",
         body: JSON.stringify({
-          currentPassword,
           newPassword,
           newPasswordConfirm,
         }),
@@ -1260,21 +1423,6 @@
     }
   });
 
-  document.getElementById("avatar-refresh-btn")?.addEventListener("click", async () => {
-    try {
-      const data = await api("/api/user/avatar/refresh", { method: "POST", body: "{}" });
-      if (data.user) authUser = data.user;
-      else if (data.avatarUrl && authUser) authUser.avatarUrl = data.avatarUrl;
-      applyAuthUi();
-      showToast("Аватар обновлён");
-    } catch (err) {
-      showToast(err.message || "Не удалось обновить аватар");
-    }
-  });
-  document.getElementById("admin-open-btn")?.addEventListener("click", () => {
-    openAdminShell();
-  });
-  document.getElementById("admin-close-btn")?.addEventListener("click", closeAdminShell);
   document.getElementById("auth-logout-btn")?.addEventListener("click", () => {
     clearAuthSession();
     applyAuthUi();

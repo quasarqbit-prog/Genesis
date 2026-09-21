@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=4" />
+  <link rel="stylesheet" href="styles.css?v=5" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -44,45 +44,69 @@
       <div class="app-shell__main">
         <nav class="hub-nav" aria-label="Разделы">
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
-          <button type="button" class="hub-nav__btn" data-hub-tab="creation">Создание</button>
         </nav>
 
         <div class="hub-body">
           <section class="hub-view is-active" id="hub-view-profile" data-hub-view="profile">
-            <h2 class="hub-title">Профиль</h2>
-
-            <form class="hub-form" id="hub-nick-form" novalidate>
-              <label class="field-label" for="hub-nick">Игровой ник</label>
-              <div class="hub-row">
-                <input
-                  class="field-input"
-                  id="hub-nick"
-                  type="text"
-                  maxlength="16"
-                  autocomplete="username"
-                  spellcheck="false"
-                  required
-                />
-                <button type="submit" class="mc-btn mc-btn--compact">СОХРАНИТЬ</button>
+            <div class="profile-hero">
+              <div class="profile-frame is-shown" id="profile-frame" tabindex="0" aria-label="Настройки отображения онлайн">
+                <div class="profile-frame__avatar" id="profile-frame-avatar">
+                  <img id="hub-avatar-img" alt="" hidden />
+                  <span class="profile-frame__fallback" id="hub-avatar-fallback">?</span>
+                  <button type="button" class="profile-frame__edit" id="hub-avatar-edit-btn" aria-label="Изменить аватар">✎</button>
+                </div>
               </div>
-              <p class="field-hint">3–16 символов · латиница, цифры и _</p>
-              <p class="field-error" id="hub-nick-error" hidden></p>
+
+              <div class="ctx-menu" id="hub-avatar-menu" hidden>
+                <button type="button" class="ctx-menu__item" id="hub-avatar-upload-btn">Загрузить аватар</button>
+                <button type="button" class="ctx-menu__item" id="hub-avatar-reset-btn">Сбросить аватар</button>
+              </div>
+              <input id="hub-avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+
+              <div class="ctx-menu" id="hub-privacy-menu" hidden>
+                <button type="button" class="ctx-menu__item" data-privacy="showSiteOnline" id="privacy-site-btn">
+                  <span>Онлайн на сайте</span><span class="ctx-menu__mark" id="privacy-site-mark"></span>
+                </button>
+                <button type="button" class="ctx-menu__item" data-privacy="showServerOnline" id="privacy-server-btn">
+                  <span>Онлайн в игре</span><span class="ctx-menu__mark" id="privacy-server-mark"></span>
+                </button>
+                <button type="button" class="ctx-menu__item" data-privacy="showOnlineFrame" id="privacy-frame-btn">
+                  <span>Отображать онлайн</span><span class="ctx-menu__mark" id="privacy-frame-mark"></span>
+                </button>
+              </div>
+            </div>
+
+            <form class="hub-form" id="hub-site-nick-form" novalidate>
+              <label class="field-label" for="hub-site-nick">Ник на сайте</label>
+              <input
+                class="field-input"
+                id="hub-site-nick"
+                type="text"
+                maxlength="32"
+                autocomplete="nickname"
+                spellcheck="false"
+              />
+              <p class="field-error" id="hub-site-nick-error" hidden></p>
             </form>
 
+            <form class="hub-form" id="hub-mc-nick-form" novalidate>
+              <label class="field-label" for="hub-mc-nick">Игровой ник</label>
+              <input
+                class="field-input"
+                id="hub-mc-nick"
+                type="text"
+                maxlength="16"
+                autocomplete="username"
+                spellcheck="false"
+              />
+              <p class="field-hint">3–16 символов · латиница, цифры и _</p>
+              <p class="field-error" id="hub-mc-nick-error" hidden></p>
+            </form>
+
+            <div class="hub-sep" aria-hidden="true"></div>
+
             <form class="hub-form" id="hub-pass-form" novalidate>
-              <label class="field-label" for="hub-pass-current">Сменить пароль</label>
-              <div class="pass-row">
-                <input
-                  class="field-input"
-                  id="hub-pass-current"
-                  type="password"
-                  maxlength="72"
-                  autocomplete="current-password"
-                  placeholder="Текущий пароль"
-                  required
-                />
-                <button type="button" class="pass-toggle" data-toggle-pass="hub-pass-current" aria-label="Показать пароль">*</button>
-              </div>
+              <label class="field-label" for="hub-pass-new">Смена пароля</label>
               <div class="pass-row">
                 <input
                   class="field-input"
@@ -102,25 +126,18 @@
                   type="password"
                   maxlength="72"
                   autocomplete="new-password"
-                  placeholder="Повтор нового пароля"
+                  placeholder="Повтор пароля"
                   required
                 />
                 <button type="button" class="pass-toggle" data-toggle-pass="hub-pass-confirm" aria-label="Показать пароль">*</button>
               </div>
-              <button type="submit" class="mc-btn mc-btn--compact">СМЕНИТЬ ПАРОЛЬ</button>
+              <button type="submit" class="mc-btn mc-btn--compact">ПОДТВЕРДИТЬ</button>
               <p class="field-error" id="hub-pass-error" hidden></p>
             </form>
 
-            <div class="hub-actions">
-              <button type="button" class="mc-btn mc-btn--ghost" id="avatar-refresh-btn">ОБНОВИТЬ АВАТАР</button>
-              <button type="button" class="mc-btn mc-btn--ghost" id="admin-open-btn" hidden>АДМИН</button>
-              <button type="button" class="mc-btn" id="auth-logout-btn">ВЫЙТИ</button>
-            </div>
-          </section>
+            <div class="hub-sep" aria-hidden="true"></div>
 
-          <section class="hub-view" id="hub-view-creation" data-hub-view="creation" hidden>
-            <h2 class="hub-title">Создание</h2>
-            <p class="hub-empty">Раздел в разработке</p>
+            <button type="button" class="mc-btn" id="auth-logout-btn">ВЫЙТИ ИЗ АККАУНТА</button>
           </section>
         </div>
       </div>
@@ -1111,6 +1128,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=4"></script>
+  <script src="script.js?v=5"></script>
 </body>
 </html>

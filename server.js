@@ -43,7 +43,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "4mb" }));
 app.use("/uploads", express.static(UPLOADS_DIR));
 
 /** Локальная разработка: Express раздаёт статику. На VPS статику отдаёт Nginx. */
@@ -118,9 +118,32 @@ function toPublicUser(rowOrUser) {
   if (avatarPath && !avatarPath.startsWith("http") && !avatarPath.includes("?")) {
     avatarPath = `${avatarPath}?v=1`;
   }
+  const showSiteOnline =
+    rowOrUser.showSiteOnline !== undefined
+      ? Boolean(rowOrUser.showSiteOnline)
+      : rowOrUser.show_site_online === undefined
+        ? true
+        : Boolean(Number(rowOrUser.show_site_online));
+  const showServerOnline =
+    rowOrUser.showServerOnline !== undefined
+      ? Boolean(rowOrUser.showServerOnline)
+      : rowOrUser.show_server_online === undefined
+        ? true
+        : Boolean(Number(rowOrUser.show_server_online));
+  const showOnlineFrame =
+    rowOrUser.showOnlineFrame !== undefined
+      ? Boolean(rowOrUser.showOnlineFrame)
+      : rowOrUser.show_online_frame === undefined
+        ? true
+        : Boolean(Number(rowOrUser.show_online_frame));
+  const siteNick =
+    rowOrUser.siteNick ||
+    rowOrUser.site_nick ||
+    "";
   return {
     id: rowOrUser.id,
     mcNick: rowOrUser.mcNick || rowOrUser.mc_nick || "",
+    siteNick: String(siteNick || "").trim(),
     telegram: rowOrUser.telegram || "",
     accountType: rowOrUser.accountType || rowOrUser.account_type || "",
     role,
@@ -128,6 +151,9 @@ function toPublicUser(rowOrUser) {
     isHelper: role === "helper",
     isStaff: role === "admin" || role === "helper",
     avatarUrl: avatarPath || "",
+    showSiteOnline,
+    showServerOnline,
+    showOnlineFrame,
   };
 }
 
@@ -240,6 +266,26 @@ async function ensureSchema() {
   if (!(await columnExists("profiles", "avatar_path"))) {
     await pool.query(
       `ALTER TABLE profiles ADD COLUMN avatar_path VARCHAR(512) NULL AFTER form_json`
+    );
+  }
+  if (!(await columnExists("profiles", "site_nick"))) {
+    await pool.query(
+      `ALTER TABLE profiles ADD COLUMN site_nick VARCHAR(32) NULL AFTER avatar_path`
+    );
+  }
+  if (!(await columnExists("profiles", "show_site_online"))) {
+    await pool.query(
+      `ALTER TABLE profiles ADD COLUMN show_site_online TINYINT(1) NOT NULL DEFAULT 1 AFTER site_nick`
+    );
+  }
+  if (!(await columnExists("profiles", "show_server_online"))) {
+    await pool.query(
+      `ALTER TABLE profiles ADD COLUMN show_server_online TINYINT(1) NOT NULL DEFAULT 1 AFTER show_site_online`
+    );
+  }
+  if (!(await columnExists("profiles", "show_online_frame"))) {
+    await pool.query(
+      `ALTER TABLE profiles ADD COLUMN show_online_frame TINYINT(1) NOT NULL DEFAULT 1 AFTER show_server_online`
     );
   }
 }
@@ -626,9 +672,27 @@ async function allocateMcNick(preferred, telegramId) {
   return `u${Date.now().toString(36)}`.slice(0, 16);
 }
 
+async function allocateUniqueMcNick(baseName, excludeUserId = null) {
+  const base = String(baseName || "Genesis_Player")
+    .replace(/[^A-Za-z0-9_]/g, "")
+    .slice(0, 16) || "Genesis_Player";
+  for (let i = 0; i < 50; i += 1) {
+    const suffix = i === 0 ? "" : String(i);
+    const nick = `${base.slice(0, Math.max(3, 16 - suffix.length))}${suffix}`;
+    if (!MC_NICK_RE.test(nick)) continue;
+    const [rows] = await pool.execute(
+      `SELECT id FROM users WHERE mc_nick = :nick LIMIT 1`,
+      { nick }
+    );
+    if (!rows[0] || Number(rows[0].id) === Number(excludeUserId)) return nick;
+  }
+  return `GP${Date.now().toString(36)}`.slice(0, 16);
+}
+
 async function loadUserPublic(userId) {
   const [rows] = await pool.execute(
-    `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role, p.avatar_path
+    `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role,
+            p.avatar_path, p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame
      FROM users u
      LEFT JOIN profiles p ON p.user_id = u.id
      WHERE u.id = :userId
@@ -1046,6 +1110,7 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
     const u = userRows[0] || {};
     const [rows] = await pool.execute(
       `SELECT p.registered, p.mc_nick, p.race_name, p.form_json, p.avatar_path,
+              p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame,
               p.updated_at, g.score, g.inventory_json, g.meta_json
        FROM profiles p
        LEFT JOIN game_stats g ON g.user_id = p.user_id
@@ -1055,7 +1120,6 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
     );
     const row = rows[0] || {};
 
-    // Если аватарки ещё нет — пробуем подтянуть из Telegram
     if (!row.avatar_path && u.telegram_id) {
       const refreshed = await saveTelegramAvatar(req.user.id, "", u.telegram_id);
       if (refreshed) row.avatar_path = refreshed.split("?")[0];
@@ -1068,6 +1132,10 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
       account_type: u.account_type || "",
       role: u.role || req.user.role || "user",
       avatar_path: row.avatar_path || "",
+      site_nick: row.site_nick || "",
+      show_site_online: row.show_site_online,
+      show_server_online: row.show_server_online,
+      show_online_frame: row.show_online_frame,
     });
     return res.json({
       user,
@@ -1088,6 +1156,256 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
   }
 });
 
+app.patch("/api/user/site-nick", authMiddleware, async (req, res) => {
+  try {
+    await ensureProfile(req.user.id, req.user.mcNick || null);
+    let siteNick = String(req.body?.siteNick || req.body?.site_nick || "").trim();
+    if (!siteNick) {
+      const [rows] = await pool.execute(
+        `SELECT telegram FROM users WHERE id = :userId LIMIT 1`,
+        { userId: req.user.id }
+      );
+      const tg = String(rows[0]?.telegram || "").trim();
+      siteNick = tg.replace(/^@/, "") || tg;
+    }
+    siteNick = siteNick.slice(0, 32);
+    await pool.execute(
+      `UPDATE profiles SET site_nick = :siteNick WHERE user_id = :userId`,
+      { siteNick, userId: req.user.id }
+    );
+    const user = await loadUserPublic(req.user.id);
+    return res.json({ ok: true, user });
+  } catch (err) {
+    console.error("site-nick update:", err);
+    return res.status(500).json({ error: "Не удалось сменить ник на сайте" });
+  }
+});
+
+app.patch("/api/user/mc-nick", authMiddleware, async (req, res) => {
+  try {
+    let mcNick = normalizeMcNick(req.body?.mcNick || req.body?.mc_nick);
+    if (!mcNick) {
+      mcNick = await allocateUniqueMcNick("Genesis_Player", req.user.id);
+    }
+    if (!MC_NICK_RE.test(mcNick)) {
+      return res.status(400).json({
+        error: "Ник: 3–16 символов, латиница, цифры и _",
+        field: "mcNick",
+      });
+    }
+
+    const [mine] = await pool.execute(
+      `SELECT mc_nick FROM users WHERE id = :userId LIMIT 1`,
+      { userId: req.user.id }
+    );
+    const current = mine[0]?.mc_nick || "";
+    if (current === mcNick) {
+      const user = await loadUserPublic(req.user.id);
+      return res.json({ ok: true, user, token: signToken(user) });
+    }
+
+    const [taken] = await pool.execute(
+      `SELECT id FROM users WHERE mc_nick = :mcNick AND id <> :userId LIMIT 1`,
+      { mcNick, userId: req.user.id }
+    );
+    if (taken[0]) {
+      if (String(req.body?.mcNick || req.body?.mc_nick || "").trim() === "") {
+        mcNick = await allocateUniqueMcNick("Genesis_Player", req.user.id);
+      } else {
+        return res.status(409).json({
+          error: "Этот ник уже занят",
+          field: "mcNick",
+        });
+      }
+    }
+
+    await pool.execute(
+      `UPDATE users SET mc_nick = :mcNick WHERE id = :userId`,
+      { mcNick, userId: req.user.id }
+    );
+    await ensureProfile(req.user.id, mcNick);
+    const user = await loadUserPublic(req.user.id);
+    return res.json({ ok: true, user, token: signToken(user) });
+  } catch (err) {
+    console.error("mc-nick update:", err);
+    const msg = String(err?.message || "");
+    if (msg.includes("Duplicate") || msg.includes("uq_users_mc_nick")) {
+      return res.status(409).json({ error: "Этот ник уже занят", field: "mcNick" });
+    }
+    return res.status(500).json({ error: "Не удалось сменить игровой ник" });
+  }
+});
+
+app.patch("/api/user/privacy", authMiddleware, async (req, res) => {
+  try {
+    await ensureProfile(req.user.id, req.user.mcNick || null);
+    const fields = [];
+    const params = { userId: req.user.id };
+    const map = {
+      showSiteOnline: "show_site_online",
+      showServerOnline: "show_server_online",
+      showOnlineFrame: "show_online_frame",
+    };
+    for (const [key, column] of Object.entries(map)) {
+      if (req.body?.[key] === undefined && req.body?.[column] === undefined) continue;
+      const raw = req.body?.[key] !== undefined ? req.body[key] : req.body[column];
+      fields.push(`${column} = :${key}`);
+      params[key] = raw ? 1 : 0;
+    }
+    if (!fields.length) {
+      return res.status(400).json({ error: "Нет параметров" });
+    }
+    await pool.execute(
+      `UPDATE profiles SET ${fields.join(", ")} WHERE user_id = :userId`,
+      params
+    );
+    const user = await loadUserPublic(req.user.id);
+    return res.json({ ok: true, user });
+  } catch (err) {
+    console.error("privacy update:", err);
+    return res.status(500).json({ error: "Не удалось сохранить настройки" });
+  }
+});
+
+app.post("/api/user/avatar/upload", authMiddleware, async (req, res) => {
+  try {
+    ensureUploadDirs();
+    await ensureProfile(req.user.id, null);
+    const dataUrl = String(req.body?.image || req.body?.dataUrl || "");
+    const match = /^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=]+)$/i.exec(
+      dataUrl
+    );
+    if (!match) {
+      return res.status(400).json({ error: "Нужно изображение PNG/JPEG/WebP/GIF" });
+    }
+    const mime = match[1].toLowerCase();
+    const ext = mime.includes("png")
+      ? "png"
+      : mime.includes("webp")
+        ? "webp"
+        : mime.includes("gif")
+          ? "gif"
+          : "jpg";
+    const buf = Buffer.from(match[2], "base64");
+    if (buf.length < 32 || buf.length > 2.5 * 1024 * 1024) {
+      return res.status(400).json({ error: "Размер файла: до 2.5 МБ" });
+    }
+    const publicPath = `/uploads/avatars/${req.user.id}.${ext}`;
+    const absPath = path.join(AVATARS_DIR, `${req.user.id}.${ext}`);
+    await fs.promises.writeFile(absPath, buf);
+    await pool.execute(
+      `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
+      { avatarPath: publicPath, userId: req.user.id }
+    );
+    const user = await loadUserPublic(req.user.id);
+    if (user) user.avatarUrl = `${publicPath}?v=${Date.now()}`;
+    return res.json({ ok: true, user, avatarUrl: user?.avatarUrl || publicPath });
+  } catch (err) {
+    console.error("avatar upload:", err);
+    return res.status(500).json({ error: "Не удалось загрузить аватар" });
+  }
+});
+
+app.post("/api/user/avatar/reset", authMiddleware, async (req, res) => {
+  try {
+    await ensureProfile(req.user.id, null);
+    const [rows] = await pool.execute(
+      `SELECT telegram_id FROM users WHERE id = :userId LIMIT 1`,
+      { userId: req.user.id }
+    );
+    const telegramId = rows[0]?.telegram_id || null;
+    await pool.execute(
+      `UPDATE profiles SET avatar_path = NULL WHERE user_id = :userId`,
+      { userId: req.user.id }
+    );
+    let avatarUrl = "";
+    if (telegramId) {
+      avatarUrl = await saveTelegramAvatar(req.user.id, "", telegramId);
+    }
+    const user = await loadUserPublic(req.user.id);
+    if (avatarUrl && user) user.avatarUrl = avatarUrl;
+    return res.json({ ok: true, user, avatarUrl: user?.avatarUrl || "" });
+  } catch (err) {
+    console.error("avatar reset:", err);
+    return res.status(500).json({ error: "Не удалось сбросить аватар" });
+  }
+});
+
+app.patch("/api/user/password", authMiddleware, async (req, res) => {
+  try {
+    const newPassword = String(req.body?.newPassword || "");
+    const newPasswordConfirm = String(
+      req.body?.newPasswordConfirm || req.body?.passwordConfirm || ""
+    );
+
+    if (newPassword.length < 6 || newPassword.length > 72) {
+      return res.status(400).json({
+        error: "Новый пароль: 6–72 символа",
+        field: "newPassword",
+      });
+    }
+    if (newPassword !== newPasswordConfirm) {
+      return res.status(400).json({
+        error: "Пароли не совпадают",
+        field: "newPasswordConfirm",
+      });
+    }
+
+    const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await pool.execute(
+      `UPDATE users SET password_hash = :hash WHERE id = :userId`,
+      { hash, userId: req.user.id }
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("password update:", err);
+    return res.status(500).json({ error: "Не удалось сменить пароль" });
+  }
+});
+
+app.get("/api/users/directory", authMiddleware, async (_req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role,
+              p.avatar_path, p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame
+       FROM users u
+       LEFT JOIN profiles p ON p.user_id = u.id
+       ORDER BY u.mc_nick ASC
+       LIMIT 500`
+    );
+    const onlineIds = getOnlineUserIds();
+    const onlineSet = new Set(onlineIds);
+    const serverIds = getServerOnlineUserIds();
+    const serverSet = new Set(serverIds);
+    return res.json({
+      users: rows.map((row) => {
+        const user = toPublicUser(row);
+        const id = Number(user.id);
+        const siteOnline =
+          Boolean(user.showOnlineFrame) &&
+          Boolean(user.showSiteOnline) &&
+          onlineSet.has(id);
+        const serverOnline =
+          Boolean(user.showOnlineFrame) &&
+          Boolean(user.showServerOnline) &&
+          serverSet.has(id);
+        return {
+          ...user,
+          online: siteOnline,
+          siteOnline,
+          serverOnline,
+        };
+      }),
+      onlineIds,
+      serverOnlineIds: serverIds,
+    });
+  } catch (err) {
+    console.error("users directory:", err);
+    return res.status(500).json({ error: "Не удалось загрузить список игроков" });
+  }
+});
+
+/* ---------- Admin stub / leftover routes continue below ---------- */
 app.post("/api/user/avatar/refresh", authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.execute(
@@ -1117,142 +1435,7 @@ app.post("/api/user/avatar/refresh", authMiddleware, async (req, res) => {
   }
 });
 
-app.patch("/api/user/mc-nick", authMiddleware, async (req, res) => {
-  try {
-    const mcNick = normalizeMcNick(req.body?.mcNick || req.body?.mc_nick);
-    if (!MC_NICK_RE.test(mcNick)) {
-      return res.status(400).json({
-        error: "Ник: 3–16 символов, латиница, цифры и _",
-        field: "mcNick",
-      });
-    }
-
-    const [mine] = await pool.execute(
-      `SELECT mc_nick FROM users WHERE id = :userId LIMIT 1`,
-      { userId: req.user.id }
-    );
-    const current = mine[0]?.mc_nick || "";
-    if (current === mcNick) {
-      const user = await loadUserPublic(req.user.id);
-      return res.json({ ok: true, user, token: signToken(user) });
-    }
-
-    const [taken] = await pool.execute(
-      `SELECT id FROM users WHERE mc_nick = :mcNick AND id <> :userId LIMIT 1`,
-      { mcNick, userId: req.user.id }
-    );
-    if (taken[0]) {
-      return res.status(409).json({
-        error: "Этот ник уже занят",
-        field: "mcNick",
-      });
-    }
-
-    await pool.execute(
-      `UPDATE users SET mc_nick = :mcNick WHERE id = :userId`,
-      { mcNick, userId: req.user.id }
-    );
-    await ensureProfile(req.user.id, mcNick);
-    const user = await loadUserPublic(req.user.id);
-    return res.json({ ok: true, user, token: signToken(user) });
-  } catch (err) {
-    console.error("mc-nick update:", err);
-    const msg = String(err?.message || "");
-    if (msg.includes("Duplicate") || msg.includes("uq_users_mc_nick")) {
-      return res.status(409).json({ error: "Этот ник уже занят", field: "mcNick" });
-    }
-    return res.status(500).json({ error: "Не удалось сменить ник" });
-  }
-});
-
-app.patch("/api/user/password", authMiddleware, async (req, res) => {
-  try {
-    const currentPassword = String(req.body?.currentPassword || "");
-    const newPassword = String(req.body?.newPassword || "");
-    const newPasswordConfirm = String(
-      req.body?.newPasswordConfirm || req.body?.passwordConfirm || ""
-    );
-
-    if (!currentPassword) {
-      return res.status(400).json({
-        error: "Введите текущий пароль",
-        field: "currentPassword",
-      });
-    }
-    if (newPassword.length < 6 || newPassword.length > 72) {
-      return res.status(400).json({
-        error: "Новый пароль: 6–72 символа",
-        field: "newPassword",
-      });
-    }
-    if (newPassword !== newPasswordConfirm) {
-      return res.status(400).json({
-        error: "Пароли не совпадают",
-        field: "newPasswordConfirm",
-      });
-    }
-
-    const [rows] = await pool.execute(
-      `SELECT password_hash FROM users WHERE id = :userId LIMIT 1`,
-      { userId: req.user.id }
-    );
-    const row = rows[0];
-    if (!row) {
-      return res.status(404).json({ error: "Пользователь не найден" });
-    }
-
-    const ok = await bcrypt.compare(currentPassword, row.password_hash);
-    if (!ok) {
-      return res.status(401).json({
-        error: "Неверный текущий пароль",
-        field: "currentPassword",
-      });
-    }
-
-    const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-    await pool.execute(
-      `UPDATE users SET password_hash = :hash WHERE id = :userId`,
-      { hash, userId: req.user.id }
-    );
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error("password update:", err);
-    return res.status(500).json({ error: "Не удалось сменить пароль" });
-  }
-});
-
-app.get("/api/users/directory", authMiddleware, async (_req, res) => {
-  try {
-    const [rows] = await pool.execute(
-      `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role, p.avatar_path
-       FROM users u
-       LEFT JOIN profiles p ON p.user_id = u.id
-       ORDER BY u.mc_nick ASC
-       LIMIT 500`
-    );
-    const onlineIds = getOnlineUserIds();
-    const onlineSet = new Set(onlineIds);
-    const serverIds = getServerOnlineUserIds();
-    const serverSet = new Set(serverIds);
-    return res.json({
-      users: rows.map((row) => {
-        const user = toPublicUser(row);
-        const id = Number(user.id);
-        return {
-          ...user,
-          online: onlineSet.has(id),
-          siteOnline: onlineSet.has(id),
-          serverOnline: serverSet.has(id),
-        };
-      }),
-      onlineIds,
-      serverOnlineIds: serverIds,
-    });
-  } catch (err) {
-    console.error("users directory:", err);
-    return res.status(500).json({ error: "Не удалось загрузить список игроков" });
-  }
-});
+/* removed old duplicate mc-nick/password/directory — kept refresh for compatibility */
 
 /** Список игроков онлайн на Minecraft-сервере (шлёт мод) */
 app.post("/api/mc/online", async (req, res) => {
