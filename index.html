@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=3" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -23,7 +23,7 @@
   </div>
 
   <header class="profile-bar ui-layer" id="topbar" hidden>
-    <div class="shell-panel" id="profile-card">
+    <div class="app-shell" id="profile-card">
       <div class="presence-strip" aria-label="Игроки">
         <div class="presence-self">
           <div class="presence-avatar presence-avatar--self" id="profile-avatar-btn" aria-hidden="true">
@@ -34,12 +34,14 @@
 
         <div class="presence-divider" aria-hidden="true"></div>
 
-        <div class="presence-staff" id="presence-staff"></div>
-        <div class="presence-divider presence-divider--soft" id="presence-staff-divider" hidden aria-hidden="true"></div>
-        <div class="presence-others" id="presence-others"></div>
+        <div class="presence-rail">
+          <div class="presence-staff" id="presence-staff"></div>
+          <div class="presence-divider presence-divider--soft" id="presence-staff-divider" hidden aria-hidden="true"></div>
+          <div class="presence-others" id="presence-others"></div>
+        </div>
       </div>
 
-      <div class="shell-main">
+      <div class="app-shell__main">
         <nav class="hub-nav" aria-label="Разделы">
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
           <button type="button" class="hub-nav__btn" data-hub-tab="creation">Создание</button>
@@ -1109,6 +1111,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js"></script>
+  <script src="script.js?v=3"></script>
 </body>
 </html>

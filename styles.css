@@ -336,15 +336,11 @@ h3,
 
 .profile-bar {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   z-index: 50;
   display: flex;
-  justify-content: center;
-  align-items: stretch;
-  padding: 12px 14px;
+  box-sizing: border-box;
+  padding: 12px 16px;
   overflow: hidden;
   pointer-events: none;
   opacity: 0;
@@ -366,32 +362,35 @@ h3,
   display: none !important;
 }
 
-.shell-panel {
+.app-shell {
   pointer-events: auto;
+  flex: 1 1 auto;
   width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+  min-width: 0;
   min-height: 0;
-  background: rgba(14, 8, 24, 0.48);
-  border: 3px solid rgba(107, 90, 138, 0.75);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: rgba(16, 9, 28, 0.58);
+  border: 3px solid var(--border-hi);
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
-    6px 6px 0 rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(2px);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    6px 6px 0 rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(3px);
   animation: hub-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .presence-strip {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: 14px;
+  width: 100%;
+  box-sizing: border-box;
   padding: 14px 16px 12px;
-  min-height: 108px;
+  min-height: 112px;
   overflow-x: auto;
   overflow-y: hidden;
-  border-bottom: 2px solid rgba(107, 90, 138, 0.55);
-  background: rgba(10, 6, 18, 0.28);
+  border-bottom: 3px solid rgba(107, 90, 138, 0.65);
+  background: rgba(8, 4, 16, 0.35);
 }
 
 .presence-self {
@@ -420,6 +419,16 @@ h3,
   opacity: 0.7;
 }
 
+.presence-rail {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 86px;
+  overflow-x: auto;
+}
+
 .presence-staff,
 .presence-others {
   display: flex;
@@ -427,10 +436,6 @@ h3,
   gap: 10px;
   flex: 0 0 auto;
   min-height: 86px;
-}
-
-.presence-others {
-  flex: 1 1 auto;
 }
 
 .presence-user {
@@ -510,12 +515,12 @@ h3,
   white-space: nowrap;
 }
 
-.shell-main {
+.app-shell__main {
   display: grid;
-  grid-template-columns: 148px minmax(0, 1fr);
-  flex: 1;
+  grid-template-columns: 160px minmax(0, 1fr);
   min-height: 0;
-  background: rgba(12, 7, 22, 0.22);
+  min-width: 0;
+  background: rgba(12, 7, 22, 0.28);
 }
 
 @keyframes hub-rise {
@@ -535,7 +540,7 @@ h3,
   gap: 6px;
   padding: 14px 10px;
   border-right: 2px solid rgba(107, 90, 138, 0.45);
-  background: rgba(10, 6, 18, 0.28);
+  background: rgba(10, 6, 18, 0.32);
 }
 
 .hub-nav__btn {
@@ -627,10 +632,10 @@ h3,
 
 @media (max-width: 720px) {
   .profile-bar {
-    padding: 8px 8px;
+    padding: 8px;
   }
 
-  .shell-main {
+  .app-shell__main {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
   }
@@ -1084,7 +1089,7 @@ h3,
   .auth-modal__panel,
   .profile-bar,
   .hub-panel,
-  .shell-panel,
+  .app-shell,
   .admin-shell,
   .admin-shell__panel,
   .auth-form.is-active {
