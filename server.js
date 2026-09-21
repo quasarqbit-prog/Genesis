@@ -754,6 +754,33 @@ function broadcastPresence() {
   });
 }
 
+function withPresenceFlags(user) {
+  if (!user) return null;
+  const id = Number(user.id);
+  const onlineSet = new Set(getOnlineUserIds());
+  const serverSet = new Set(getServerOnlineUserIds());
+  const siteOnline =
+    Boolean(user.showOnlineFrame) &&
+    Boolean(user.showSiteOnline) &&
+    onlineSet.has(id);
+  const serverOnline =
+    Boolean(user.showOnlineFrame) &&
+    Boolean(user.showServerOnline) &&
+    serverSet.has(id);
+  return {
+    ...user,
+    online: siteOnline,
+    siteOnline,
+    serverOnline,
+  };
+}
+
+function broadcastDirectoryUser(user) {
+  const payload = withPresenceFlags(user);
+  if (!payload) return;
+  io.emit("directory:user", { user: payload });
+}
+
 /* ---------- Health / config ---------- */
 app.get("/api/health", async (_req, res) => {
   try {
@@ -1181,6 +1208,81 @@ app.patch("/api/user/site-nick", authMiddleware, async (req, res) => {
   }
 });
 
+app.post("/api/user/save", authMiddleware, async (req, res) => {
+  try {
+    await ensureProfile(req.user.id, req.user.mcNick || null);
+
+    let siteNick = String(req.body?.siteNick || req.body?.site_nick || "").trim();
+    if (!siteNick) {
+      const [rows] = await pool.execute(
+        `SELECT telegram FROM users WHERE id = :userId LIMIT 1`,
+        { userId: req.user.id }
+      );
+      const tg = String(rows[0]?.telegram || "").trim();
+      siteNick = tg.replace(/^@/, "") || tg;
+    }
+    siteNick = siteNick.slice(0, 32);
+    await pool.execute(
+      `UPDATE profiles SET site_nick = :siteNick WHERE user_id = :userId`,
+      { siteNick, userId: req.user.id }
+    );
+
+    let mcNick = normalizeMcNick(req.body?.mcNick || req.body?.mc_nick);
+    const rawMc = String(req.body?.mcNick || req.body?.mc_nick || "").trim();
+    if (!mcNick) {
+      mcNick = await allocateUniqueMcNick("Genesis_Player", req.user.id);
+    }
+    if (!MC_NICK_RE.test(mcNick)) {
+      return res.status(400).json({
+        error: "Игровой ник: 3–16 символов, латиница, цифры и _",
+        field: "mcNick",
+      });
+    }
+
+    const [mine] = await pool.execute(
+      `SELECT mc_nick FROM users WHERE id = :userId LIMIT 1`,
+      { userId: req.user.id }
+    );
+    const current = mine[0]?.mc_nick || "";
+    if (current !== mcNick) {
+      const [taken] = await pool.execute(
+        `SELECT id FROM users WHERE mc_nick = :mcNick AND id <> :userId LIMIT 1`,
+        { mcNick, userId: req.user.id }
+      );
+      if (taken[0]) {
+        if (!rawMc) {
+          mcNick = await allocateUniqueMcNick("Genesis_Player", req.user.id);
+        } else {
+          return res.status(409).json({
+            error: "Этот игровой ник уже занят",
+            field: "mcNick",
+          });
+        }
+      }
+      await pool.execute(
+        `UPDATE users SET mc_nick = :mcNick WHERE id = :userId`,
+        { mcNick, userId: req.user.id }
+      );
+      await ensureProfile(req.user.id, mcNick);
+    }
+
+    const user = await loadUserPublic(req.user.id);
+    broadcastDirectoryUser(user);
+    return res.json({
+      ok: true,
+      user,
+      token: signToken(user),
+    });
+  } catch (err) {
+    console.error("user save:", err);
+    const msg = String(err?.message || "");
+    if (msg.includes("Duplicate") || msg.includes("uq_users_mc_nick")) {
+      return res.status(409).json({ error: "Этот игровой ник уже занят", field: "mcNick" });
+    }
+    return res.status(500).json({ error: "Не удалось сохранить профиль" });
+  }
+});
+
 app.patch("/api/user/mc-nick", authMiddleware, async (req, res) => {
   try {
     let mcNick = normalizeMcNick(req.body?.mcNick || req.body?.mc_nick);
@@ -1260,6 +1362,7 @@ app.patch("/api/user/privacy", authMiddleware, async (req, res) => {
       params
     );
     const user = await loadUserPublic(req.user.id);
+    broadcastDirectoryUser(user);
     return res.json({ ok: true, user });
   } catch (err) {
     console.error("privacy update:", err);

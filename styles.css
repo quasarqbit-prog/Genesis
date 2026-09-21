@@ -644,11 +644,24 @@ h3,
 }
 
 .hub-view {
+  position: relative;
   width: min(420px, 100%);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding-top: 44px;
+}
+
+.profile-toolbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 3;
+}
+
+.profile-toolbar .mc-btn {
+  min-width: 0;
 }
 
 .hub-view[hidden] {

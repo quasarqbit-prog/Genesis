@@ -498,6 +498,19 @@
       }
       applyPlayersPresence();
     });
+    socket.on("directory:user", (payload) => {
+      const user = payload?.user;
+      if (!user || !Number.isFinite(Number(user.id))) return;
+      const id = Number(user.id);
+      const idx = directoryUsers.findIndex((u) => Number(u.id) === id);
+      if (idx >= 0) directoryUsers[idx] = { ...directoryUsers[idx], ...user };
+      else directoryUsers.push(user);
+      if (Number(authUser?.id) === id) {
+        authUser = { ...authUser, ...user };
+        applyAuthUi();
+      }
+      renderPlayersDirectory();
+    });
     socket.on("connect_error", () => {
       /* API может быть недоступен офлайн — UI продолжает работать локально */
     });
@@ -1327,69 +1340,54 @@
     });
   });
 
-  async function saveSiteNickFromInput() {
+  document.getElementById("hub-save-btn")?.addEventListener("click", async () => {
     setHubFieldError("hub-site-nick-error", "");
-    const siteNick = String(document.getElementById("hub-site-nick")?.value || "").trim();
-    try {
-      const data = await api("/api/user/site-nick", {
-        method: "PATCH",
-        body: JSON.stringify({ siteNick }),
-      });
-      if (data.user) authUser = data.user;
-      applyAuthUi();
-      await loadPlayersDirectory();
-    } catch (err) {
-      setHubFieldError("hub-site-nick-error", err.message || "Не удалось сохранить ник");
-    }
-  }
-
-  async function saveMcNickFromInput() {
     setHubFieldError("hub-mc-nick-error", "");
+    const siteNick = String(document.getElementById("hub-site-nick")?.value || "").trim();
     const mcNick = String(document.getElementById("hub-mc-nick")?.value || "").trim();
     if (mcNick && !/^[A-Za-z0-9_]{3,16}$/.test(mcNick)) {
       setHubFieldError("hub-mc-nick-error", "Ник: 3–16 символов, латиница, цифры и _");
       return;
     }
     try {
-      const data = await api("/api/user/mc-nick", {
-        method: "PATCH",
-        body: JSON.stringify({ mcNick }),
+      const data = await api("/api/user/save", {
+        method: "POST",
+        body: JSON.stringify({ siteNick, mcNick }),
       });
       if (data.token) setAuthSession(data.token, data.user || authUser);
       else if (data.user) authUser = data.user;
       applyAuthUi();
-      await loadPlayersDirectory();
+      showToast("Сохранено");
     } catch (err) {
-      setHubFieldError("hub-mc-nick-error", err.message || "Не удалось сохранить ник");
+      const field = err.data?.field;
+      if (field === "mcNick") {
+        setHubFieldError("hub-mc-nick-error", err.message || "Ошибка ника");
+      } else {
+        setHubFieldError("hub-site-nick-error", err.message || "Не удалось сохранить");
+      }
     }
-  }
+  });
 
   document.getElementById("hub-site-nick-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    await saveSiteNickFromInput();
+    document.getElementById("hub-save-btn")?.click();
   });
-  document.getElementById("hub-site-nick")?.addEventListener("keydown", async (e) => {
+  document.getElementById("hub-site-nick")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      await saveSiteNickFromInput();
+      document.getElementById("hub-save-btn")?.click();
     }
-  });
-  document.getElementById("hub-site-nick")?.addEventListener("blur", async () => {
-    await saveSiteNickFromInput();
   });
 
   document.getElementById("hub-mc-nick-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
-    await saveMcNickFromInput();
+    document.getElementById("hub-save-btn")?.click();
   });
-  document.getElementById("hub-mc-nick")?.addEventListener("keydown", async (e) => {
+  document.getElementById("hub-mc-nick")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      await saveMcNickFromInput();
+      document.getElementById("hub-save-btn")?.click();
     }
-  });
-  document.getElementById("hub-mc-nick")?.addEventListener("blur", async () => {
-    await saveMcNickFromInput();
   });
 
   document.getElementById("hub-pass-form")?.addEventListener("submit", async (e) => {

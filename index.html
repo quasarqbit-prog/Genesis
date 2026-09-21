@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=7" />
+  <link rel="stylesheet" href="styles.css?v=8" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -48,6 +48,10 @@
 
         <div class="hub-body">
           <section class="hub-view is-active" id="hub-view-profile" data-hub-view="profile">
+            <div class="profile-toolbar">
+              <button type="button" class="mc-btn mc-btn--compact" id="hub-save-btn">СОХРАНИТЬ</button>
+            </div>
+
             <div class="profile-hero">
               <div class="profile-frame is-shown" id="profile-frame" tabindex="0" aria-label="Настройки отображения онлайн">
                 <div class="profile-frame__avatar" id="profile-frame-avatar">
@@ -1128,6 +1132,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=5"></script>
+  <script src="script.js?v=8"></script>
 </body>
 </html>
