@@ -553,15 +553,21 @@
   function renderPresenceUser(user) {
     const id = Number(user.id);
     const nick = escapeHtml(user.mcNick || "—");
+    const tgRaw = String(user.telegram || "").trim();
+    const tg = tgRaw
+      ? escapeHtml(tgRaw.startsWith("@") ? tgRaw : `@${tgRaw}`)
+      : "";
     const avatarUrl = playerAvatarSrc(user.avatarUrl);
     const letter = escapeHtml((user.mcNick || "?").slice(0, 1).toUpperCase());
     const avatarHtml = avatarUrl
       ? `<img src="${escapeHtml(avatarUrl)}" alt="" />`
       : `<span class="presence-avatar__fallback">${letter}</span>`;
     const cls = presenceClass(user);
-    return `<article class="presence-user ${cls}" data-user-id="${id}" title="${nick}">
-      <div class="presence-avatar">${avatarHtml}</div>
+    const title = tg ? `${nick} · ${tg}` : nick;
+    return `<article class="presence-user ${cls}" data-user-id="${id}" title="${title}">
       <div class="presence-user__nick">${nick}</div>
+      <div class="presence-avatar">${avatarHtml}</div>
+      <div class="presence-user__tg">${tg || "—"}</div>
     </article>`;
   }
 
