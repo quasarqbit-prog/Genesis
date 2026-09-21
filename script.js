@@ -316,6 +316,7 @@
   const SERVER_IP = "srv1001.godlike.club:26519";
   const STORAGE_KEY = "genesis_race_v1";
   const AUTH_TOKEN_KEY = "genesis_auth_token";
+  const AUTH_USER_KEY = "genesis_auth_user";
   const FORM_FIELDS = ["nick", "raceName", "origin", "abilities", "traits", "useful", "mechanics"];
   const raceSkins = [];
   const raceAudio = [];
@@ -332,6 +333,14 @@
   /* Auth / API / Socket */
   let authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
   let authUser = null;
+  try {
+    if (authToken) {
+      const cachedUser = JSON.parse(localStorage.getItem(AUTH_USER_KEY) || "null");
+      if (cachedUser && typeof cachedUser === "object") authUser = cachedUser;
+    }
+  } catch {
+    authUser = null;
+  }
   let directoryUsers = [];
   let onlineUserIds = new Set();
   let serverOnlineUserIds = new Set();
@@ -362,11 +371,24 @@
     return data;
   }
 
+  function persistAuthUser(user) {
+    if (authToken && user) {
+      try {
+        localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+      } catch {
+        /* ignore quota */
+      }
+    } else {
+      localStorage.removeItem(AUTH_USER_KEY);
+    }
+  }
+
   function setAuthSession(token, user) {
     authToken = token || "";
     authUser = user || null;
     if (authToken) localStorage.setItem(AUTH_TOKEN_KEY, authToken);
     else localStorage.removeItem(AUTH_TOKEN_KEY);
+    persistAuthUser(authUser);
     connectSocket();
     updateAuthChrome();
   }
@@ -378,6 +400,7 @@
     serverOnlineUserIds = new Set();
     pendingAvatarDataUrl = null;
     pendingAvatarReset = false;
+    localStorage.removeItem(AUTH_USER_KEY);
     renderPlayersDirectory();
     profileCache = readLocalStorageFallback();
   }
@@ -447,6 +470,8 @@
 
   async function loadProfileFromServer() {
     if (!authToken) {
+      authUser = null;
+      persistAuthUser(null);
       profileCache = readLocalStorageFallback();
       directoryUsers = [];
       onlineUserIds = new Set();
@@ -457,7 +482,21 @@
     }
     try {
       const data = await api("/api/user/profile");
-      authUser = data.user || authUser;
+      const prevAvatar = authUser?.avatarUrl || "";
+      const nextUser = data.user || authUser;
+      if (nextUser) {
+        // сервер — источник правды; если URL пустой, не затираем кэш мгновенно
+        authUser = {
+          ...nextUser,
+          avatarUrl: nextUser.avatarUrl || prevAvatar || "",
+        };
+        // принудительно обновляем картинку после F5
+        if (authUser.avatarUrl && !authUser.avatarUrl.startsWith("data:")) {
+          const base = String(authUser.avatarUrl).split("?")[0];
+          authUser.avatarUrl = `${base}?v=${Date.now()}`;
+        }
+      }
+      persistAuthUser(authUser);
       profileCache = {
         registered: Boolean(data.registered),
         form: data.form && typeof data.form === "object" ? data.form : {},
@@ -468,7 +507,10 @@
       return profileCache;
     } catch (err) {
       if (err.status === 401) clearAuthSession();
-      else updateAuthChrome();
+      else {
+        persistAuthUser(authUser);
+        updateAuthChrome();
+      }
       profileCache = readLocalStorageFallback();
       return profileCache;
     }
@@ -842,25 +884,34 @@
       if (!img || !fallback) return;
       if (avatarUrl) {
         const isData = avatarUrl.startsWith("data:");
-        const src = isData || avatarUrl.includes("?")
+        const src = isData
           ? avatarUrl
-          : `${avatarUrl}?v=${Date.now()}`;
+          : avatarUrl.includes("?")
+            ? avatarUrl
+            : `${avatarUrl}?v=${Date.now()}`;
         img.onerror = () => {
+          if (!img.dataset.avatarRetry && !isData) {
+            img.dataset.avatarRetry = "1";
+            img.src = `${String(avatarUrl).split("?")[0]}?v=${Date.now()}-r`;
+            return;
+          }
           img.hidden = true;
           fallback.hidden = false;
           fallback.textContent = (nick || "?").slice(0, 1).toUpperCase();
         };
         img.onload = () => {
+          delete img.dataset.avatarRetry;
           img.hidden = false;
           fallback.hidden = true;
         };
-        // не дёргаем src без нужды — иначе браузер срывает картинку
         if (img.getAttribute("src") !== src) {
+          delete img.dataset.avatarRetry;
           img.src = src;
         }
         img.hidden = false;
         fallback.hidden = true;
       } else {
+        delete img.dataset.avatarRetry;
         img.removeAttribute("src");
         img.hidden = true;
         fallback.hidden = false;
@@ -1489,6 +1540,7 @@
         } else {
           authUser = { ...authUser, [key]: next };
         }
+        persistAuthUser(authUser);
         const id = Number(authUser.id);
         const idx = directoryUsers.findIndex((u) => Number(u.id) === id);
         if (idx >= 0) {

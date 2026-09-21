@@ -1527,6 +1527,13 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
       show_server_online: row.show_server_online,
       show_online_frame: row.show_online_frame,
     });
+    if (user.avatarUrl) {
+      const base = String(user.avatarUrl).split("?")[0];
+      const bust = row.updated_at
+        ? new Date(row.updated_at).getTime() || Date.now()
+        : Date.now();
+      user.avatarUrl = `${base}?v=${bust}`;
+    }
     return res.json({
       user,
       registered: Boolean(row.registered),
