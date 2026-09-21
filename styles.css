@@ -650,18 +650,6 @@ h3,
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 44px;
-}
-
-.profile-toolbar {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 3;
-}
-
-.profile-toolbar .mc-btn {
-  min-width: 0;
 }
 
 .hub-view[hidden] {
@@ -698,6 +686,11 @@ h3,
 .hub-view .mc-btn#auth-logout-btn,
 .hub-view > .mc-btn {
   align-self: center;
+  min-width: 220px;
+}
+
+.hub-view .hub-save-btn {
+  margin-top: 14px;
   min-width: 220px;
 }
 
