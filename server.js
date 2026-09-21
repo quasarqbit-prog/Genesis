@@ -830,14 +830,9 @@ function withPresenceFlags(user) {
   const id = Number(user.id);
   const onlineSet = new Set(getOnlineUserIds());
   const serverSet = new Set(getServerOnlineUserIds());
-  const siteOnline =
-    Boolean(user.showOnlineFrame) &&
-    Boolean(user.showSiteOnline) &&
-    onlineSet.has(id);
-  const serverOnline =
-    Boolean(user.showOnlineFrame) &&
-    Boolean(user.showServerOnline) &&
-    serverSet.has(id);
+  // showOnlineFrame — только своя рамка в профиле; видимость для других — отдельные флаги
+  const siteOnline = user.showSiteOnline !== false && onlineSet.has(id);
+  const serverOnline = user.showServerOnline !== false && serverSet.has(id);
   return {
     ...user,
     online: siteOnline,
@@ -1539,14 +1534,9 @@ app.get("/api/users/directory", authMiddleware, async (_req, res) => {
       users: rows.map((row) => {
         const user = toPublicUser(row);
         const id = Number(user.id);
-        const siteOnline =
-          Boolean(user.showOnlineFrame) &&
-          Boolean(user.showSiteOnline) &&
-          onlineSet.has(id);
+        const siteOnline = user.showSiteOnline !== false && onlineSet.has(id);
         const serverOnline =
-          Boolean(user.showOnlineFrame) &&
-          Boolean(user.showServerOnline) &&
-          serverSet.has(id);
+          user.showServerOnline !== false && serverSet.has(id);
         return {
           ...user,
           online: siteOnline,

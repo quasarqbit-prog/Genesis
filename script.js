@@ -507,10 +507,21 @@
       if (!user || !Number.isFinite(Number(user.id))) return;
       const id = Number(user.id);
       const idx = directoryUsers.findIndex((u) => Number(u.id) === id);
-      if (idx >= 0) directoryUsers[idx] = { ...directoryUsers[idx], ...user };
-      else directoryUsers.push(user);
+      const prev = idx >= 0 ? directoryUsers[idx] : null;
+      const merged = {
+        ...(prev || {}),
+        ...user,
+        // не затираем аватар, если в апдейте его нет
+        avatarUrl: user.avatarUrl || prev?.avatarUrl || "",
+      };
+      if (idx >= 0) directoryUsers[idx] = merged;
+      else directoryUsers.push(merged);
       if (Number(authUser?.id) === id) {
-        authUser = { ...authUser, ...user };
+        authUser = {
+          ...authUser,
+          ...merged,
+          avatarUrl: merged.avatarUrl || authUser.avatarUrl || "",
+        };
         applyAuthUi({ syncHubFields: false });
       }
       renderPlayersDirectory();
@@ -534,17 +545,29 @@
     return raw.includes("?") ? raw : `${raw}?v=1`;
   }
 
+  function isSiteOnlineVisible(user) {
+    const id = Number(user?.id);
+    if (!Number.isFinite(id) || !onlineUserIds.has(id)) return false;
+    if (user?.showSiteOnline === false) return false;
+    return true;
+  }
+
+  function isServerOnlineVisible(user) {
+    const id = Number(user?.id);
+    if (!Number.isFinite(id) || !serverOnlineUserIds.has(id)) return false;
+    if (user?.showServerOnline === false) return false;
+    return true;
+  }
+
   function presenceRank(user) {
-    const id = Number(user.id);
-    if (onlineUserIds.has(id)) return 2;
-    if (serverOnlineUserIds.has(id)) return 1;
+    if (isSiteOnlineVisible(user)) return 2;
+    if (isServerOnlineVisible(user)) return 1;
     return 0;
   }
 
   function presenceClass(user) {
-    const id = Number(user.id);
-    if (onlineUserIds.has(id)) return "is-site";
-    if (serverOnlineUserIds.has(id)) return "is-server";
+    if (isSiteOnlineVisible(user)) return "is-site";
+    if (isServerOnlineVisible(user)) return "is-server";
     return "is-offline";
   }
 
@@ -812,7 +835,10 @@
           img.hidden = false;
           fallback.hidden = true;
         };
-        img.src = src;
+        // не дёргаем src без нужды — иначе браузер срывает картинку
+        if (img.getAttribute("src") !== src) {
+          img.src = src;
+        }
         img.hidden = false;
         fallback.hidden = true;
       } else {
@@ -826,7 +852,7 @@
     syncAvatar(avatarImg, avatarFallback, displayNick);
     syncAvatar(hubAvatarImg, hubAvatarFallback, displayNick);
     syncPrivacyMarks();
-    if (loggedIn) renderPlayersDirectory();
+    // Не перерисовываем весь presence-strip отсюда — это срывает загрузку чужих аватарок
   }
 
   function syncPrivacyMarks() {
@@ -1391,10 +1417,27 @@
           method: "PATCH",
           body: JSON.stringify({ [key]: next }),
         });
-        if (data.user) authUser = data.user;
-        else authUser[key] = next;
+        const prevAvatar = authUser.avatarUrl || "";
+        if (data.user) {
+          authUser = {
+            ...authUser,
+            ...data.user,
+            avatarUrl: data.user.avatarUrl || prevAvatar,
+          };
+        } else {
+          authUser = { ...authUser, [key]: next };
+        }
+        const id = Number(authUser.id);
+        const idx = directoryUsers.findIndex((u) => Number(u.id) === id);
+        if (idx >= 0) {
+          directoryUsers[idx] = {
+            ...directoryUsers[idx],
+            ...authUser,
+            avatarUrl: authUser.avatarUrl || directoryUsers[idx].avatarUrl || "",
+          };
+        }
         applyAuthUi({ syncHubFields: false });
-        await loadPlayersDirectory();
+        renderPlayersDirectory();
       } catch (err) {
         showToast(err.message || "Не удалось сохранить");
       }
