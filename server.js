@@ -43,7 +43,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "4mb" }));
+app.use(express.json({ limit: "8mb" }));
 app.use("/uploads", express.static(UPLOADS_DIR));
 
 /** Локальная разработка: Express раздаёт статику. На VPS статику отдаёт Nginx. */
@@ -689,6 +689,77 @@ async function allocateUniqueMcNick(baseName, excludeUserId = null) {
   return `GP${Date.now().toString(36)}`.slice(0, 16);
 }
 
+async function persistUploadedAvatar(userId, dataUrl) {
+  ensureUploadDirs();
+  await ensureProfile(userId, null);
+  const match = /^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=]+)$/i.exec(
+    String(dataUrl || "")
+  );
+  if (!match) {
+    const err = new Error("Нужно изображение PNG/JPEG/WebP/GIF");
+    err.status = 400;
+    throw err;
+  }
+  const mime = match[1].toLowerCase();
+  const ext = mime.includes("png")
+    ? "png"
+    : mime.includes("webp")
+      ? "webp"
+      : mime.includes("gif")
+        ? "gif"
+        : "jpg";
+  const buf = Buffer.from(match[2], "base64");
+  if (buf.length < 32 || buf.length > 2.5 * 1024 * 1024) {
+    const err = new Error("Размер файла: до 2.5 МБ");
+    err.status = 400;
+    throw err;
+  }
+
+  // Удаляем старые файлы с другим расширением
+  for (const oldExt of ["png", "jpg", "jpeg", "webp", "gif"]) {
+    const oldPath = path.join(AVATARS_DIR, `${userId}.${oldExt}`);
+    try {
+      await fs.promises.unlink(oldPath);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const publicPath = `/uploads/avatars/${userId}.${ext}`;
+  const absPath = path.join(AVATARS_DIR, `${userId}.${ext}`);
+  await fs.promises.writeFile(absPath, buf);
+  await pool.execute(
+    `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
+    { avatarPath: publicPath, userId }
+  );
+  return `${publicPath}?v=${Date.now()}`;
+}
+
+async function resetUserAvatar(userId) {
+  await ensureProfile(userId, null);
+  const [rows] = await pool.execute(
+    `SELECT telegram_id FROM users WHERE id = :userId LIMIT 1`,
+    { userId }
+  );
+  const telegramId = rows[0]?.telegram_id || null;
+  for (const oldExt of ["png", "jpg", "jpeg", "webp", "gif"]) {
+    const oldPath = path.join(AVATARS_DIR, `${userId}.${oldExt}`);
+    try {
+      await fs.promises.unlink(oldPath);
+    } catch {
+      /* ignore */
+    }
+  }
+  await pool.execute(
+    `UPDATE profiles SET avatar_path = NULL WHERE user_id = :userId`,
+    { userId }
+  );
+  if (telegramId) {
+    return saveTelegramAvatar(userId, "", telegramId);
+  }
+  return "";
+}
+
 async function loadUserPublic(userId) {
   const [rows] = await pool.execute(
     `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role,
@@ -1212,6 +1283,15 @@ app.post("/api/user/save", authMiddleware, async (req, res) => {
   try {
     await ensureProfile(req.user.id, req.user.mcNick || null);
 
+    if (req.body?.resetAvatar) {
+      await resetUserAvatar(req.user.id);
+    } else if (req.body?.image || req.body?.dataUrl) {
+      await persistUploadedAvatar(
+        req.user.id,
+        req.body?.image || req.body?.dataUrl
+      );
+    }
+
     let siteNick = String(req.body?.siteNick || req.body?.site_nick || "").trim();
     if (!siteNick) {
       const [rows] = await pool.execute(
@@ -1267,6 +1347,10 @@ app.post("/api/user/save", authMiddleware, async (req, res) => {
     }
 
     const user = await loadUserPublic(req.user.id);
+    if (user?.avatarUrl) {
+      const base = String(user.avatarUrl).split("?")[0];
+      user.avatarUrl = `${base}?v=${Date.now()}`;
+    }
     broadcastDirectoryUser(user);
     return res.json({
       ok: true,
@@ -1275,6 +1359,9 @@ app.post("/api/user/save", authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error("user save:", err);
+    if (err.status === 400) {
+      return res.status(400).json({ error: err.message });
+    }
     const msg = String(err?.message || "");
     if (msg.includes("Duplicate") || msg.includes("uq_users_mc_nick")) {
       return res.status(409).json({ error: "Этот игровой ник уже занят", field: "mcNick" });
@@ -1372,61 +1459,29 @@ app.patch("/api/user/privacy", authMiddleware, async (req, res) => {
 
 app.post("/api/user/avatar/upload", authMiddleware, async (req, res) => {
   try {
-    ensureUploadDirs();
-    await ensureProfile(req.user.id, null);
-    const dataUrl = String(req.body?.image || req.body?.dataUrl || "");
-    const match = /^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=]+)$/i.exec(
-      dataUrl
-    );
-    if (!match) {
-      return res.status(400).json({ error: "Нужно изображение PNG/JPEG/WebP/GIF" });
-    }
-    const mime = match[1].toLowerCase();
-    const ext = mime.includes("png")
-      ? "png"
-      : mime.includes("webp")
-        ? "webp"
-        : mime.includes("gif")
-          ? "gif"
-          : "jpg";
-    const buf = Buffer.from(match[2], "base64");
-    if (buf.length < 32 || buf.length > 2.5 * 1024 * 1024) {
-      return res.status(400).json({ error: "Размер файла: до 2.5 МБ" });
-    }
-    const publicPath = `/uploads/avatars/${req.user.id}.${ext}`;
-    const absPath = path.join(AVATARS_DIR, `${req.user.id}.${ext}`);
-    await fs.promises.writeFile(absPath, buf);
-    await pool.execute(
-      `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
-      { avatarPath: publicPath, userId: req.user.id }
+    const avatarUrl = await persistUploadedAvatar(
+      req.user.id,
+      req.body?.image || req.body?.dataUrl
     );
     const user = await loadUserPublic(req.user.id);
-    if (user) user.avatarUrl = `${publicPath}?v=${Date.now()}`;
-    return res.json({ ok: true, user, avatarUrl: user?.avatarUrl || publicPath });
+    if (user) user.avatarUrl = avatarUrl;
+    broadcastDirectoryUser(user);
+    return res.json({ ok: true, user, avatarUrl });
   } catch (err) {
     console.error("avatar upload:", err);
+    if (err.status === 400) {
+      return res.status(400).json({ error: err.message });
+    }
     return res.status(500).json({ error: "Не удалось загрузить аватар" });
   }
 });
 
 app.post("/api/user/avatar/reset", authMiddleware, async (req, res) => {
   try {
-    await ensureProfile(req.user.id, null);
-    const [rows] = await pool.execute(
-      `SELECT telegram_id FROM users WHERE id = :userId LIMIT 1`,
-      { userId: req.user.id }
-    );
-    const telegramId = rows[0]?.telegram_id || null;
-    await pool.execute(
-      `UPDATE profiles SET avatar_path = NULL WHERE user_id = :userId`,
-      { userId: req.user.id }
-    );
-    let avatarUrl = "";
-    if (telegramId) {
-      avatarUrl = await saveTelegramAvatar(req.user.id, "", telegramId);
-    }
+    const avatarUrl = await resetUserAvatar(req.user.id);
     const user = await loadUserPublic(req.user.id);
     if (avatarUrl && user) user.avatarUrl = avatarUrl;
+    broadcastDirectoryUser(user);
     return res.json({ ok: true, user, avatarUrl: user?.avatarUrl || "" });
   } catch (err) {
     console.error("avatar reset:", err);

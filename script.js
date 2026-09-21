@@ -335,6 +335,8 @@
   let directoryUsers = [];
   let onlineUserIds = new Set();
   let serverOnlineUserIds = new Set();
+  let pendingAvatarDataUrl = null;
+  let pendingAvatarReset = false;
   let profileCache = { registered: false, form: {} };
   let socket = null;
 
@@ -374,6 +376,8 @@
     directoryUsers = [];
     onlineUserIds = new Set();
     serverOnlineUserIds = new Set();
+    pendingAvatarDataUrl = null;
+    pendingAvatarReset = false;
     renderPlayersDirectory();
     profileCache = readLocalStorageFallback();
   }
@@ -507,7 +511,7 @@
       else directoryUsers.push(user);
       if (Number(authUser?.id) === id) {
         authUser = { ...authUser, ...user };
-        applyAuthUi();
+        applyAuthUi({ syncHubFields: false });
       }
       renderPlayersDirectory();
     });
@@ -565,23 +569,28 @@
 
   function renderPresenceUser(user) {
     const id = Number(user.id);
-    const displayNick = String(user.siteNick || user.mcNick || "—");
-    const nick = escapeHtml(displayNick);
+    const fullNick = String(user.siteNick || user.mcNick || "—").trim() || "—";
+    const mcNick = String(user.mcNick || "").trim();
+    const nick = escapeHtml(fullNick);
     const tgRaw = String(user.telegram || "").trim();
     const tg = tgRaw
       ? escapeHtml(tgRaw.startsWith("@") ? tgRaw : `@${tgRaw}`)
       : "";
     const avatarUrl = playerAvatarSrc(user.avatarUrl);
-    const letter = escapeHtml((displayNick || "?").slice(0, 1).toUpperCase());
+    const letter = escapeHtml((fullNick || "?").slice(0, 1).toUpperCase());
     const avatarHtml = avatarUrl
       ? `<img src="${escapeHtml(avatarUrl)}" alt="" />`
       : `<span class="presence-avatar__fallback">${letter}</span>`;
     const cls = presenceClass(user);
-    const title = tg ? `${nick} · ${tg}` : nick;
-    return `<article class="presence-user ${cls}" data-user-id="${id}" title="${title}">
+    const tipParts = [fullNick];
+    if (mcNick && mcNick !== fullNick) tipParts.push(`игра: ${mcNick}`);
+    tipParts.push(`id ${id}`);
+    const tip = escapeHtml(tipParts.join(" · "));
+    return `<article class="presence-user ${cls}" data-user-id="${id}" data-tip="${tip}">
       <div class="presence-user__nick">${nick}</div>
-      <div class="presence-avatar">${avatarHtml}</div>
+      <button type="button" class="presence-avatar" title="${tip}" aria-label="${tip}">${avatarHtml}</button>
       <div class="presence-user__tg">${tg || "—"}</div>
+      <div class="presence-tip" hidden>${tip}</div>
     </article>`;
   }
 
@@ -602,6 +611,62 @@
       staffDivider.hidden = !(staff.length && regular.length);
     }
   }
+
+  function hidePresenceTips(exceptEl = null) {
+    document.querySelectorAll(".presence-user.is-tip-open").forEach((el) => {
+      if (exceptEl && el === exceptEl) return;
+      el.classList.remove("is-tip-open");
+      const tip = el.querySelector(".presence-tip");
+      if (tip) tip.hidden = true;
+    });
+  }
+
+  function bindPresenceTips() {
+    const rail = document.getElementById("presence-rail");
+    if (!rail || rail.dataset.tipBound === "1") return;
+    rail.dataset.tipBound = "1";
+
+    rail.addEventListener("pointerover", (e) => {
+      const avatar = e.target.closest(".presence-avatar");
+      if (!avatar || !rail.contains(avatar)) return;
+      const card = avatar.closest(".presence-user");
+      if (!card) return;
+      hidePresenceTips(card);
+      card.classList.add("is-tip-open");
+      const tip = card.querySelector(".presence-tip");
+      if (tip) tip.hidden = false;
+    });
+
+    rail.addEventListener("pointerout", (e) => {
+      const card = e.target.closest(".presence-user");
+      if (!card || !rail.contains(card)) return;
+      const next = e.relatedTarget;
+      if (next && card.contains(next)) return;
+      card.classList.remove("is-tip-open");
+      const tip = card.querySelector(".presence-tip");
+      if (tip) tip.hidden = true;
+    });
+
+    rail.addEventListener("click", (e) => {
+      const avatar = e.target.closest(".presence-avatar");
+      if (!avatar || !rail.contains(avatar)) return;
+      e.preventDefault();
+      const card = avatar.closest(".presence-user");
+      if (!card) return;
+      const open = !card.classList.contains("is-tip-open");
+      hidePresenceTips(open ? card : null);
+      card.classList.toggle("is-tip-open", open);
+      const tip = card.querySelector(".presence-tip");
+      if (tip) tip.hidden = !open;
+    });
+
+    document.addEventListener("click", (e) => {
+      if (e.target.closest(".presence-user")) return;
+      hidePresenceTips();
+    });
+  }
+
+  bindPresenceTips();
 
   function applyPlayersPresence() {
     renderPlayersDirectory();
@@ -661,10 +726,11 @@
     });
   }
 
-  function applyAuthUi() {
+  function applyAuthUi(options = {}) {
+    const syncHubFields = Boolean(options.syncHubFields);
     const displayNick = authUser?.mcNick || authUser?.username || "";
     const siteNick = authUser?.siteNick || "";
-    const avatarUrl = authUser?.avatarUrl || "";
+    const avatarUrl = pendingAvatarDataUrl || authUser?.avatarUrl || "";
     const loggedIn = Boolean(authToken && displayNick);
     const sessionPending = Boolean(authToken && !displayNick);
     const gate = document.getElementById("auth-gate");
@@ -713,11 +779,15 @@
       }
     }
 
-    if (hubSiteNick && document.activeElement !== hubSiteNick) {
-      hubSiteNick.value = siteNick || String(authUser?.telegram || "").replace(/^@/, "");
-    }
-    if (hubMcNick && document.activeElement !== hubMcNick) {
-      hubMcNick.value = displayNick;
+    // Не затираем ники при превью аватара / socket-обновлениях — только после логина/сохранения
+    if (syncHubFields) {
+      if (hubSiteNick) {
+        hubSiteNick.value =
+          siteNick || String(authUser?.telegram || "").replace(/^@/, "");
+      }
+      if (hubMcNick) {
+        hubMcNick.value = displayNick;
+      }
     }
 
     if (profileFrame) {
@@ -729,7 +799,8 @@
     const syncAvatar = (img, fallback, nick) => {
       if (!img || !fallback) return;
       if (avatarUrl) {
-        const src = avatarUrl.includes("?")
+        const isData = avatarUrl.startsWith("data:");
+        const src = isData || avatarUrl.includes("?")
           ? avatarUrl
           : `${avatarUrl}?v=${Date.now()}`;
         img.onerror = () => {
@@ -775,7 +846,7 @@
   }
 
   function updateAuthChrome() {
-    applyAuthUi();
+    applyAuthUi({ syncHubFields: true });
   }
 
   const PENDING_TG_KEY = "genesis_pending_tg";
@@ -1291,32 +1362,22 @@
         reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
         reader.readAsDataURL(file);
       });
-      const data = await api("/api/user/avatar/upload", {
-        method: "POST",
-        body: JSON.stringify({ image: dataUrl }),
-      });
-      if (data.user) authUser = data.user;
-      else if (data.avatarUrl && authUser) authUser.avatarUrl = data.avatarUrl;
-      applyAuthUi();
-      showToast("Аватар загружен");
+      pendingAvatarDataUrl = dataUrl;
+      pendingAvatarReset = false;
+      applyAuthUi({ syncHubFields: false });
+      showToast("Аватар выбран — нажми Сохранить");
     } catch (err) {
-      showToast(err.message || "Не удалось загрузить аватар");
+      showToast(err.message || "Не удалось прочитать файл");
     }
   });
 
   document.getElementById("hub-avatar-reset-btn")?.addEventListener("click", async () => {
     closeHubMenus();
-    try {
-      const data = await api("/api/user/avatar/reset", {
-        method: "POST",
-        body: "{}",
-      });
-      if (data.user) authUser = data.user;
-      applyAuthUi();
-      showToast("Аватар сброшен");
-    } catch (err) {
-      showToast(err.message || "Не удалось сбросить аватар");
-    }
+    pendingAvatarDataUrl = null;
+    pendingAvatarReset = true;
+    if (authUser) authUser = { ...authUser, avatarUrl: "" };
+    applyAuthUi({ syncHubFields: false });
+    showToast("Аватар будет сброшен после Сохранить");
   });
 
   document.querySelectorAll("#hub-privacy-menu [data-privacy]").forEach((btn) => {
@@ -1332,7 +1393,7 @@
         });
         if (data.user) authUser = data.user;
         else authUser[key] = next;
-        applyAuthUi();
+        applyAuthUi({ syncHubFields: false });
         await loadPlayersDirectory();
       } catch (err) {
         showToast(err.message || "Не удалось сохранить");
@@ -1349,22 +1410,60 @@
       setHubFieldError("hub-mc-nick-error", "Ник: 3–16 символов, латиница, цифры и _");
       return;
     }
+    const saveBtn = document.getElementById("hub-save-btn");
+    if (saveBtn) saveBtn.disabled = true;
     try {
+      // Аватар — отдельным запросом (надёжнее лимитов nginx на тело), потом ники
+      if (pendingAvatarReset) {
+        const avatarData = await api("/api/user/avatar/reset", {
+          method: "POST",
+          body: "{}",
+        });
+        if (avatarData.user) authUser = { ...authUser, ...avatarData.user };
+        else if (authUser) authUser.avatarUrl = avatarData.avatarUrl || "";
+        pendingAvatarReset = false;
+        pendingAvatarDataUrl = null;
+      } else if (pendingAvatarDataUrl) {
+        const avatarData = await api("/api/user/avatar/upload", {
+          method: "POST",
+          body: JSON.stringify({ image: pendingAvatarDataUrl }),
+        });
+        if (avatarData.user) authUser = { ...authUser, ...avatarData.user };
+        else if (avatarData.avatarUrl && authUser) {
+          authUser.avatarUrl = avatarData.avatarUrl;
+        }
+        pendingAvatarDataUrl = null;
+        pendingAvatarReset = false;
+      }
+
       const data = await api("/api/user/save", {
         method: "POST",
         body: JSON.stringify({ siteNick, mcNick }),
       });
-      if (data.token) setAuthSession(data.token, data.user || authUser);
-      else if (data.user) authUser = data.user;
-      applyAuthUi();
+      const merged = {
+        ...(authUser || {}),
+        ...(data.user || {}),
+      };
+      if (!merged.avatarUrl && authUser?.avatarUrl) {
+        merged.avatarUrl = authUser.avatarUrl;
+      }
+      if (data.token) setAuthSession(data.token, merged);
+      else authUser = merged;
+      applyAuthUi({ syncHubFields: true });
       showToast("Сохранено");
     } catch (err) {
       const field = err.data?.field;
       if (field === "mcNick") {
         setHubFieldError("hub-mc-nick-error", err.message || "Ошибка ника");
       } else {
-        setHubFieldError("hub-site-nick-error", err.message || "Не удалось сохранить");
+        setHubFieldError(
+          "hub-site-nick-error",
+          err.message || "Не удалось сохранить"
+        );
       }
+      applyAuthUi({ syncHubFields: false });
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
     }
   });
 
