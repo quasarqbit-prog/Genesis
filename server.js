@@ -125,6 +125,8 @@ function toPublicUser(rowOrUser) {
     accountType: rowOrUser.accountType || rowOrUser.account_type || "",
     role,
     isAdmin: role === "admin",
+    isHelper: role === "helper",
+    isStaff: role === "admin" || role === "helper",
     avatarUrl: avatarPath || "",
   };
 }
@@ -169,7 +171,7 @@ async function ensureSchema() {
       telegram_id BIGINT NULL,
       mc_nick VARCHAR(16) NOT NULL,
       account_type ENUM('pirate', 'licensed') NOT NULL DEFAULT 'pirate',
-      role ENUM('user', 'admin') NOT NULL DEFAULT 'user',
+      role ENUM('user', 'helper', 'admin') NOT NULL DEFAULT 'user',
       password_hash VARCHAR(255) NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -210,9 +212,18 @@ async function ensureSchema() {
   if (!(await columnExists("users", "role"))) {
     await pool.query(
       `ALTER TABLE users
-       ADD COLUMN role ENUM('user', 'admin') NOT NULL DEFAULT 'user'
+       ADD COLUMN role ENUM('user', 'helper', 'admin') NOT NULL DEFAULT 'user'
        AFTER account_type`
     );
+  } else {
+    try {
+      await pool.query(
+        `ALTER TABLE users
+         MODIFY COLUMN role ENUM('user', 'helper', 'admin') NOT NULL DEFAULT 'user'`
+      );
+    } catch (err) {
+      console.warn("role enum migrate:", err.message);
+    }
   }
   if (!(await columnExists("users", "telegram_id"))) {
     await pool.query(
@@ -650,6 +661,33 @@ async function getTelegramBotInfo() {
     console.warn("Telegram getMe error:", err.message);
     return null;
   }
+}
+
+/* ---------- Presence (site + Minecraft server) ---------- */
+const onlineUsers = new Map(); // socket.id -> { userId?, mcNick? }
+const serverOnlineIds = new Set(); // user ids online on Minecraft server
+
+function getOnlineUserIds() {
+  const ids = new Set();
+  for (const entry of onlineUsers.values()) {
+    const id = Number(entry?.userId);
+    if (Number.isFinite(id) && id > 0) ids.add(id);
+  }
+  return [...ids];
+}
+
+function getServerOnlineUserIds() {
+  return [...serverOnlineIds];
+}
+
+function broadcastPresence() {
+  const onlineIds = getOnlineUserIds();
+  const serverIds = getServerOnlineUserIds();
+  io.emit("presence:update", {
+    online: onlineIds.length,
+    onlineIds,
+    serverOnlineIds: serverIds,
+  });
 }
 
 /* ---------- Health / config ---------- */
@@ -1183,6 +1221,86 @@ app.patch("/api/user/password", authMiddleware, async (req, res) => {
   }
 });
 
+app.get("/api/users/directory", authMiddleware, async (_req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role, p.avatar_path
+       FROM users u
+       LEFT JOIN profiles p ON p.user_id = u.id
+       ORDER BY u.mc_nick ASC
+       LIMIT 500`
+    );
+    const onlineIds = getOnlineUserIds();
+    const onlineSet = new Set(onlineIds);
+    const serverIds = getServerOnlineUserIds();
+    const serverSet = new Set(serverIds);
+    return res.json({
+      users: rows.map((row) => {
+        const user = toPublicUser(row);
+        const id = Number(user.id);
+        return {
+          ...user,
+          online: onlineSet.has(id),
+          siteOnline: onlineSet.has(id),
+          serverOnline: serverSet.has(id),
+        };
+      }),
+      onlineIds,
+      serverOnlineIds: serverIds,
+    });
+  } catch (err) {
+    console.error("users directory:", err);
+    return res.status(500).json({ error: "Не удалось загрузить список игроков" });
+  }
+});
+
+/** Список игроков онлайн на Minecraft-сервере (шлёт мод) */
+app.post("/api/mc/online", async (req, res) => {
+  try {
+    if (MOD_API_KEY) {
+      const key = req.headers["x-mod-key"] || req.body?.apiKey;
+      if (key !== MOD_API_KEY) {
+        return res.status(403).json({ ok: false, error: "Forbidden" });
+      }
+    }
+
+    const raw = req.body?.nicks || req.body?.players || [];
+    const nicks = (Array.isArray(raw) ? raw : [])
+      .map((item) =>
+        normalizeMcNick(
+          typeof item === "string" ? item : item?.nick || item?.mcNick || ""
+        )
+      )
+      .filter((nick) => MC_NICK_RE.test(nick));
+
+    const unique = [...new Set(nicks.map((n) => n.toLowerCase()))];
+    if (!unique.length) {
+      serverOnlineIds.clear();
+      broadcastPresence();
+      return res.json({ ok: true, serverOnlineIds: [] });
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, mc_nick FROM users WHERE LOWER(mc_nick) IN (?)`,
+      [unique]
+    );
+
+    serverOnlineIds.clear();
+    for (const row of rows) {
+      const id = Number(row.id);
+      if (Number.isFinite(id) && id > 0) serverOnlineIds.add(id);
+    }
+    broadcastPresence();
+    return res.json({
+      ok: true,
+      serverOnlineIds: getServerOnlineUserIds(),
+    });
+  } catch (err) {
+    console.error("mc online:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
 /* ---------- Admin stub ---------- */
 app.get("/api/admin/status", adminMiddleware, async (_req, res) => {
   try {
@@ -1292,12 +1410,6 @@ app.put("/api/user/profile", authMiddleware, async (req, res) => {
 });
 
 /* ---------- Socket.io ---------- */
-const onlineUsers = new Map(); // socket.id -> { userId?, username? }
-
-function broadcastPresence() {
-  io.emit("presence:update", { online: onlineUsers.size });
-}
-
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token || socket.handshake.query?.token;
   if (!token) {
@@ -1328,7 +1440,11 @@ io.on("connection", (socket) => {
     socket.join(`user:${socket.data.user.id}`);
   }
 
-  socket.emit("presence:update", { online: onlineUsers.size });
+  socket.emit("presence:update", {
+    online: getOnlineUserIds().length,
+    onlineIds: getOnlineUserIds(),
+    serverOnlineIds: getServerOnlineUserIds(),
+  });
 
   socket.on("chat:message", (payload) => {
     const text = String(payload?.text || "").trim().slice(0, 300);

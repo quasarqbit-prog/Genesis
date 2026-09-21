@@ -332,6 +332,9 @@
   /* Auth / API / Socket */
   let authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
   let authUser = null;
+  let directoryUsers = [];
+  let onlineUserIds = new Set();
+  let serverOnlineUserIds = new Set();
   let profileCache = { registered: false, form: {} };
   let socket = null;
 
@@ -368,6 +371,10 @@
 
   function clearAuthSession() {
     setAuthSession("", null);
+    directoryUsers = [];
+    onlineUserIds = new Set();
+    serverOnlineUserIds = new Set();
+    renderPlayersDirectory();
     profileCache = readLocalStorageFallback();
   }
 
@@ -437,6 +444,10 @@
   async function loadProfileFromServer() {
     if (!authToken) {
       profileCache = readLocalStorageFallback();
+      directoryUsers = [];
+      onlineUserIds = new Set();
+      serverOnlineUserIds = new Set();
+      renderPlayersDirectory();
       updateAuthChrome();
       return profileCache;
     }
@@ -449,6 +460,7 @@
       };
       writeLocalStorageFallback(profileCache);
       updateAuthChrome();
+      await loadPlayersDirectory();
       return profileCache;
     } catch (err) {
       if (err.status === 401) clearAuthSession();
@@ -469,14 +481,139 @@
       transports: ["websocket", "polling"],
     });
     socket.on("presence:update", (payload) => {
+      const ids = Array.isArray(payload?.onlineIds)
+        ? payload.onlineIds.map((id) => Number(id)).filter((id) => Number.isFinite(id))
+        : [];
+      onlineUserIds = new Set(ids);
+      const serverIds = Array.isArray(payload?.serverOnlineIds)
+        ? payload.serverOnlineIds
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id))
+        : [];
+      serverOnlineUserIds = new Set(serverIds);
       const el = document.getElementById("auth-online");
-      if (!el) return;
-      el.hidden = false;
-      el.textContent = `онлайн: ${Number(payload?.online) || 0}`;
+      if (el) {
+        el.hidden = false;
+        el.textContent = `онлайн: ${ids.length || Number(payload?.online) || 0}`;
+      }
+      applyPlayersPresence();
     });
     socket.on("connect_error", () => {
       /* API может быть недоступен офлайн — UI продолжает работать локально */
     });
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function playerAvatarSrc(url) {
+    const raw = String(url || "");
+    if (!raw) return "";
+    return raw.includes("?") ? raw : `${raw}?v=1`;
+  }
+
+  function presenceRank(user) {
+    const id = Number(user.id);
+    if (onlineUserIds.has(id)) return 2;
+    if (serverOnlineUserIds.has(id)) return 1;
+    return 0;
+  }
+
+  function presenceClass(user) {
+    const id = Number(user.id);
+    if (onlineUserIds.has(id)) return "is-site";
+    if (serverOnlineUserIds.has(id)) return "is-server";
+    return "is-offline";
+  }
+
+  function isStaffUser(user) {
+    return Boolean(
+      user?.isStaff ||
+        user?.isAdmin ||
+        user?.role === "admin" ||
+        user?.role === "helper"
+    );
+  }
+
+  function sortPresenceUsers(list) {
+    return list.slice().sort((a, b) => {
+      const rankDiff = presenceRank(b) - presenceRank(a);
+      if (rankDiff) return rankDiff;
+      return String(a.mcNick || "").localeCompare(String(b.mcNick || ""), "en", {
+        sensitivity: "base",
+      });
+    });
+  }
+
+  function renderPresenceUser(user) {
+    const id = Number(user.id);
+    const nick = escapeHtml(user.mcNick || "—");
+    const avatarUrl = playerAvatarSrc(user.avatarUrl);
+    const letter = escapeHtml((user.mcNick || "?").slice(0, 1).toUpperCase());
+    const avatarHtml = avatarUrl
+      ? `<img src="${escapeHtml(avatarUrl)}" alt="" />`
+      : `<span class="presence-avatar__fallback">${letter}</span>`;
+    const cls = presenceClass(user);
+    return `<article class="presence-user ${cls}" data-user-id="${id}" title="${nick}">
+      <div class="presence-avatar">${avatarHtml}</div>
+      <div class="presence-user__nick">${nick}</div>
+    </article>`;
+  }
+
+  function renderPlayersDirectory() {
+    const staffHost = document.getElementById("presence-staff");
+    const othersHost = document.getElementById("presence-others");
+    const staffDivider = document.getElementById("presence-staff-divider");
+    if (!staffHost || !othersHost) return;
+
+    const myId = Number(authUser?.id);
+    const others = directoryUsers.filter((user) => Number(user.id) !== myId);
+    const staff = sortPresenceUsers(others.filter(isStaffUser));
+    const regular = sortPresenceUsers(others.filter((user) => !isStaffUser(user)));
+
+    staffHost.innerHTML = staff.map(renderPresenceUser).join("");
+    othersHost.innerHTML = regular.map(renderPresenceUser).join("");
+    if (staffDivider) {
+      staffDivider.hidden = !(staff.length && regular.length);
+    }
+  }
+
+  function applyPlayersPresence() {
+    renderPlayersDirectory();
+  }
+
+  async function loadPlayersDirectory() {
+    if (!authToken) {
+      directoryUsers = [];
+      onlineUserIds = new Set();
+      serverOnlineUserIds = new Set();
+      renderPlayersDirectory();
+      return;
+    }
+    try {
+      const data = await api("/api/users/directory");
+      directoryUsers = Array.isArray(data.users) ? data.users : [];
+      if (Array.isArray(data.onlineIds)) {
+        onlineUserIds = new Set(
+          data.onlineIds.map((id) => Number(id)).filter((id) => Number.isFinite(id))
+        );
+      }
+      if (Array.isArray(data.serverOnlineIds)) {
+        serverOnlineUserIds = new Set(
+          data.serverOnlineIds
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id))
+        );
+      }
+      renderPlayersDirectory();
+    } catch (err) {
+      console.warn("players directory:", err.message);
+    }
   }
 
   const UI_TRANSITION_MS = 380;
@@ -506,7 +643,6 @@
 
   function applyAuthUi() {
     const displayNick = authUser?.mcNick || authUser?.username || "";
-    const displayTg = authUser?.telegram || "";
     const avatarUrl = authUser?.avatarUrl || "";
     const loggedIn = Boolean(authToken && displayNick);
     const sessionPending = Boolean(authToken && !displayNick);
@@ -515,8 +651,6 @@
     const topbar = document.getElementById("topbar");
     const stage = document.getElementById("app-stage");
     const footer = document.getElementById("app-footer");
-    const nickEl = document.getElementById("profile-nick");
-    const tgEl = document.getElementById("profile-telegram");
     const avatarImg = document.getElementById("profile-avatar-img");
     const avatarFallback = document.getElementById("profile-avatar-fallback");
     const adminBtn = document.getElementById("admin-open-btn");
@@ -556,8 +690,6 @@
       }
     }
 
-    if (nickEl) nickEl.textContent = displayNick;
-    if (tgEl) tgEl.textContent = displayTg;
     if (hubNick && document.activeElement !== hubNick) {
       hubNick.value = displayNick;
     }
@@ -586,6 +718,7 @@
       }
     }
     if (adminBtn) adminBtn.hidden = !isAdmin;
+    if (loggedIn) renderPlayersDirectory();
   }
 
   function updateAuthChrome() {

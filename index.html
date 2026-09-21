@@ -23,19 +23,23 @@
   </div>
 
   <header class="profile-bar ui-layer" id="topbar" hidden>
-    <div class="profile-stack" id="profile-card">
-      <div class="profile-card">
-        <div class="profile-avatar" id="profile-avatar-btn" aria-hidden="true">
-          <img id="profile-avatar-img" alt="" hidden />
-          <span class="profile-avatar__fallback" id="profile-avatar-fallback">?</span>
+    <div class="shell-panel" id="profile-card">
+      <div class="presence-strip" aria-label="Игроки">
+        <div class="presence-self">
+          <div class="presence-avatar presence-avatar--self" id="profile-avatar-btn" aria-hidden="true">
+            <img id="profile-avatar-img" alt="" hidden />
+            <span class="presence-avatar__fallback" id="profile-avatar-fallback">?</span>
+          </div>
         </div>
-        <div class="profile-meta">
-          <div class="profile-nick" id="profile-nick"></div>
-          <div class="profile-telegram" id="profile-telegram"></div>
-        </div>
+
+        <div class="presence-divider" aria-hidden="true"></div>
+
+        <div class="presence-staff" id="presence-staff"></div>
+        <div class="presence-divider presence-divider--soft" id="presence-staff-divider" hidden aria-hidden="true"></div>
+        <div class="presence-others" id="presence-others"></div>
       </div>
 
-      <div class="hub-panel" id="hub-panel">
+      <div class="shell-main">
         <nav class="hub-nav" aria-label="Разделы">
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
           <button type="button" class="hub-nav__btn" data-hub-tab="creation">Создание</button>
