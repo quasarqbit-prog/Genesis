@@ -512,7 +512,7 @@ h3,
 }
 
 .presence-user.is-site .presence-avatar {
-  border-color: #9b7ed9;
+  border-color: var(--accent);
 }
 
 .presence-user.is-server .presence-avatar {
@@ -816,12 +816,28 @@ h3,
   display: flex;
   gap: 8px;
   align-items: center;
+  width: 100%;
 }
 
 .console-input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
   text-align: left;
   font-family: var(--font-ded);
+}
+
+.console-run-btn {
+  flex: 0 0 44px;
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px;
+  height: 44px;
+  padding: 0 !important;
+  display: inline-grid;
+  place-items: center;
+  font-size: 16px;
+  line-height: 1;
 }
 
 .console-suggest {
