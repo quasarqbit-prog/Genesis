@@ -643,6 +643,14 @@ h3,
   border: 1px solid #2a1c40;
 }
 
+.hub-view {
+  width: min(420px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .hub-view[hidden] {
   display: none !important;
 }
@@ -655,6 +663,8 @@ h3,
   letter-spacing: 1px;
   text-transform: uppercase;
   margin-bottom: 14px;
+  text-align: center;
+  width: 100%;
 }
 
 .hub-form {
@@ -662,12 +672,24 @@ h3,
   flex-direction: column;
   gap: 8px;
   margin-bottom: 18px;
-  max-width: 420px;
+  width: 100%;
+  text-align: center;
+}
+
+.hub-form .field-label,
+.hub-form .field-hint,
+.hub-form .field-error {
+  text-align: center;
+}
+
+.hub-view .mc-btn#auth-logout-btn,
+.hub-view > .mc-btn {
+  align-self: center;
+  min-width: 220px;
 }
 
 .hub-sep {
   width: 100%;
-  max-width: 420px;
   height: 3px;
   margin: 6px 0 18px;
   background: var(--border-hi);
@@ -677,14 +699,15 @@ h3,
   position: relative;
   display: flex;
   justify-content: center;
-  margin-bottom: 22px;
+  width: 100%;
+  margin-bottom: 28px;
 }
 
 .profile-frame {
-  width: 112px;
-  height: 112px;
-  padding: 4px;
-  border: 3px solid #6a6575;
+  width: 168px;
+  height: 168px;
+  padding: 5px;
+  border: 4px solid #6a6575;
   background: rgba(20, 12, 36, 0.55);
   box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
   cursor: pointer;
@@ -725,7 +748,7 @@ h3,
 
 .profile-frame__fallback {
   font-family: var(--font-ded);
-  font-size: 32px;
+  font-size: 48px;
   color: var(--accent);
 }
 
@@ -738,7 +761,7 @@ h3,
   border: 0;
   background: rgba(8, 4, 16, 0.62);
   color: var(--accent);
-  font-size: 22px;
+  font-size: 28px;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.18s ease;
