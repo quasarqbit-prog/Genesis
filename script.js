@@ -545,7 +545,16 @@
     return raw.includes("?") ? raw : `${raw}?v=1`;
   }
 
+  function isBannedUser(user) {
+    if (!user) return false;
+    if (user.banned) return true;
+    if (!user.bannedUntil) return false;
+    const ts = new Date(user.bannedUntil).getTime();
+    return Number.isFinite(ts) && ts > Date.now();
+  }
+
   function isSiteOnlineVisible(user) {
+    if (isBannedUser(user)) return false;
     const id = Number(user?.id);
     if (!Number.isFinite(id) || !onlineUserIds.has(id)) return false;
     if (user?.showSiteOnline === false) return false;
@@ -553,6 +562,7 @@
   }
 
   function isServerOnlineVisible(user) {
+    if (isBannedUser(user)) return false;
     const id = Number(user?.id);
     if (!Number.isFinite(id) || !serverOnlineUserIds.has(id)) return false;
     if (user?.showServerOnline === false) return false;
@@ -560,12 +570,14 @@
   }
 
   function presenceRank(user) {
+    if (isBannedUser(user)) return -1;
     if (isSiteOnlineVisible(user)) return 2;
     if (isServerOnlineVisible(user)) return 1;
     return 0;
   }
 
   function presenceClass(user) {
+    if (isBannedUser(user)) return "is-banned";
     if (isSiteOnlineVisible(user)) return "is-site";
     if (isServerOnlineVisible(user)) return "is-server";
     return "is-offline";
@@ -574,7 +586,9 @@
   function isStaffUser(user) {
     return Boolean(
       user?.isStaff ||
+        user?.isFounder ||
         user?.isAdmin ||
+        user?.role === "founder" ||
         user?.role === "admin" ||
         user?.role === "helper"
     );
@@ -582,6 +596,8 @@
 
   function sortPresenceUsers(list) {
     return list.slice().sort((a, b) => {
+      const banDiff = Number(isBannedUser(a)) - Number(isBannedUser(b));
+      if (banDiff) return banDiff;
       const rankDiff = presenceRank(b) - presenceRank(a);
       if (rankDiff) return rankDiff;
       return String(a.mcNick || "").localeCompare(String(b.mcNick || ""), "en", {
@@ -625,13 +641,16 @@
 
     const myId = Number(authUser?.id);
     const others = directoryUsers.filter((user) => Number(user.id) !== myId);
-    const staff = sortPresenceUsers(others.filter(isStaffUser));
-    const regular = sortPresenceUsers(others.filter((user) => !isStaffUser(user)));
+    const banned = sortPresenceUsers(others.filter(isBannedUser));
+    const active = others.filter((user) => !isBannedUser(user));
+    const staff = sortPresenceUsers(active.filter(isStaffUser));
+    const regular = sortPresenceUsers(active.filter((user) => !isStaffUser(user)));
+    const regularWithBanned = regular.concat(banned);
 
     staffHost.innerHTML = staff.map(renderPresenceUser).join("");
-    othersHost.innerHTML = regular.map(renderPresenceUser).join("");
+    othersHost.innerHTML = regularWithBanned.map(renderPresenceUser).join("");
     if (staffDivider) {
-      staffDivider.hidden = !(staff.length && regular.length);
+      staffDivider.hidden = !(staff.length && regularWithBanned.length);
     }
   }
 
@@ -852,7 +871,50 @@
     syncAvatar(avatarImg, avatarFallback, displayNick);
     syncAvatar(hubAvatarImg, hubAvatarFallback, displayNick);
     syncPrivacyMarks();
+    syncPanelAccess();
     // Не перерисовываем весь presence-strip отсюда — это срывает загрузку чужих аватарок
+  }
+
+  function syncPanelAccess() {
+    const tabBtn = document.getElementById("hub-tab-panel");
+    const staff = Boolean(authUser?.isStaff || isStaffUser(authUser));
+    if (tabBtn) tabBtn.hidden = !(authToken && staff);
+    if (!staff) {
+      const activePanel = document.querySelector('.hub-nav__btn.is-active[data-hub-tab="panel"]');
+      if (activePanel) setHubTab("profile");
+    }
+    const permBlock = document.getElementById("panel-perm-block");
+    const canPerm = Boolean(
+      authUser?.isFounder ||
+        authUser?.role === "founder" ||
+        authUser?.role === "admin" ||
+        (authUser?.isAdmin && authUser?.role !== "helper")
+    );
+    if (permBlock) permBlock.hidden = !canPerm;
+  }
+
+  function setHubTab(tab) {
+    const name = String(tab || "profile");
+    document.querySelectorAll(".hub-nav__btn").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-hub-tab") === name);
+    });
+    document.querySelectorAll(".hub-view").forEach((view) => {
+      const match = view.getAttribute("data-hub-view") === name;
+      view.classList.toggle("is-active", match);
+      view.hidden = !match;
+    });
+  }
+
+  function setPanelTab(tab) {
+    const name = String(tab || "controller");
+    document.querySelectorAll(".panel-subnav__btn").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-panel-tab") === name);
+    });
+    document.querySelectorAll(".panel-pane").forEach((pane) => {
+      const match = pane.getAttribute("data-panel-pane") === name;
+      pane.classList.toggle("is-active", match);
+      pane.hidden = !match;
+    });
   }
 
   function syncPrivacyMarks() {
@@ -1562,6 +1624,409 @@
       setHubFieldError("hub-pass-error", err.message || "Не удалось сменить пароль");
     }
   });
+
+  /* ---------- Staff panel (controller + console) ---------- */
+  const PANEL_HISTORY_KEY = "genesis_panel_console_history";
+  const PANEL_SITE_COMMANDS = [
+    {
+      name: "permission",
+      usage: "permission <ник> admin|helper|remove",
+      hint: "Права панели (только админ)",
+      adminOnly: true,
+    },
+    {
+      name: "ban",
+      usage: "ban <ник> <число> second|minute|hour|day",
+      hint: "Бан на сайте (+ задел на игру)",
+    },
+    {
+      name: "unban",
+      usage: "unban <ник>",
+      hint: "Снять бан",
+    },
+  ];
+  let consoleSuggestIndex = -1;
+
+  function canUsePermissionCmd() {
+    return Boolean(
+      authUser?.role === "founder" ||
+        authUser?.role === "admin" ||
+        authUser?.isFounder
+    );
+  }
+
+  function readConsoleHistory() {
+    try {
+      const raw = localStorage.getItem(PANEL_HISTORY_KEY);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list.slice(-200) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeConsoleHistory(list) {
+    try {
+      localStorage.setItem(PANEL_HISTORY_KEY, JSON.stringify(list.slice(-200)));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function renderConsoleHistory() {
+    const host = document.getElementById("panel-console-history");
+    if (!host) return;
+    const list = readConsoleHistory();
+    host.innerHTML = list
+      .map((item) => {
+        const cls =
+          item.type === "err"
+            ? "console-history__line--err"
+            : item.type === "ok"
+              ? "console-history__line--ok"
+              : item.type === "cmd"
+                ? "console-history__line--cmd"
+                : "";
+        return `<p class="console-history__line ${cls}">${escapeHtml(item.text)}</p>`;
+      })
+      .join("");
+    host.scrollTop = host.scrollHeight;
+  }
+
+  function pushConsoleHistory(type, text) {
+    const list = readConsoleHistory();
+    list.push({ type, text: String(text || ""), at: Date.now() });
+    writeConsoleHistory(list);
+    renderConsoleHistory();
+  }
+
+  function availableSiteCommands() {
+    return PANEL_SITE_COMMANDS.filter((cmd) => !cmd.adminOnly || canUsePermissionCmd());
+  }
+
+  function getConsoleSuggestions(value) {
+    const raw = String(value || "");
+    if (!raw.trim() || raw.trimStart().startsWith("/")) return [];
+    const parts = raw.trimStart().split(/\s+/);
+    const head = String(parts[0] || "").toLowerCase();
+    const cmds = availableSiteCommands();
+    if (parts.length <= 1) {
+      return cmds.filter(
+        (cmd) => cmd.name.startsWith(head) || cmd.usage.startsWith(head)
+      );
+    }
+    const cmd = cmds.find((c) => c.name === head);
+    if (!cmd) return [];
+    if (head === "permission" && parts.length === 2) {
+      return ["admin", "helper", "remove"].map((action) => ({
+        name: action,
+        usage: `permission ${parts[1]} ${action}`,
+        hint: action,
+        insert: `permission ${parts[1]} ${action}`,
+      }));
+    }
+    if (head === "permission" && parts.length >= 3) {
+      return ["admin", "helper", "remove"]
+        .filter((a) => a.startsWith(String(parts[2] || "").toLowerCase()))
+        .map((action) => ({
+          name: action,
+          usage: `permission ${parts[1]} ${action}`,
+          hint: action,
+          insert: `permission ${parts[1]} ${action}`,
+        }));
+    }
+    if (head === "ban" && parts.length >= 4) {
+      return ["second", "minute", "hour", "day"]
+        .filter((u) => u.startsWith(String(parts[3] || "").toLowerCase()))
+        .map((unit) => ({
+          name: unit,
+          usage: `ban ${parts[1]} ${parts[2]} ${unit}`,
+          hint: unit,
+          insert: `ban ${parts[1]} ${parts[2]} ${unit}`,
+        }));
+    }
+    return [{ ...cmd, insert: cmd.usage.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim() }];
+  }
+
+  function hideConsoleSuggest() {
+    const box = document.getElementById("panel-console-suggest");
+    if (box) {
+      box.hidden = true;
+      box.innerHTML = "";
+    }
+    consoleSuggestIndex = -1;
+  }
+
+  function renderConsoleSuggest(value) {
+    const box = document.getElementById("panel-console-suggest");
+    if (!box) return;
+    const items = getConsoleSuggestions(value);
+    if (!items.length) {
+      hideConsoleSuggest();
+      return;
+    }
+    box.hidden = false;
+    box.innerHTML = items
+      .map((item, idx) => {
+        const title = escapeHtml(item.usage || item.name);
+        const hint = item.hint ? `<span class="console-suggest__hint">${escapeHtml(item.hint)}</span>` : "";
+        return `<button type="button" class="console-suggest__item${idx === consoleSuggestIndex ? " is-active" : ""}" data-suggest-idx="${idx}">${title}${hint}</button>`;
+      })
+      .join("");
+    box.querySelectorAll(".console-suggest__item").forEach((btn) => {
+      btn.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        const idx = Number(btn.getAttribute("data-suggest-idx"));
+        applyConsoleSuggestion(items[idx]);
+      });
+    });
+  }
+
+  function applyConsoleSuggestion(item) {
+    const input = document.getElementById("panel-console-input");
+    if (!input || !item) return;
+    const insert =
+      item.insert ||
+      item.name ||
+      String(item.usage || "").replace(/<[^>]+>/g, "").trim();
+    input.value = insert.endsWith(" ") ? insert : `${insert} `;
+    input.focus();
+    hideConsoleSuggest();
+    renderConsoleSuggest(input.value);
+  }
+
+  async function runPanelCommand(line, opts = {}) {
+    const text = String(line || "").trim();
+    if (!text) return null;
+    if (opts.log !== false) pushConsoleHistory("cmd", `> ${text}`);
+    try {
+      const data = await api("/api/panel/command", {
+        method: "POST",
+        body: JSON.stringify({ line: text }),
+      });
+      const msg = data.message || "OK";
+      if (opts.log !== false) pushConsoleHistory("ok", msg);
+      if (opts.toast !== false) showToast(msg);
+      if (data.user) {
+        const id = Number(data.user.id);
+        const idx = directoryUsers.findIndex((u) => Number(u.id) === id);
+        if (idx >= 0) {
+          directoryUsers[idx] = {
+            ...directoryUsers[idx],
+            ...data.user,
+            avatarUrl: data.user.avatarUrl || directoryUsers[idx].avatarUrl || "",
+          };
+        }
+        if (Number(authUser?.id) === id) {
+          authUser = {
+            ...authUser,
+            ...data.user,
+            avatarUrl: data.user.avatarUrl || authUser.avatarUrl || "",
+          };
+          applyAuthUi({ syncHubFields: false });
+        }
+        renderPlayersDirectory();
+      }
+      return data;
+    } catch (err) {
+      if (opts.log !== false) pushConsoleHistory("err", err.message || "Ошибка");
+      throw err;
+    }
+  }
+
+  document.querySelectorAll(".hub-nav__btn[data-hub-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.getAttribute("data-hub-tab");
+      if (tab === "panel" && !isStaffUser(authUser)) {
+        showToast("Нет доступа к панели");
+        return;
+      }
+      setHubTab(tab);
+      if (tab === "panel") {
+        renderConsoleHistory();
+        syncPanelAccess();
+      }
+    });
+  });
+
+  document.querySelectorAll(".panel-subnav__btn[data-panel-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setPanelTab(btn.getAttribute("data-panel-tab"));
+      if (btn.getAttribute("data-panel-tab") === "console") {
+        renderConsoleHistory();
+        document.getElementById("panel-console-input")?.focus();
+      }
+    });
+  });
+
+  document.getElementById("panel-console-input")?.addEventListener("input", (e) => {
+    consoleSuggestIndex = -1;
+    renderConsoleSuggest(e.target.value);
+  });
+
+  document.getElementById("panel-console-input")?.addEventListener("keydown", async (e) => {
+    const box = document.getElementById("panel-console-suggest");
+    const items = box && !box.hidden ? [...box.querySelectorAll(".console-suggest__item")] : [];
+    if (e.key === "ArrowDown" && items.length) {
+      e.preventDefault();
+      consoleSuggestIndex = (consoleSuggestIndex + 1) % items.length;
+      items.forEach((el, i) => el.classList.toggle("is-active", i === consoleSuggestIndex));
+      return;
+    }
+    if (e.key === "ArrowUp" && items.length) {
+      e.preventDefault();
+      consoleSuggestIndex = (consoleSuggestIndex - 1 + items.length) % items.length;
+      items.forEach((el, i) => el.classList.toggle("is-active", i === consoleSuggestIndex));
+      return;
+    }
+    if (e.key === "Tab" && items.length) {
+      e.preventDefault();
+      const idx = consoleSuggestIndex >= 0 ? consoleSuggestIndex : 0;
+      items[idx]?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      return;
+    }
+    if (e.key === "Escape") {
+      hideConsoleSuggest();
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      hideConsoleSuggest();
+      const input = e.currentTarget;
+      const line = String(input.value || "").trim();
+      if (!line) return;
+      input.value = "";
+      try {
+        await runPanelCommand(line);
+      } catch (err) {
+        showToast(err.message || "Ошибка команды");
+      }
+    }
+  });
+
+  document.getElementById("panel-console-run")?.addEventListener("click", async () => {
+    const input = document.getElementById("panel-console-input");
+    const line = String(input?.value || "").trim();
+    if (!line) return;
+    if (input) input.value = "";
+    hideConsoleSuggest();
+    try {
+      await runPanelCommand(line);
+    } catch (err) {
+      showToast(err.message || "Ошибка команды");
+    }
+  });
+
+  document.getElementById("panel-perm-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const menu = document.getElementById("panel-perm-menu");
+    if (!menu) return;
+    menu.hidden = !menu.hidden;
+  });
+
+  document.querySelectorAll("#panel-perm-menu [data-perm-action]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const action = btn.getAttribute("data-perm-action");
+      const nick = String(document.getElementById("panel-perm-nick")?.value || "").trim();
+      const errEl = document.getElementById("panel-controller-error");
+      const statusEl = document.getElementById("panel-controller-status");
+      if (errEl) {
+        errEl.hidden = true;
+        errEl.textContent = "";
+      }
+      if (!nick) {
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.textContent = "Укажи ник";
+        }
+        return;
+      }
+      document.getElementById("panel-perm-menu").hidden = true;
+      try {
+        const data = await runPanelCommand(`permission ${nick} ${action}`, {
+          toast: true,
+        });
+        if (statusEl) {
+          statusEl.hidden = false;
+          statusEl.textContent = data?.message || "Готово";
+        }
+      } catch (err) {
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.textContent = err.message || "Ошибка";
+        }
+      }
+    });
+  });
+
+  document.getElementById("panel-ban-btn")?.addEventListener("click", async () => {
+    const nick = String(document.getElementById("panel-ban-nick")?.value || "").trim();
+    const amount = String(document.getElementById("panel-ban-amount")?.value || "").trim();
+    const unit = String(document.getElementById("panel-ban-unit")?.value || "minute");
+    const errEl = document.getElementById("panel-controller-error");
+    const statusEl = document.getElementById("panel-controller-status");
+    if (errEl) {
+      errEl.hidden = true;
+      errEl.textContent = "";
+    }
+    if (!nick || !amount) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = "Укажи ник и срок";
+      }
+      return;
+    }
+    try {
+      const data = await runPanelCommand(`ban ${nick} ${amount} ${unit}`);
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.textContent = data?.message || "Готово";
+      }
+    } catch (err) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = err.message || "Ошибка";
+      }
+    }
+  });
+
+  document.getElementById("panel-unban-btn")?.addEventListener("click", async () => {
+    const nick = String(document.getElementById("panel-unban-nick")?.value || "").trim();
+    const errEl = document.getElementById("panel-controller-error");
+    const statusEl = document.getElementById("panel-controller-status");
+    if (errEl) {
+      errEl.hidden = true;
+      errEl.textContent = "";
+    }
+    if (!nick) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = "Укажи ник";
+      }
+      return;
+    }
+    try {
+      const data = await runPanelCommand(`unban ${nick}`);
+      if (statusEl) {
+        statusEl.hidden = false;
+        statusEl.textContent = data?.message || "Готово";
+      }
+    } catch (err) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = err.message || "Ошибка";
+      }
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("#panel-perm-btn") || e.target.closest("#panel-perm-menu")) return;
+    const menu = document.getElementById("panel-perm-menu");
+    if (menu) menu.hidden = true;
+    if (!e.target.closest(".console-input-row")) hideConsoleSuggest();
+  });
+
+  renderConsoleHistory();
 
   document.getElementById("auth-logout-btn")?.addEventListener("click", () => {
     clearAuthSession();

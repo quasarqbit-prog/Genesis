@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=12" />
+  <link rel="stylesheet" href="styles.css?v=13" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -44,6 +44,7 @@
       <div class="app-shell__main">
         <nav class="hub-nav" aria-label="Разделы">
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
+          <button type="button" class="hub-nav__btn" data-hub-tab="panel" id="hub-tab-panel" hidden>Панель</button>
         </nav>
 
         <div class="hub-body">
@@ -139,6 +140,111 @@
 
             <button type="button" class="mc-btn" id="auth-logout-btn">ВЫЙТИ ИЗ АККАУНТА</button>
             <button type="button" class="mc-btn mc-btn--compact hub-save-btn" id="hub-save-btn">СОХРАНИТЬ</button>
+          </section>
+
+          <section class="hub-view hub-view--panel" id="hub-view-panel" data-hub-view="panel" hidden>
+            <div class="panel-subnav" role="tablist" aria-label="Панель">
+              <button type="button" class="panel-subnav__btn is-active" data-panel-tab="controller">Контроллер</button>
+              <button type="button" class="panel-subnav__btn" data-panel-tab="console">Консоль</button>
+            </div>
+
+            <div class="panel-pane is-active" id="panel-controller" data-panel-pane="controller">
+              <div class="panel-block" id="panel-perm-block">
+                <div class="panel-block__cmd">permission &lt;ник&gt; admin|helper|remove</div>
+                <div class="panel-block__body">
+                  <input
+                    class="field-input"
+                    id="panel-perm-nick"
+                    type="text"
+                    maxlength="32"
+                    placeholder="Ник пользователя"
+                    spellcheck="false"
+                    autocomplete="off"
+                  />
+                  <div class="panel-action">
+                    <button type="button" class="mc-btn mc-btn--compact" id="panel-perm-btn">ВЫДАТЬ</button>
+                    <div class="ctx-menu panel-ctx" id="panel-perm-menu" hidden>
+                      <button type="button" class="ctx-menu__item" data-perm-action="admin">admin</button>
+                      <button type="button" class="ctx-menu__item" data-perm-action="helper">helper</button>
+                      <button type="button" class="ctx-menu__item" data-perm-action="remove">remove</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel-sep" aria-hidden="true"></div>
+
+              <div class="panel-block">
+                <div class="panel-block__cmd">ban &lt;ник&gt; &lt;число&gt; second|minute|hour|day</div>
+                <div class="panel-block__body panel-block__body--ban">
+                  <input
+                    class="field-input"
+                    id="panel-ban-nick"
+                    type="text"
+                    maxlength="32"
+                    placeholder="Ник"
+                    spellcheck="false"
+                    autocomplete="off"
+                  />
+                  <input
+                    class="field-input field-input--num"
+                    id="panel-ban-amount"
+                    type="number"
+                    min="1"
+                    max="1000000"
+                    value="1"
+                    placeholder="Число"
+                  />
+                  <select class="field-input" id="panel-ban-unit">
+                    <option value="second">second</option>
+                    <option value="minute" selected>minute</option>
+                    <option value="hour">hour</option>
+                    <option value="day">day</option>
+                  </select>
+                  <button type="button" class="mc-btn mc-btn--compact" id="panel-ban-btn">БАН</button>
+                </div>
+              </div>
+
+              <div class="panel-sep" aria-hidden="true"></div>
+
+              <div class="panel-block">
+                <div class="panel-block__cmd">unban &lt;ник&gt;</div>
+                <div class="panel-block__body">
+                  <input
+                    class="field-input"
+                    id="panel-unban-nick"
+                    type="text"
+                    maxlength="32"
+                    placeholder="Ник пользователя"
+                    spellcheck="false"
+                    autocomplete="off"
+                  />
+                  <button type="button" class="mc-btn mc-btn--compact" id="panel-unban-btn">РАЗБАН</button>
+                </div>
+              </div>
+
+              <p class="field-error" id="panel-controller-error" hidden></p>
+              <p class="panel-status" id="panel-controller-status" hidden></p>
+            </div>
+
+            <div class="panel-pane" id="panel-console" data-panel-pane="console" hidden>
+              <div class="console-wrap">
+                <div class="console-input-row">
+                  <input
+                    class="field-input console-input"
+                    id="panel-console-input"
+                    type="text"
+                    maxlength="240"
+                    placeholder="команда…"
+                    spellcheck="false"
+                    autocomplete="off"
+                  />
+                  <button type="button" class="mc-btn mc-btn--compact" id="panel-console-run">▶</button>
+                  <div class="console-suggest" id="panel-console-suggest" hidden></div>
+                </div>
+                <div class="console-history" id="panel-console-history" aria-live="polite"></div>
+              </div>
+            </div>
           </section>
         </div>
       </div>
@@ -1129,6 +1235,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=12"></script>
+  <script src="script.js?v=13"></script>
 </body>
 </html>

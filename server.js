@@ -101,11 +101,51 @@ function authMiddleware(req, res, next) {
 
 function adminMiddleware(req, res, next) {
   authMiddleware(req, res, () => {
-    if (req.user?.role !== "admin") {
-      return res.status(403).json({ error: "Нет доступа" });
-    }
-    return next();
+    refreshUserRole(req)
+      .then(() => {
+        if (!isAdminRole(req.user?.role)) {
+          return res.status(403).json({ error: "Нет доступа" });
+        }
+        return next();
+      })
+      .catch((err) => {
+        console.error("adminMiddleware:", err);
+        return res.status(500).json({ error: "Ошибка доступа" });
+      });
   });
+}
+
+function staffMiddleware(req, res, next) {
+  authMiddleware(req, res, () => {
+    refreshUserRole(req)
+      .then(() => {
+        if (!isStaffRole(req.user?.role)) {
+          return res.status(403).json({ error: "Нет доступа к панели" });
+        }
+        return next();
+      })
+      .catch((err) => {
+        console.error("staffMiddleware:", err);
+        return res.status(500).json({ error: "Ошибка доступа" });
+      });
+  });
+}
+
+function isStaffRole(role) {
+  return role === "helper" || role === "admin" || role === "founder";
+}
+
+function isAdminRole(role) {
+  return role === "admin" || role === "founder";
+}
+
+async function refreshUserRole(req) {
+  if (!req.user?.id) return;
+  const [rows] = await pool.execute(
+    `SELECT role FROM users WHERE id = :userId LIMIT 1`,
+    { userId: req.user.id }
+  );
+  if (rows[0]?.role) req.user.role = rows[0].role;
 }
 
 function toPublicUser(rowOrUser) {
@@ -140,6 +180,22 @@ function toPublicUser(rowOrUser) {
     rowOrUser.siteNick ||
     rowOrUser.site_nick ||
     "";
+  const bannedUntilRaw =
+    rowOrUser.bannedUntil ||
+    rowOrUser.banned_until ||
+    rowOrUser.expires_at ||
+    null;
+  let bannedUntil = null;
+  if (bannedUntilRaw) {
+    const ts = new Date(bannedUntilRaw).getTime();
+    if (Number.isFinite(ts) && ts > Date.now()) {
+      bannedUntil = new Date(ts).toISOString();
+    }
+  }
+  const banned =
+    rowOrUser.banned !== undefined
+      ? Boolean(rowOrUser.banned) && Boolean(bannedUntil)
+      : Boolean(bannedUntil);
   return {
     id: rowOrUser.id,
     mcNick: rowOrUser.mcNick || rowOrUser.mc_nick || "",
@@ -147,13 +203,16 @@ function toPublicUser(rowOrUser) {
     telegram: rowOrUser.telegram || "",
     accountType: rowOrUser.accountType || rowOrUser.account_type || "",
     role,
-    isAdmin: role === "admin",
+    isFounder: role === "founder",
+    isAdmin: role === "admin" || role === "founder",
     isHelper: role === "helper",
-    isStaff: role === "admin" || role === "helper",
+    isStaff: isStaffRole(role),
     avatarUrl: avatarPath || "",
     showSiteOnline,
     showServerOnline,
     showOnlineFrame,
+    banned,
+    bannedUntil,
   };
 }
 
@@ -197,7 +256,7 @@ async function ensureSchema() {
       telegram_id BIGINT NULL,
       mc_nick VARCHAR(16) NOT NULL,
       account_type ENUM('pirate', 'licensed') NOT NULL DEFAULT 'pirate',
-      role ENUM('user', 'helper', 'admin') NOT NULL DEFAULT 'user',
+      role ENUM('user', 'helper', 'admin', 'founder') NOT NULL DEFAULT 'user',
       password_hash VARCHAR(255) NOT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -238,19 +297,37 @@ async function ensureSchema() {
   if (!(await columnExists("users", "role"))) {
     await pool.query(
       `ALTER TABLE users
-       ADD COLUMN role ENUM('user', 'helper', 'admin') NOT NULL DEFAULT 'user'
+       ADD COLUMN role ENUM('user', 'helper', 'admin', 'founder') NOT NULL DEFAULT 'user'
        AFTER account_type`
     );
   } else {
     try {
       await pool.query(
         `ALTER TABLE users
-         MODIFY COLUMN role ENUM('user', 'helper', 'admin') NOT NULL DEFAULT 'user'`
+         MODIFY COLUMN role ENUM('user', 'helper', 'admin', 'founder') NOT NULL DEFAULT 'user'`
       );
     } catch (err) {
       console.warn("role enum migrate:", err.message);
     }
   }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_bans (
+      user_id INT UNSIGNED NOT NULL,
+      banned_by INT UNSIGNED NULL,
+      duration_value INT UNSIGNED NOT NULL,
+      duration_unit ENUM('second', 'minute', 'hour', 'day') NOT NULL,
+      banned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      expires_at TIMESTAMP NOT NULL,
+      PRIMARY KEY (user_id),
+      CONSTRAINT fk_user_bans_user
+        FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE CASCADE,
+      CONSTRAINT fk_user_bans_by
+        FOREIGN KEY (banned_by) REFERENCES users (id)
+        ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
   if (!(await columnExists("users", "telegram_id"))) {
     await pool.query(
       `ALTER TABLE users ADD COLUMN telegram_id BIGINT NULL AFTER telegram`
@@ -318,23 +395,23 @@ async function ensureAdminSeed() {
        SET telegram = :telegram,
            mc_nick = :mcNick,
            account_type = :accountType,
-           role = 'admin',
+           role = 'founder',
            password_hash = :hash
        WHERE id = :id`,
       { telegram, mcNick, accountType, hash, id: rows[0].id }
     );
     await ensureProfile(rows[0].id, mcNick);
-    console.log(`Admin seed updated: ${telegram} / ${mcNick}`);
+    console.log(`Founder seed updated: ${telegram} / ${mcNick}`);
     return;
   }
 
   const [result] = await pool.execute(
     `INSERT INTO users (telegram, mc_nick, account_type, role, password_hash)
-     VALUES (:telegram, :mcNick, :accountType, 'admin', :hash)`,
+     VALUES (:telegram, :mcNick, :accountType, 'founder', :hash)`,
     { telegram, mcNick, accountType, hash }
   );
   await ensureProfile(result.insertId, mcNick);
-  console.log(`Admin seed created: ${telegram} / ${mcNick}`);
+  console.log(`Founder seed created: ${telegram} / ${mcNick}`);
 }
 
 async function ensureProfile(userId, mcNick = null) {
@@ -763,14 +840,234 @@ async function resetUserAvatar(userId) {
 async function loadUserPublic(userId) {
   const [rows] = await pool.execute(
     `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role,
-            p.avatar_path, p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame
+            p.avatar_path, p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame,
+            b.expires_at AS banned_until
      FROM users u
      LEFT JOIN profiles p ON p.user_id = u.id
+     LEFT JOIN user_bans b ON b.user_id = u.id AND b.expires_at > NOW()
      WHERE u.id = :userId
      LIMIT 1`,
     { userId }
   );
   return rows[0] ? toPublicUser(rows[0]) : null;
+}
+
+async function findUserRowByNick(nickRaw) {
+  const nick = String(nickRaw || "").trim();
+  if (!nick) return null;
+  const [rows] = await pool.execute(
+    `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role,
+            p.avatar_path, p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame,
+            b.expires_at AS banned_until
+     FROM users u
+     LEFT JOIN profiles p ON p.user_id = u.id
+     LEFT JOIN user_bans b ON b.user_id = u.id AND b.expires_at > NOW()
+     WHERE u.mc_nick = :nick
+        OR p.site_nick = :nick
+        OR LOWER(u.mc_nick) = LOWER(:nick)
+        OR LOWER(COALESCE(p.site_nick, '')) = LOWER(:nick)
+     LIMIT 1`,
+    { nick }
+  );
+  return rows[0] || null;
+}
+
+function banDurationMs(value, unit) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0 || n > 1000000) return null;
+  const map = {
+    second: 1000,
+    minute: 60 * 1000,
+    hour: 60 * 60 * 1000,
+    day: 24 * 60 * 60 * 1000,
+  };
+  const mult = map[unit];
+  if (!mult) return null;
+  return Math.floor(n * mult);
+}
+
+function emitGameCommandStub(payload) {
+  // Задел: мод Minecraft сможет слушать и применять бан на сервере
+  try {
+    io.emit("panel:game-command", payload);
+  } catch (err) {
+    console.warn("panel:game-command emit:", err.message);
+  }
+}
+
+async function applyPermissionCommand(actor, nick, actionRaw) {
+  if (!isAdminRole(actor.role)) {
+    const err = new Error("Команда permission только для админов");
+    err.status = 403;
+    throw err;
+  }
+  const action = String(actionRaw || "").trim().toLowerCase();
+  if (!["admin", "helper", "remove"].includes(action)) {
+    const err = new Error("Действие: admin, helper или remove");
+    err.status = 400;
+    throw err;
+  }
+  const row = await findUserRowByNick(nick);
+  if (!row) {
+    const err = new Error("Пользователь не найден");
+    err.status = 404;
+    throw err;
+  }
+  if (row.role === "founder") {
+    const err = new Error("Нельзя изменить права Основателя");
+    err.status = 403;
+    throw err;
+  }
+  if (Number(row.id) === Number(actor.id) && action === "remove") {
+    const err = new Error("Нельзя снять права самому себе");
+    err.status = 400;
+    throw err;
+  }
+  const nextRole = action === "remove" ? "user" : action;
+  await pool.execute(`UPDATE users SET role = :role WHERE id = :userId`, {
+    role: nextRole,
+    userId: row.id,
+  });
+  const user = await loadUserPublic(row.id);
+  broadcastDirectoryUser(user);
+  return {
+    ok: true,
+    message: `Права ${row.mc_nick}: ${nextRole}`,
+    user,
+  };
+}
+
+async function applyBanCommand(actor, nick, amountRaw, unitRaw) {
+  if (!isStaffRole(actor.role)) {
+    const err = new Error("Нет доступа");
+    err.status = 403;
+    throw err;
+  }
+  const unit = String(unitRaw || "").trim().toLowerCase();
+  const ms = banDurationMs(amountRaw, unit);
+  if (!ms) {
+    const err = new Error("Формат: ban <ник> <число> second|minute|hour|day");
+    err.status = 400;
+    throw err;
+  }
+  const row = await findUserRowByNick(nick);
+  if (!row) {
+    const err = new Error("Пользователь не найден");
+    err.status = 404;
+    throw err;
+  }
+  if (row.role === "founder") {
+    const err = new Error("Нельзя забанить Основателя");
+    err.status = 403;
+    throw err;
+  }
+  if (Number(row.id) === Number(actor.id)) {
+    const err = new Error("Нельзя забанить самого себя");
+    err.status = 400;
+    throw err;
+  }
+  const expiresAt = new Date(Date.now() + ms);
+  const expiresSql = expiresAt.toISOString().slice(0, 19).replace("T", " ");
+  await pool.execute(
+    `INSERT INTO user_bans (user_id, banned_by, duration_value, duration_unit, expires_at)
+     VALUES (:userId, :bannedBy, :durationValue, :durationUnit, :expiresAt)
+     ON DUPLICATE KEY UPDATE
+       banned_by = VALUES(banned_by),
+       duration_value = VALUES(duration_value),
+       duration_unit = VALUES(duration_unit),
+       banned_at = CURRENT_TIMESTAMP,
+       expires_at = VALUES(expires_at)`,
+    {
+      userId: row.id,
+      bannedBy: actor.id,
+      durationValue: Number(amountRaw),
+      durationUnit: unit,
+      expiresAt: expiresSql,
+    }
+  );
+  const user = await loadUserPublic(row.id);
+  broadcastDirectoryUser(user);
+  emitGameCommandStub({
+    type: "ban",
+    userId: row.id,
+    mcNick: row.mc_nick,
+    expiresAt: expiresAt.toISOString(),
+    durationValue: Number(amountRaw),
+    durationUnit: unit,
+    by: actor.id,
+  });
+  return {
+    ok: true,
+    message: `Бан ${row.mc_nick} до ${expiresAt.toLocaleString("ru-RU")}`,
+    user,
+  };
+}
+
+async function applyUnbanCommand(actor, nick) {
+  if (!isStaffRole(actor.role)) {
+    const err = new Error("Нет доступа");
+    err.status = 403;
+    throw err;
+  }
+  const row = await findUserRowByNick(nick);
+  if (!row) {
+    const err = new Error("Пользователь не найден");
+    err.status = 404;
+    throw err;
+  }
+  await pool.execute(`DELETE FROM user_bans WHERE user_id = :userId`, {
+    userId: row.id,
+  });
+  const user = await loadUserPublic(row.id);
+  broadcastDirectoryUser(user);
+  emitGameCommandStub({
+    type: "unban",
+    userId: row.id,
+    mcNick: row.mc_nick,
+    by: actor.id,
+  });
+  return {
+    ok: true,
+    message: `Разбан ${row.mc_nick}`,
+    user,
+  };
+}
+
+async function executePanelLine(actor, lineRaw) {
+  const line = String(lineRaw || "").trim();
+  if (!line) {
+    const err = new Error("Пустая команда");
+    err.status = 400;
+    throw err;
+  }
+  if (line.startsWith("/")) {
+    // Задел: команды игры на Minecraft-сервере
+    emitGameCommandStub({
+      type: "raw",
+      command: line.slice(1).trim(),
+      by: actor.id,
+    });
+    return {
+      ok: true,
+      stub: true,
+      message: `Игровая команда принята (задел): ${line}`,
+    };
+  }
+
+  const parts = line.split(/\s+/).filter(Boolean);
+  const cmd = String(parts[0] || "").toLowerCase();
+  if (cmd === "permission") {
+    return applyPermissionCommand(actor, parts[1], parts[2]);
+  }
+  if (cmd === "ban") {
+    return applyBanCommand(actor, parts[1], parts[2], parts[3]);
+  }
+  if (cmd === "unban") {
+    return applyUnbanCommand(actor, parts[1]);
+  }
+  const err = new Error(`Неизвестная команда: ${cmd}`);
+  err.status = 400;
+  throw err;
 }
 
 let cachedTelegramBot = null;
@@ -1520,9 +1817,11 @@ app.get("/api/users/directory", authMiddleware, async (_req, res) => {
   try {
     const [rows] = await pool.execute(
       `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role,
-              p.avatar_path, p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame
+              p.avatar_path, p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame,
+              b.expires_at AS banned_until
        FROM users u
        LEFT JOIN profiles p ON p.user_id = u.id
+       LEFT JOIN user_bans b ON b.user_id = u.id AND b.expires_at > NOW()
        ORDER BY u.mc_nick ASC
        LIMIT 500`
     );
@@ -1550,6 +1849,19 @@ app.get("/api/users/directory", authMiddleware, async (_req, res) => {
   } catch (err) {
     console.error("users directory:", err);
     return res.status(500).json({ error: "Не удалось загрузить список игроков" });
+  }
+});
+
+app.post("/api/panel/command", staffMiddleware, async (req, res) => {
+  try {
+    const result = await executePanelLine(req.user, req.body?.line || req.body?.command);
+    return res.json(result);
+  } catch (err) {
+    console.error("panel command:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Ошибка команды",
+    });
   }
 });
 
