@@ -44,7 +44,16 @@ app.use(
   })
 );
 app.use(express.json({ limit: "8mb" }));
-app.use("/uploads", express.static(UPLOADS_DIR));
+app.use(
+  "/uploads",
+  express.static(UPLOADS_DIR, {
+    etag: true,
+    maxAge: "5m",
+    setHeaders(res) {
+      res.setHeader("Cache-Control", "public, max-age=300, must-revalidate");
+    },
+  })
+);
 
 /** Локальная разработка: Express раздаёт статику. На VPS статику отдаёт Nginx. */
 if (process.env.NODE_ENV !== "production") {
@@ -148,16 +157,36 @@ async function refreshUserRole(req) {
   if (rows[0]?.role) req.user.role = rows[0].role;
 }
 
+function publicAvatarUrl(rawPath) {
+  const raw = String(rawPath || "").trim();
+  if (!raw) return "";
+  if (
+    raw.startsWith("http://") ||
+    raw.startsWith("https://") ||
+    raw.startsWith("data:")
+  ) {
+    return raw;
+  }
+  const base = raw.split("?")[0];
+  let bust = Date.now();
+  try {
+    const abs = path.join(AVATARS_DIR, path.basename(base));
+    const st = fs.statSync(abs);
+    if (st?.mtimeMs) bust = Math.floor(st.mtimeMs);
+  } catch {
+    /* файла нет — всё равно отдаём URL, клиент сделает retry/fallback */
+  }
+  return `${base}?v=${bust}`;
+}
+
 function toPublicUser(rowOrUser) {
   const role = rowOrUser.role || "user";
-  let avatarPath =
+  const rawAvatar =
     rowOrUser.avatarUrl ||
     rowOrUser.avatar_path ||
     rowOrUser.avatarPath ||
     "";
-  if (avatarPath && !avatarPath.startsWith("http") && !avatarPath.includes("?")) {
-    avatarPath = `${avatarPath}?v=1`;
-  }
+  const avatarPath = publicAvatarUrl(rawAvatar);
   const showSiteOnline =
     rowOrUser.showSiteOnline !== undefined
       ? Boolean(rowOrUser.showSiteOnline)
@@ -809,7 +838,7 @@ async function persistUploadedAvatar(userId, dataUrl) {
     `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
     { avatarPath: publicPath, userId }
   );
-  return `${publicPath}?v=${Date.now()}`;
+  return publicAvatarUrl(publicPath);
 }
 
 async function resetUserAvatar(userId) {
@@ -1528,11 +1557,7 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
       show_online_frame: row.show_online_frame,
     });
     if (user.avatarUrl) {
-      const base = String(user.avatarUrl).split("?")[0];
-      const bust = row.updated_at
-        ? new Date(row.updated_at).getTime() || Date.now()
-        : Date.now();
-      user.avatarUrl = `${base}?v=${bust}`;
+      user.avatarUrl = publicAvatarUrl(user.avatarUrl);
     }
     return res.json({
       user,

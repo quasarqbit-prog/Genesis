@@ -584,7 +584,40 @@
   function playerAvatarSrc(url) {
     const raw = String(url || "");
     if (!raw) return "";
-    return raw.includes("?") ? raw : `${raw}?v=1`;
+    if (raw.startsWith("data:")) return raw;
+    const base = raw.split("?")[0];
+    // не залипаем на старом ?v=1 из кэша
+    if (raw.includes("?v=1") || !raw.includes("?")) {
+      return `${base}?v=${Date.now()}`;
+    }
+    return raw;
+  }
+
+  function wirePresenceAvatarImg(img) {
+    if (!img || img.dataset.avatarBound === "1") return;
+    img.dataset.avatarBound = "1";
+    const base = String(img.getAttribute("data-avatar-base") || img.src || "").split(
+      "?"
+    )[0];
+    if (base) img.setAttribute("data-avatar-base", base);
+    img.addEventListener("error", () => {
+      const root = img.getAttribute("data-avatar-base") || "";
+      if (!root) {
+        img.hidden = true;
+        return;
+      }
+      const tries = Number(img.dataset.avatarTries || "0");
+      if (tries >= 2) {
+        img.hidden = true;
+        const fallback = img.parentElement?.querySelector(
+          ".presence-avatar__fallback"
+        );
+        if (fallback) fallback.hidden = false;
+        return;
+      }
+      img.dataset.avatarTries = String(tries + 1);
+      img.src = `${root}?v=${Date.now()}-r${tries + 1}`;
+    });
   }
 
   function isBannedUser(user) {
@@ -659,8 +692,9 @@
       : "";
     const avatarUrl = playerAvatarSrc(user.avatarUrl);
     const letter = escapeHtml((fullNick || "?").slice(0, 1).toUpperCase());
+    const avatarBase = avatarUrl ? escapeHtml(String(avatarUrl).split("?")[0]) : "";
     const avatarHtml = avatarUrl
-      ? `<img src="${escapeHtml(avatarUrl)}" alt="" />`
+      ? `<img src="${escapeHtml(avatarUrl)}" alt="" data-avatar-base="${avatarBase}" /><span class="presence-avatar__fallback" hidden>${letter}</span>`
       : `<span class="presence-avatar__fallback">${letter}</span>`;
     const cls = presenceClass(user);
     const tipParts = [fullNick];
@@ -694,6 +728,8 @@
     if (staffDivider) {
       staffDivider.hidden = !(staff.length && regularWithBanned.length);
     }
+    staffHost.querySelectorAll("img[data-avatar-base]").forEach(wirePresenceAvatarImg);
+    othersHost.querySelectorAll("img[data-avatar-base]").forEach(wirePresenceAvatarImg);
   }
 
   function hidePresenceTips(exceptEl = null) {
