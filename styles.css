@@ -936,13 +936,14 @@ h3,
   --section-accent: #c4ff4d;
 }
 
-.studio-tile--folder {
-  /* accent comes from inline --section-accent (folder color) */
-}
-
 .studio-modal__panel--framed {
   position: relative;
   overflow: visible;
+}
+
+.studio-modal__panel--framed .studio-modal__form {
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
 }
 
 .studio-modal__close {
