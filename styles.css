@@ -936,21 +936,23 @@ h3,
   --section-accent: #c4ff4d;
 }
 
-.studio-modal__panel--framed {
+.studio-modal-shell {
   position: relative;
-  overflow: visible;
+  width: min(460px, calc(100% - 52px));
+  max-width: 100%;
 }
 
-.studio-modal__panel--framed .studio-modal__form {
-  max-height: min(70vh, 560px);
-  overflow-y: auto;
+.studio-modal-shell .studio-modal__panel,
+.studio-modal-shell .auth-modal__panel {
+  width: 100%;
+  max-width: none;
 }
 
 .studio-modal__close {
   appearance: none;
   position: absolute;
   top: 0;
-  right: -44px;
+  left: calc(100% + 8px);
   z-index: 2;
   width: 36px;
   height: 36px;
@@ -973,8 +975,13 @@ h3,
 }
 
 @media (max-width: 560px) {
+  .studio-modal-shell {
+    width: min(460px, 100%);
+  }
+
   .studio-modal__close {
     top: -44px;
+    left: auto;
     right: 0;
   }
 }

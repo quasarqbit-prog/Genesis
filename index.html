@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=52" />
+  <link rel="stylesheet" href="styles.css?v=53" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -1445,27 +1445,29 @@
   </div>
 
   <div class="auth-modal ui-layer" id="studio-folder-modal" hidden>
-    <div class="auth-modal__panel studio-modal__panel studio-modal__panel--framed" role="dialog" aria-modal="true" aria-labelledby="studio-folder-modal-title">
+    <div class="studio-modal-shell">
       <button type="button" class="studio-modal__close" id="studio-folder-modal-close" aria-label="Закрыть">×</button>
-      <div class="auth-modal__head">
-        <h2 class="auth-modal__title" id="studio-folder-modal-title">Новая папка</h2>
-      </div>
-      <form class="studio-modal__form" id="studio-folder-form" novalidate>
-        <div class="field-block">
-          <label class="field-label" for="studio-folder-name">Название папки</label>
-          <input class="field-input" id="studio-folder-name" type="text" maxlength="48" required autocomplete="off" />
+      <div class="auth-modal__panel studio-modal__panel" role="dialog" aria-modal="true" aria-labelledby="studio-folder-modal-title">
+        <div class="auth-modal__head">
+          <h2 class="auth-modal__title" id="studio-folder-modal-title">Новая папка</h2>
         </div>
-        <div class="field-block">
-          <label class="field-label" for="studio-folder-color">Цвет</label>
-          <div class="studio-color-row">
-            <input class="studio-color-input" id="studio-folder-color" type="color" value="#8ec8ff" />
-            <div class="studio-color-swatches" id="studio-folder-swatches" role="group" aria-label="Быстрый цвет"></div>
+        <form class="studio-modal__form" id="studio-folder-form" novalidate>
+          <div class="field-block">
+            <label class="field-label" for="studio-folder-name">Название папки</label>
+            <input class="field-input" id="studio-folder-name" type="text" maxlength="48" required autocomplete="off" />
           </div>
-        </div>
-        <div class="studio-modal__actions">
-          <button type="submit" class="mc-btn" id="studio-folder-submit">Создать</button>
-        </div>
-      </form>
+          <div class="field-block">
+            <label class="field-label" for="studio-folder-color">Цвет</label>
+            <div class="studio-color-row">
+              <input class="studio-color-input" id="studio-folder-color" type="color" value="#8ec8ff" />
+              <div class="studio-color-swatches" id="studio-folder-swatches" role="group" aria-label="Быстрый цвет"></div>
+            </div>
+          </div>
+          <div class="studio-modal__actions">
+            <button type="submit" class="mc-btn" id="studio-folder-submit">Создать</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -1568,6 +1570,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=52"></script>
+  <script src="script.js?v=53"></script>
 </body>
 </html>
