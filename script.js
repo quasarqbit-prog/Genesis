@@ -5821,7 +5821,7 @@
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=74`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=75`);
     return ordersPreviewMod;
   }
 
@@ -5868,6 +5868,8 @@
         mod.mountOrdersPreview(skinCanvas, {
           objUrl: assets.skinModel,
           textureUrl: skinUrl,
+          yaw: Math.PI,
+          yOffset: -0.28,
         }).catch((err) => console.warn("orders skin preview", err))
       );
     }
@@ -5876,6 +5878,7 @@
         mod.mountOrdersPreview(modelCanvas, {
           objUrl: assets.costumeModel,
           textureUrl: assets.modelTexture,
+          yaw: Math.PI,
         }).catch((err) => console.warn("orders model preview", err))
       );
     }

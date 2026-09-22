@@ -25,29 +25,29 @@ function disposeObject(root) {
   });
 }
 
-function fitCamera(camera, object, canvas) {
+function fitCamera(camera, object, canvas, yOffset = 0) {
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   object.position.sub(center);
+  object.position.y += yOffset;
 
   const maxDim = Math.max(size.x, size.y, size.z, 0.001);
   const aspect = canvas.width / Math.max(canvas.height, 1);
   const fov = camera.fov * (Math.PI / 180);
-  // Closer framing so the model fills most of the preview frame
   let dist = (maxDim / (2 * Math.tan(fov / 2))) * 0.92;
   if (aspect < 1) dist *= 0.92;
 
   camera.position.set(dist * 0.28, dist * 0.08, dist * 0.88);
   camera.near = Math.max(0.01, dist / 100);
   camera.far = dist * 20;
-  camera.lookAt(0, size.y * 0.05, 0);
+  camera.lookAt(0, size.y * 0.05 + yOffset * 0.3, 0);
   camera.updateProjectionMatrix();
 }
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ objUrl: string, textureUrl: string }} opts
+ * @param {{ objUrl: string, textureUrl: string, yaw?: number, yOffset?: number }} opts
  */
 export async function mountOrdersPreview(canvas, opts) {
   if (!canvas || !opts?.objUrl || !opts?.textureUrl) return null;
@@ -102,12 +102,18 @@ export async function mountOrdersPreview(canvas, opts) {
     }
   });
   scene.add(root);
-  fitCamera(camera, root, canvas);
+
+  const baseYaw = Number.isFinite(opts.yaw) ? Number(opts.yaw) : Math.PI;
+  const yOffset = Number.isFinite(opts.yOffset) ? Number(opts.yOffset) : 0;
+  root.rotation.y = baseYaw;
+  fitCamera(camera, root, canvas, yOffset);
 
   const host = canvas.closest(".orders-type-card") || canvas.parentElement || canvas;
   let hovering = false;
   let pointerX = 0;
   let pointerY = 0;
+  let lookYaw = 0;
+  let lookPitch = 0;
   let targetYaw = 0;
   let targetPitch = 0;
   let idlePhase = 0;
@@ -137,7 +143,8 @@ export async function mountOrdersPreview(canvas, opts) {
     frame = requestAnimationFrame(tick);
 
     if (hovering) {
-      targetYaw = pointerX * 0.85;
+      // Inverted X so model looks toward the cursor (facing camera)
+      targetYaw = -pointerX * 0.85;
       targetPitch = Math.max(-0.35, Math.min(0.4, -pointerY * 0.55));
     } else {
       idlePhase += 0.016;
@@ -145,8 +152,10 @@ export async function mountOrdersPreview(canvas, opts) {
       targetPitch = 0;
     }
 
-    root.rotation.y += (targetYaw - root.rotation.y) * 0.12;
-    root.rotation.x += (targetPitch - root.rotation.x) * 0.12;
+    lookYaw += (targetYaw - lookYaw) * 0.12;
+    lookPitch += (targetPitch - lookPitch) * 0.12;
+    root.rotation.y = baseYaw + lookYaw;
+    root.rotation.x = lookPitch;
     renderer.render(scene, camera);
   };
   tick();
