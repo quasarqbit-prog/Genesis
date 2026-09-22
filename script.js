@@ -591,7 +591,24 @@
     });
     socket.on("server:updated", (payload) => {
       if (payload?.server) {
-        serverInfo = payload.server;
+        const prevPass = serverInfo?.accountPassword;
+        const prevHas = serverInfo?.hasAccountPassword;
+        const prevHash = serverInfo?.hasPasswordHash;
+        serverInfo = {
+          ...payload.server,
+          accountPassword:
+            payload.server.accountPassword != null
+              ? payload.server.accountPassword
+              : prevPass,
+          hasAccountPassword:
+            payload.server.hasAccountPassword != null
+              ? payload.server.hasAccountPassword
+              : prevHas,
+          hasPasswordHash:
+            payload.server.hasPasswordHash != null
+              ? payload.server.hasPasswordHash
+              : prevHash,
+        };
         renderServerTab();
       }
     });
@@ -2189,7 +2206,7 @@
       return;
     }
     try {
-      await api("/api/user/password", {
+      const data = await api("/api/user/password", {
         method: "PATCH",
         body: JSON.stringify({
           newPassword,
@@ -2198,6 +2215,14 @@
       });
       const form = document.getElementById("hub-pass-form");
       if (form) form.reset();
+      if (serverInfo) {
+        serverInfo.accountPassword = data.accountPassword || newPassword;
+        serverInfo.hasAccountPassword = true;
+        serverInfo.hasPasswordHash = true;
+        const passEl = document.getElementById("server-password");
+        if (passEl) passEl.setAttribute("data-visible", "0");
+        renderServerTab();
+      }
       showToast("Пароль изменён");
     } catch (err) {
       setHubFieldError("hub-pass-error", err.message || "Не удалось сменить пароль");
@@ -3769,7 +3794,8 @@
 
   function renderServerTab() {
     const nameEl = document.getElementById("server-name");
-    const passInput = document.getElementById("server-password");
+    const passEl = document.getElementById("server-password");
+    const passToggle = document.getElementById("server-pass-toggle");
     const ipValue = document.getElementById("server-ip-value");
     const mcVersion = document.getElementById("server-mc-version");
     const modBtn = document.getElementById("server-mod-btn");
@@ -3781,10 +3807,24 @@
 
     if (founderActions) founderActions.hidden = !founder;
     if (nameEl) nameEl.textContent = serverInfo?.name || "Genesis";
-    if (passInput) {
-      const pass = serverInfo?.password || "";
-      passInput.value = pass;
-      passInput.placeholder = pass ? "" : "Пароль не задан";
+    if (passEl) {
+      const pass = String(serverInfo?.accountPassword || "");
+      const visible = passEl.getAttribute("data-visible") === "1";
+      passEl.classList.toggle("is-empty", !pass);
+      if (!pass) {
+        passEl.textContent = serverInfo?.hasPasswordHash
+          ? "Пароль скрыт — смените в настройках, чтобы видеть здесь"
+          : "Пароль не задан";
+        passEl.setAttribute("data-visible", "0");
+        if (passToggle) {
+          passToggle.disabled = true;
+          passToggle.setAttribute("aria-pressed", "false");
+          passToggle.textContent = "*";
+        }
+      } else {
+        if (passToggle) passToggle.disabled = false;
+        passEl.textContent = visible ? pass : "•".repeat(Math.min(18, Math.max(6, pass.length)));
+      }
     }
     if (ipValue) ipValue.textContent = serverInfo?.ip || SERVER_IP;
     if (mcVersion) {
@@ -4844,11 +4884,14 @@
   serverIpBtn?.addEventListener("click", copyServerIp);
 
   document.getElementById("server-pass-toggle")?.addEventListener("click", () => {
-    const input = document.getElementById("server-password");
+    const el = document.getElementById("server-password");
     const btn = document.getElementById("server-pass-toggle");
-    if (!input || !btn) return;
-    const show = input.type === "password";
-    input.type = show ? "text" : "password";
+    if (!el || !btn || btn.disabled) return;
+    const pass = String(serverInfo?.accountPassword || "");
+    if (!pass) return;
+    const show = el.getAttribute("data-visible") !== "1";
+    el.setAttribute("data-visible", show ? "1" : "0");
+    el.textContent = show ? pass : "•".repeat(Math.min(18, Math.max(6, pass.length)));
     btn.setAttribute("aria-pressed", show ? "true" : "false");
     btn.setAttribute("aria-label", show ? "Скрыть пароль" : "Показать пароль");
     btn.textContent = show ? "•" : "*";

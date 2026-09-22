@@ -666,9 +666,10 @@ async function ensureAdminSeed() {
            mc_nick = :mcNick,
            account_type = :accountType,
            role = 'founder',
-           password_hash = :hash
+           password_hash = :hash,
+           password_plain = :plain
        WHERE id = :id`,
-      { telegram, mcNick, accountType, hash, id: founderId }
+      { telegram, mcNick, accountType, hash, plain: password, id: founderId }
     );
     await ensureProfile(founderId, mcNick);
     console.log(`Founder seed updated: ${telegram} / ${mcNick}`);
@@ -679,9 +680,9 @@ async function ensureAdminSeed() {
         "SET SESSION sql_mode = CONCAT(@@SESSION.sql_mode, ',NO_AUTO_VALUE_ON_ZERO')"
       );
       await conn.execute(
-        `INSERT INTO users (id, telegram, mc_nick, account_type, role, password_hash)
-         VALUES (0, :telegram, :mcNick, :accountType, 'founder', :hash)`,
-        { telegram, mcNick, accountType, hash }
+        `INSERT INTO users (id, telegram, mc_nick, account_type, role, password_hash, password_plain)
+         VALUES (0, :telegram, :mcNick, :accountType, 'founder', :hash, :plain)`,
+        { telegram, mcNick, accountType, hash, plain: password }
       );
       founderId = 0;
     } finally {
@@ -1735,10 +1736,10 @@ app.post("/api/register", async (req, res) => {
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const [result] = await pool.execute(
       `INSERT INTO users
-        (telegram, telegram_id, mc_nick, account_type, role, password_hash)
+        (telegram, telegram_id, mc_nick, account_type, role, password_hash, password_plain)
        VALUES
-        (:telegram, :telegramId, :mcNick, :accountType, 'user', :hash)`,
-      { telegram, telegramId, mcNick, accountType, hash }
+        (:telegram, :telegramId, :mcNick, :accountType, 'user', :hash, :plain)`,
+      { telegram, telegramId, mcNick, accountType, hash, plain: password }
     );
     const userId = result.insertId;
     try {
@@ -2418,11 +2419,11 @@ app.patch("/api/user/password", authMiddleware, async (req, res) => {
     const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await pool.execute(
       `UPDATE users
-       SET password_hash = :hash, password_plain = NULL
+       SET password_hash = :hash, password_plain = :plain
        WHERE id = :userId`,
-      { hash, userId: req.user.id }
+      { hash, plain: newPassword, userId: req.user.id }
     );
-    return res.json({ ok: true });
+    return res.json({ ok: true, accountPassword: newPassword });
   } catch (err) {
     console.error("password update:", err);
     return res.status(500).json({ error: "Не удалось сменить пароль" });
@@ -2814,13 +2815,21 @@ function parseModVersionFromName(fileName) {
   return m ? m[1] : null;
 }
 
-app.get("/api/server", authMiddleware, (req, res) => {
+app.get("/api/server", authMiddleware, async (req, res) => {
   try {
     const info = readServerInfo();
-    return res.json({
-      ok: true,
-      server: publicServerInfo(info, { includePassword: true }),
-    });
+    const [rows] = await pool.execute(
+      `SELECT password_plain, password_hash
+       FROM users WHERE id = :userId LIMIT 1`,
+      { userId: req.user.id }
+    );
+    const row = rows[0] || {};
+    const accountPassword = String(row.password_plain || "");
+    const payload = publicServerInfo(info, { includePassword: false });
+    payload.accountPassword = accountPassword;
+    payload.hasAccountPassword = Boolean(accountPassword);
+    payload.hasPasswordHash = Boolean(row.password_hash);
+    return res.json({ ok: true, server: payload });
   } catch (err) {
     console.error("server get:", err);
     return res.status(500).json({ error: "Не удалось загрузить данные сервера" });

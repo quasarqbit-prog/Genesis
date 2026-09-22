@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=38" />
+  <link rel="stylesheet" href="styles.css?v=39" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -77,19 +77,15 @@
                 <section class="server-block" aria-labelledby="server-join-title">
                   <h2 class="server-block__title" id="server-join-title">Зайти на сервер</h2>
                   <div class="server-pass-row">
-                    <input
-                      class="field-input server-pass-input"
+                    <div
+                      class="server-pass-display is-empty"
                       id="server-password"
-                      type="password"
-                      readonly
-                      value=""
-                      autocomplete="off"
-                      spellcheck="false"
-                      aria-label="Пароль сервера"
-                    />
+                      data-visible="0"
+                      aria-label="Пароль аккаунта"
+                    >Пароль не задан</div>
                     <button type="button" class="server-pass-toggle" id="server-pass-toggle" aria-label="Показать пароль" aria-pressed="false">*</button>
                   </div>
-                  <p class="server-block__hint">Это пароль нужно вводить при входе на сервер в игре.</p>
+                  <p class="server-block__hint">Это пароль от аккаунта на сайте — его же нужно вводить при входе на сервер в игре.</p>
                   <div class="server-accent-meta">
                     <button type="button" class="server-ip" id="server-ip-btn" title="Скопировать IP">
                       <span class="server-ip__label">IP сервера:</span><span id="server-ip-value">srv1001.godlike.club:26519</span>
@@ -1439,6 +1435,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=38"></script>
+  <script src="script.js?v=39"></script>
 </body>
 </html>
