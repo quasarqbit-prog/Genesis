@@ -34,6 +34,11 @@ const RULES_FILE = path.join(DATA_DIR, "rules.json");
 const RULES_DEFAULT_FILE = path.join(__dirname, "rules-default.json");
 const SERVER_INFO_FILE = path.join(DATA_DIR, "server.json");
 const PATCHES_FILE = path.join(DATA_DIR, "patches.json");
+const MUSIC_INDEX_FILE = path.join(__dirname, "assets", "sound", "music-index.json");
+const MUSIC_INDEX_CACHE_FILE = path.join(DATA_DIR, "music-index-cache.json");
+const GDRIVE_MUSIC_FOLDER_ID =
+  process.env.GDRIVE_MUSIC_FOLDER_ID || "1xXichFk7SQH3TSD4XETlZ7ENNId1Pr1R";
+const GDRIVE_ID_RE = /^[a-zA-Z0-9_-]{10,128}$/;
 
 const app = express();
 const server = http.createServer(app);
@@ -2683,6 +2688,161 @@ app.get("/api/rules", (_req, res) => {
     console.error("rules get:", err);
     return res.status(500).json({ error: "Не удалось загрузить правила" });
   }
+});
+
+/* ---------- Google Drive music catalog + stream ---------- */
+let musicCatalogCache = null;
+let musicCatalogRefreshing = false;
+
+function readStaticMusicIndex() {
+  try {
+    if (fs.existsSync(MUSIC_INDEX_CACHE_FILE)) {
+      return JSON.parse(fs.readFileSync(MUSIC_INDEX_CACHE_FILE, "utf8"));
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    if (fs.existsSync(MUSIC_INDEX_FILE)) {
+      return JSON.parse(fs.readFileSync(MUSIC_INDEX_FILE, "utf8"));
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return { source: "gdrive", folderId: GDRIVE_MUSIC_FOLDER_ID, folders: [], tracks: [] };
+}
+
+function getMusicCatalog() {
+  if (musicCatalogCache?.tracks?.length) return musicCatalogCache;
+  musicCatalogCache = readStaticMusicIndex();
+  return musicCatalogCache;
+}
+
+async function refreshMusicCatalogFromDrive(force = false) {
+  if (musicCatalogRefreshing) return getMusicCatalog();
+  const current = getMusicCatalog();
+  const ageMs = current?.generatedAt
+    ? Date.now() - Date.parse(current.generatedAt)
+    : Infinity;
+  if (!force && Number.isFinite(ageMs) && ageMs < 6 * 60 * 60 * 1000 && current.tracks?.length) {
+    return current;
+  }
+  musicCatalogRefreshing = true;
+  try {
+    const { buildCatalog } = require("./scripts/build-music-index-from-gdrive.js");
+    const catalog = await buildCatalog(GDRIVE_MUSIC_FOLDER_ID);
+    musicCatalogCache = catalog;
+    ensureUploadDirs();
+    fs.writeFileSync(MUSIC_INDEX_CACHE_FILE, JSON.stringify(catalog, null, 2), "utf8");
+    // keep git-tracked index in sync when possible
+    try {
+      fs.writeFileSync(MUSIC_INDEX_FILE, JSON.stringify(catalog, null, 2), "utf8");
+    } catch (_) {
+      /* ignore */
+    }
+    console.log(
+      `Music catalog refreshed from Drive: ${catalog.tracks.length} tracks`
+    );
+    return catalog;
+  } catch (err) {
+    console.error("Music catalog Drive refresh failed:", err.message);
+    return getMusicCatalog();
+  } finally {
+    musicCatalogRefreshing = false;
+  }
+}
+
+function proxyGdriveFile(fileId, req, res) {
+  if (!GDRIVE_ID_RE.test(fileId)) {
+    res.status(400).json({ error: "Bad file id" });
+    return;
+  }
+  const target =
+    "https://drive.usercontent.google.com/download?id=" +
+    encodeURIComponent(fileId) +
+    "&export=download&confirm=t";
+
+  const headers = {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    Accept: "*/*",
+  };
+  if (req.headers.range) headers.Range = req.headers.range;
+
+  const doGet = (url, hops = 0) => {
+    if (hops > 6) {
+      if (!res.headersSent) res.status(502).json({ error: "Drive redirect loop" });
+      return;
+    }
+    const lib = url.startsWith("http://") ? http : https;
+    const upstream = lib.get(url, { headers }, (up) => {
+      if ([301, 302, 303, 307, 308].includes(up.statusCode) && up.headers.location) {
+        up.resume();
+        doGet(up.headers.location, hops + 1);
+        return;
+      }
+      const ct = up.headers["content-type"] || "audio/ogg";
+      // HTML interstitial = blocked / not public
+      if (String(ct).includes("text/html")) {
+        up.resume();
+        if (!res.headersSent) {
+          res.status(502).json({
+            error: "Google Drive вернул HTML вместо аудио (проверьте доступ «по ссылке»)",
+          });
+        }
+        return;
+      }
+      res.status(up.statusCode || 200);
+      res.setHeader("Content-Type", ct);
+      if (up.headers["content-length"]) {
+        res.setHeader("Content-Length", up.headers["content-length"]);
+      }
+      if (up.headers["content-range"]) {
+        res.setHeader("Content-Range", up.headers["content-range"]);
+      }
+      if (up.headers["accept-ranges"]) {
+        res.setHeader("Accept-Ranges", up.headers["accept-ranges"]);
+      } else {
+        res.setHeader("Accept-Ranges", "bytes");
+      }
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      up.pipe(res);
+    });
+    upstream.on("error", (err) => {
+      console.error("gdrive stream:", err.message);
+      if (!res.headersSent) res.status(502).json({ error: "Не удалось скачать трек с Drive" });
+      else res.destroy(err);
+    });
+    req.on("close", () => upstream.destroy());
+  };
+
+  doGet(target);
+}
+
+app.get("/api/music/catalog", async (req, res) => {
+  try {
+    const force = String(req.query.refresh || "") === "1";
+    let catalog = getMusicCatalog();
+    if (force || !catalog.tracks?.length) {
+      catalog = await refreshMusicCatalogFromDrive(force);
+    } else {
+      // background refresh if stale
+      refreshMusicCatalogFromDrive(false).catch(() => {});
+    }
+    res.setHeader("Cache-Control", "public, max-age=60");
+    return res.json(catalog);
+  } catch (err) {
+    console.error("music catalog:", err);
+    return res.status(500).json({ error: "Не удалось загрузить каталог музыки" });
+  }
+});
+
+app.get("/api/music/stream/:id", (req, res) => {
+  proxyGdriveFile(String(req.params.id || ""), req, res);
+});
+
+app.get("/api/music/file/:id", (req, res) => {
+  proxyGdriveFile(String(req.params.id || ""), req, res);
 });
 
 app.put("/api/rules", authMiddleware, async (req, res) => {

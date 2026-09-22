@@ -1426,11 +1426,13 @@
   }
 
   /* ---------- Sound / music ---------- */
-  const SOUND_PREFS_KEY = "genesis_sound_prefs_v1";
+  const SOUND_PREFS_KEY = "genesis_sound_prefs_v2";
   const SOUND_CLICK_SRC = "assets/sound/click.ogg";
   const SOUND_NOTIFY_SRC = "assets/sound/massage.ogg";
   const SOUND_INDEX_SRC = "assets/sound/music-index.json";
-  const SOUND_CUSTOM_GROUP = "Своя музыка";
+  const SOUND_CATALOG_API = "/api/music/catalog";
+  const SOUND_DEFAULT_TRACK = "Minecraft Extended/amethyst.ogg";
+  const SOUND_CUSTOM_ROOT = "custom";
 
   let soundPrefs = {
     sfxVolume: 0.5,
@@ -1438,10 +1440,13 @@
     orderMode: "forward",
     enabled: {},
     order: [],
+    collapsed: {},
+    customFolders: [],
   };
-  let soundCatalog = { groups: [] };
+  let soundCatalog = { folders: [], tracks: [] };
   let soundTracksById = new Map();
-  let soundCustomMeta = []; // { id, title, group }
+  let soundFoldersById = new Map();
+  let soundCustomMeta = []; // { id, title, folderId }
   let soundReady = false;
   let soundMusicAudio = null;
   let soundPreviewAudio = null;
@@ -1450,6 +1455,7 @@
   let soundShuffleBag = [];
   let soundUnlockBound = false;
   let soundDragId = null;
+  let soundUploadTargetFolder = SOUND_CUSTOM_ROOT;
 
   function loadSoundPrefs() {
     try {
@@ -1463,6 +1469,8 @@
       }
       if (parsed.enabled && typeof parsed.enabled === "object") soundPrefs.enabled = parsed.enabled;
       if (Array.isArray(parsed.order)) soundPrefs.order = parsed.order.map(String);
+      if (parsed.collapsed && typeof parsed.collapsed === "object") soundPrefs.collapsed = parsed.collapsed;
+      if (Array.isArray(parsed.customFolders)) soundPrefs.customFolders = parsed.customFolders;
       if (Array.isArray(parsed.customMeta)) soundCustomMeta = parsed.customMeta;
     } catch (_) {
       /* ignore */
@@ -1478,7 +1486,7 @@
           customMeta: soundCustomMeta.map((t) => ({
             id: t.id,
             title: t.title,
-            group: t.group || SOUND_CUSTOM_GROUP,
+            folderId: t.folderId || SOUND_CUSTOM_ROOT,
           })),
         })
       );
@@ -1557,22 +1565,66 @@
     document.addEventListener("keydown", unlock, true);
   }
 
-  function rebuildTrackMap() {
+  function rebuildSoundMaps() {
+    soundFoldersById = new Map();
     soundTracksById = new Map();
-    for (const group of soundCatalog.groups || []) {
-      for (const track of group.tracks || []) {
-        soundTracksById.set(track.id, { ...track, group: group.label || group.id, custom: false });
-      }
+
+    // built-in folders from index
+    for (const folder of soundCatalog.folders || []) {
+      soundFoldersById.set(folder.id, {
+        id: folder.id,
+        label: folder.label,
+        parentId: folder.parentId || null,
+        builtin: true,
+      });
+    }
+    // ensure custom root
+    if (!soundFoldersById.has(SOUND_CUSTOM_ROOT)) {
+      soundFoldersById.set(SOUND_CUSTOM_ROOT, {
+        id: SOUND_CUSTOM_ROOT,
+        label: "Своя музыка",
+        parentId: null,
+        builtin: false,
+      });
+    }
+    for (const folder of soundPrefs.customFolders || []) {
+      if (!folder?.id) continue;
+      soundFoldersById.set(folder.id, {
+        id: String(folder.id),
+        label: String(folder.label || "Папка"),
+        parentId: folder.parentId ? String(folder.parentId) : null,
+        builtin: false,
+      });
+    }
+
+    for (const track of soundCatalog.tracks || []) {
+      soundTracksById.set(track.id, {
+        ...track,
+        folderId: track.folderPath || track.folderId,
+        custom: false,
+      });
     }
     for (const track of soundCustomMeta) {
       soundTracksById.set(track.id, {
         id: track.id,
         title: track.title,
-        group: SOUND_CUSTOM_GROUP,
+        folderId: track.folderId || SOUND_CUSTOM_ROOT,
         src: null,
         custom: true,
-        sub: "",
       });
+    }
+  }
+
+  function applyDefaultEnabledTracks() {
+    const known = [...soundTracksById.keys()];
+    const hasAny = Object.keys(soundPrefs.enabled).some((id) => soundTracksById.has(id));
+    if (hasAny) return;
+    for (const id of known) soundPrefs.enabled[id] = id === SOUND_DEFAULT_TRACK;
+    if (soundTracksById.has(SOUND_DEFAULT_TRACK)) {
+      soundPrefs.order = [
+        SOUND_DEFAULT_TRACK,
+        ...known.filter((id) => id !== SOUND_DEFAULT_TRACK),
+      ];
     }
   }
 
@@ -1582,20 +1634,14 @@
     const nextOrder = soundPrefs.order.filter((id) => knownSet.has(id));
     for (const id of known) {
       if (!nextOrder.includes(id)) nextOrder.push(id);
-      if (soundPrefs.enabled[id] == null) soundPrefs.enabled[id] = true;
+      if (soundPrefs.enabled[id] == null) {
+        soundPrefs.enabled[id] = id === SOUND_DEFAULT_TRACK;
+      }
     }
     for (const id of Object.keys(soundPrefs.enabled)) {
       if (!knownSet.has(id)) delete soundPrefs.enabled[id];
     }
     soundPrefs.order = nextOrder;
-  }
-
-  async function resolveTrackSrc(track) {
-    if (!track) return null;
-    if (!track.custom) return track.src;
-    const blob = await idbGetTrack(track.id);
-    if (!blob) return null;
-    return URL.createObjectURL(blob);
   }
 
   function getEnabledOrderedIds() {
@@ -1614,11 +1660,58 @@
     return base;
   }
 
+  let soundFailToastAt = 0;
+  let soundFailSkip = new Set();
+
+  function notifySoundLoadFail(id, src) {
+    console.warn("Sound load failed", id, src);
+    const now = Date.now();
+    if (now - soundFailToastAt > 4000) {
+      soundFailToastAt = now;
+      if (typeof showToast === "function") {
+        showToast("Не удалось загрузить трек с Google Drive");
+      }
+    }
+  }
+
+  function gdriveStreamUrl(driveId) {
+    return `/api/music/stream/${encodeURIComponent(driveId)}`;
+  }
+
+  async function resolveTrackSrc(track) {
+    if (!track) return null;
+    if (track.custom) {
+      const blob = await idbGetTrack(track.id);
+      if (!blob) return null;
+      return URL.createObjectURL(blob);
+    }
+    const driveId =
+      track.driveId ||
+      (String(track.src || "").startsWith("gdrive:")
+        ? String(track.src).slice("gdrive:".length)
+        : null);
+    if (driveId) return gdriveStreamUrl(driveId);
+
+    // legacy local / relative paths
+    const raw = String(track.src || "").replace(/\\/g, "/");
+    return raw
+      .split("/")
+      .map((part) => {
+        if (!part || part.includes("%")) return part;
+        return encodeURIComponent(part);
+      })
+      .join("/");
+  }
+
   async function playMusicById(id, { preview = false } = {}) {
     const track = soundTracksById.get(id);
     if (!track) return;
+    if (soundFailSkip.has(id) && !track.custom) return;
     const src = await resolveTrackSrc(track);
-    if (!src) return;
+    if (!src) {
+      notifySoundLoadFail(id, null);
+      return;
+    }
 
     if (preview) {
       stopMusicPreview();
@@ -1629,7 +1722,16 @@
         soundPreviewId = null;
         renderSoundSettingsUi();
       };
-      soundPreviewAudio.play().catch(() => {});
+      soundPreviewAudio.onerror = () => {
+        notifySoundLoadFail(id, src);
+        stopMusicPreview();
+        renderSoundSettingsUi();
+      };
+      try {
+        await soundPreviewAudio.play();
+      } catch (err) {
+        console.warn("Sound preview failed", err);
+      }
       if (soundMusicAudio && !soundMusicAudio.paused) soundMusicAudio.pause();
       renderSoundSettingsUi();
       return;
@@ -1638,13 +1740,48 @@
     stopMusicPreview();
     if (!soundMusicAudio) {
       soundMusicAudio = new Audio();
+      soundMusicAudio.preload = "auto";
       soundMusicAudio.addEventListener("ended", () => playNextMusicTrack());
+      soundMusicAudio.addEventListener("error", () => {
+        const failedId = soundMusicAudio?.dataset.trackId;
+        if (failedId) {
+          soundFailSkip.add(failedId);
+          notifySoundLoadFail(failedId, soundMusicAudio?.currentSrc || src);
+        }
+        // Don't leave a "playing" silent element
+        try {
+          soundMusicAudio.pause();
+          soundMusicAudio.removeAttribute("src");
+          soundMusicAudio.load();
+        } catch (_) {
+          /* ignore */
+        }
+        delete soundMusicAudio.dataset.trackId;
+        // Avoid infinite skip loop when all enabled tracks are missing
+        const list = getEnabledOrderedIds().filter((tid) => !soundFailSkip.has(tid));
+        if (list.length) playNextMusicTrack();
+      });
     }
     soundMusicAudio.volume = soundPrefs.musicVolume;
-    if (soundMusicAudio.dataset.trackId === id && !soundMusicAudio.paused) return;
+    soundMusicAudio.muted = false;
+    if (
+      soundMusicAudio.dataset.trackId === id &&
+      !soundMusicAudio.paused &&
+      soundMusicAudio.readyState >= 2
+    ) {
+      return;
+    }
     soundMusicAudio.src = src;
     soundMusicAudio.dataset.trackId = id;
-    soundMusicAudio.play().catch(() => {});
+    try {
+      await soundMusicAudio.play();
+    } catch (err) {
+      console.warn("Sound play failed", id, src, err);
+      // NotAllowedError = wait for next user gesture
+      if (err && err.name === "NotAllowedError") return;
+      soundFailSkip.add(id);
+      notifySoundLoadFail(id, src);
+    }
   }
 
   function stopMusicPreview() {
@@ -1656,7 +1793,7 @@
   }
 
   function playNextMusicTrack() {
-    const list = getEnabledOrderedIds();
+    const list = getEnabledOrderedIds().filter((id) => !soundFailSkip.has(id));
     if (!list.length) return;
     soundPlaylistCursor = (soundPlaylistCursor + 1) % list.length;
     playMusicById(list[soundPlaylistCursor]);
@@ -1664,10 +1801,20 @@
 
   function ensureMusicPlaying() {
     if (soundPrefs.musicVolume <= 0.001) return;
-    const list = getEnabledOrderedIds();
+    const list = getEnabledOrderedIds().filter((id) => !soundFailSkip.has(id));
     if (!list.length) return;
-    if (soundMusicAudio && !soundMusicAudio.paused) return;
-    if (soundPlaylistCursor < 0 || soundPlaylistCursor >= list.length) soundPlaylistCursor = 0;
+    if (
+      soundMusicAudio &&
+      !soundMusicAudio.paused &&
+      soundMusicAudio.readyState >= 2 &&
+      soundMusicAudio.dataset.trackId
+    ) {
+      return;
+    }
+    if (soundPlaylistCursor < 0 || soundPlaylistCursor >= list.length) {
+      const prefer = list.indexOf(SOUND_DEFAULT_TRACK);
+      soundPlaylistCursor = prefer >= 0 ? prefer : 0;
+    }
     playMusicById(list[soundPlaylistCursor]);
   }
 
@@ -1680,6 +1827,202 @@
     } else {
       ensureMusicPlaying();
     }
+  }
+
+  function getChildFolders(parentId) {
+    return [...soundFoldersById.values()]
+      .filter((f) => (f.parentId || null) === (parentId || null))
+      .sort((a, b) => a.label.localeCompare(b.label, "ru"));
+  }
+
+  function getTracksInFolder(folderId) {
+    const ids = soundPrefs.order.filter((id) => {
+      const t = soundTracksById.get(id);
+      return t && t.folderId === folderId;
+    });
+    return ids.map((id) => soundTracksById.get(id)).filter(Boolean);
+  }
+
+  function createSoundFolder(parentId) {
+    const label = String(window.prompt("Название папки:", "Новая папка") || "").trim();
+    if (!label) return;
+    const id = parentId
+      ? `${parentId}/${Date.now().toString(36)}`
+      : `custom/${Date.now().toString(36)}`;
+    soundPrefs.customFolders.push({
+      id,
+      label,
+      parentId: parentId || null,
+    });
+    soundPrefs.collapsed[id] = false;
+    rebuildSoundMaps();
+    saveSoundPrefs();
+    renderSoundSettingsUi();
+  }
+
+  function makeTrackRow(track, listEl) {
+    const row = document.createElement("div");
+    row.className = "sound-track";
+    row.draggable = true;
+    row.dataset.trackId = track.id;
+
+    const playBtn = document.createElement("button");
+    playBtn.type = "button";
+    playBtn.className = "sound-track__play";
+    if (soundPreviewId === track.id) playBtn.classList.add("is-active");
+    playBtn.textContent = soundPreviewId === track.id ? "■" : "▶";
+    playBtn.title = "Прослушать";
+    playBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (soundPreviewId === track.id) {
+        stopMusicPreview();
+        ensureMusicPlaying();
+        renderSoundSettingsUi();
+        return;
+      }
+      playMusicById(track.id, { preview: true });
+    });
+
+    const name = document.createElement("div");
+    name.className = "sound-track__name";
+    name.textContent = track.title || track.id;
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "sound-track__toggle";
+    const on = Boolean(soundPrefs.enabled[track.id]);
+    toggle.classList.toggle("is-on", on);
+    toggle.textContent = on ? "×" : "";
+    toggle.title = on ? "Выключить" : "Включить";
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      soundPrefs.enabled[track.id] = !soundPrefs.enabled[track.id];
+      soundShuffleBag = [];
+      saveSoundPrefs();
+      if (!soundPrefs.enabled[track.id] && soundMusicAudio?.dataset.trackId === track.id) {
+        playNextMusicTrack();
+      } else {
+        ensureMusicPlaying();
+      }
+      renderSoundSettingsUi();
+    });
+
+    row.addEventListener("dragstart", (e) => {
+      soundDragId = track.id;
+      row.classList.add("is-dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", track.id);
+    });
+    row.addEventListener("dragend", () => {
+      soundDragId = null;
+      row.classList.remove("is-dragging");
+      listEl.querySelectorAll(".sound-track.is-drag-over").forEach((el) => el.classList.remove("is-drag-over"));
+    });
+    row.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      row.classList.add("is-drag-over");
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("is-drag-over"));
+    row.addEventListener("drop", (e) => {
+      e.preventDefault();
+      row.classList.remove("is-drag-over");
+      const fromId = soundDragId || e.dataTransfer.getData("text/plain");
+      const toId = track.id;
+      if (!fromId || fromId === toId) return;
+      const fromTrack = soundTracksById.get(fromId);
+      const toTrack = soundTracksById.get(toId);
+      if (fromTrack && toTrack) fromTrack.folderId = toTrack.folderId;
+      if (fromTrack?.custom) {
+        const meta = soundCustomMeta.find((t) => t.id === fromId);
+        if (meta) meta.folderId = toTrack.folderId;
+      }
+      const order = [...soundPrefs.order];
+      const from = order.indexOf(fromId);
+      const to = order.indexOf(toId);
+      if (from < 0 || to < 0) return;
+      order.splice(from, 1);
+      order.splice(to, 0, fromId);
+      soundPrefs.order = order;
+      soundShuffleBag = [];
+      saveSoundPrefs();
+      renderSoundSettingsUi();
+    });
+
+    row.append(playBtn, name, toggle);
+    return row;
+  }
+
+  function renderSoundFolder(folderId, container, listEl, nested) {
+    const folder = soundFoldersById.get(folderId);
+    if (!folder) return;
+    const section = document.createElement("section");
+    section.className = `sound-group${nested ? " is-nested" : ""}`;
+    const collapsed = Boolean(soundPrefs.collapsed[folderId]);
+
+    const head = document.createElement("div");
+    head.className = "sound-group__head";
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "sound-group__toggle";
+    toggle.textContent = collapsed ? "+" : "−";
+    toggle.title = collapsed ? "Развернуть" : "Свернуть";
+    toggle.addEventListener("click", () => {
+      soundPrefs.collapsed[folderId] = !collapsed;
+      saveSoundPrefs();
+      renderSoundSettingsUi();
+    });
+
+    const title = document.createElement("h3");
+    title.className = "sound-group__title";
+    title.textContent = folder.label;
+    title.title = collapsed ? "Развернуть" : "Свернуть";
+    title.addEventListener("click", () => {
+      soundPrefs.collapsed[folderId] = !collapsed;
+      saveSoundPrefs();
+      renderSoundSettingsUi();
+    });
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "sound-group__add";
+    addBtn.textContent = "+";
+    addBtn.title = "Подпапка";
+    addBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      createSoundFolder(folderId);
+    });
+
+    const uploadHere = document.createElement("button");
+    uploadHere.type = "button";
+    uploadHere.className = "sound-group__add";
+    uploadHere.textContent = "♪";
+    uploadHere.title = "Загрузить сюда";
+    uploadHere.addEventListener("click", (e) => {
+      e.stopPropagation();
+      soundUploadTargetFolder = folderId;
+      document.getElementById("sound-upload-input")?.click();
+    });
+
+    head.append(toggle, title, uploadHere, addBtn);
+    section.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "sound-group__body";
+    body.hidden = collapsed;
+
+    if (!collapsed) {
+      getChildFolders(folderId).forEach((child) => {
+        renderSoundFolder(child.id, body, listEl, true);
+      });
+      getTracksInFolder(folderId).forEach((track) => {
+        body.appendChild(makeTrackRow(track, listEl));
+      });
+    }
+
+    section.appendChild(body);
+    container.appendChild(section);
   }
 
   function renderSoundSettingsUi() {
@@ -1700,129 +2043,49 @@
     if (!listEl || !soundReady) return;
     listEl.innerHTML = "";
 
-    const byGroup = new Map();
-    for (const id of soundPrefs.order) {
-      const track = soundTracksById.get(id);
-      if (!track) continue;
-      const g = track.group || "Прочее";
-      if (!byGroup.has(g)) byGroup.set(g, []);
-      byGroup.get(g).push(track);
-    }
-
-    for (const [groupName, tracks] of byGroup) {
-      const group = document.createElement("section");
-      group.className = "sound-group";
-      const title = document.createElement("h3");
-      title.className = "sound-group__title";
-      title.textContent = groupName;
-      group.appendChild(title);
-
-      tracks.forEach((track) => {
-        const row = document.createElement("div");
-        row.className = "sound-track";
-        row.draggable = true;
-        row.dataset.trackId = track.id;
-
-        const playBtn = document.createElement("button");
-        playBtn.type = "button";
-        playBtn.className = "sound-track__play";
-        if (soundPreviewId === track.id) playBtn.classList.add("is-active");
-        playBtn.textContent = soundPreviewId === track.id ? "■" : "▶";
-        playBtn.title = "Прослушать";
-        playBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          if (soundPreviewId === track.id) {
-            stopMusicPreview();
-            ensureMusicPlaying();
-            renderSoundSettingsUi();
-            return;
-          }
-          playMusicById(track.id, { preview: true });
-        });
-
-        const name = document.createElement("div");
-        name.className = "sound-track__name";
-        name.textContent = track.title || track.id;
-        if (track.sub) {
-          const sub = document.createElement("span");
-          sub.className = "sound-track__sub";
-          sub.textContent = track.sub;
-          name.appendChild(sub);
-        }
-
-        const toggle = document.createElement("button");
-        toggle.type = "button";
-        toggle.className = "sound-track__toggle";
-        const on = Boolean(soundPrefs.enabled[track.id]);
-        toggle.classList.toggle("is-on", on);
-        toggle.textContent = on ? "×" : "";
-        toggle.title = on ? "Выключить" : "Включить";
-        toggle.addEventListener("click", (e) => {
-          e.stopPropagation();
-          soundPrefs.enabled[track.id] = !soundPrefs.enabled[track.id];
-          soundShuffleBag = [];
-          saveSoundPrefs();
-          if (!soundPrefs.enabled[track.id] && soundMusicAudio?.dataset.trackId === track.id) {
-            playNextMusicTrack();
-          } else {
-            ensureMusicPlaying();
-          }
-          renderSoundSettingsUi();
-        });
-
-        row.addEventListener("dragstart", (e) => {
-          soundDragId = track.id;
-          row.classList.add("is-dragging");
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", track.id);
-        });
-        row.addEventListener("dragend", () => {
-          soundDragId = null;
-          row.classList.remove("is-dragging");
-          listEl.querySelectorAll(".sound-track.is-drag-over").forEach((el) => el.classList.remove("is-drag-over"));
-        });
-        row.addEventListener("dragover", (e) => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          row.classList.add("is-drag-over");
-        });
-        row.addEventListener("dragleave", () => row.classList.remove("is-drag-over"));
-        row.addEventListener("drop", (e) => {
-          e.preventDefault();
-          row.classList.remove("is-drag-over");
-          const fromId = soundDragId || e.dataTransfer.getData("text/plain");
-          const toId = track.id;
-          if (!fromId || fromId === toId) return;
-          const order = [...soundPrefs.order];
-          const from = order.indexOf(fromId);
-          const to = order.indexOf(toId);
-          if (from < 0 || to < 0) return;
-          order.splice(from, 1);
-          order.splice(to, 0, fromId);
-          soundPrefs.order = order;
-          soundShuffleBag = [];
-          saveSoundPrefs();
-          renderSoundSettingsUi();
-        });
-
-        row.append(playBtn, name, toggle);
-        group.appendChild(row);
-      });
-
-      listEl.appendChild(group);
-    }
+    getChildFolders(null).forEach((folder) => {
+      renderSoundFolder(folder.id, listEl, listEl, false);
+    });
   }
 
   async function initSoundSystem() {
     loadSoundPrefs();
     try {
-      const res = await fetch(SOUND_INDEX_SRC);
+      let res = await fetch(SOUND_CATALOG_API);
+      if (!res.ok) res = await fetch(SOUND_INDEX_SRC);
       if (res.ok) soundCatalog = await res.json();
     } catch (_) {
-      soundCatalog = { groups: [] };
+      try {
+        const res = await fetch(SOUND_INDEX_SRC);
+        if (res.ok) soundCatalog = await res.json();
+      } catch (_) {
+        soundCatalog = { folders: [], tracks: [] };
+      }
     }
-    // restore custom entries into catalog display group
-    rebuildTrackMap();
+    // migrate old group-based index if needed
+    if (!soundCatalog.tracks && Array.isArray(soundCatalog.groups)) {
+      const tracks = [];
+      const folderSet = new Set();
+      for (const g of soundCatalog.groups) {
+        folderSet.add(g.id || g.label);
+        for (const t of g.tracks || []) {
+          const id = String(t.id || "").replace(/\\/g, "/");
+          tracks.push({
+            ...t,
+            id,
+            src: String(t.src || "").replace(/\\/g, "/"),
+            folderPath: g.id || g.label,
+          });
+        }
+      }
+      soundCatalog = {
+        folders: [...folderSet].map((id) => ({ id, label: id, parentId: null })),
+        tracks,
+      };
+    }
+
+    rebuildSoundMaps();
+    applyDefaultEnabledTracks();
     syncSoundOrderWithCatalog();
     saveSoundPrefs();
     soundReady = true;
@@ -1851,11 +2114,23 @@
       });
     });
     document.getElementById("sound-upload-btn")?.addEventListener("click", () => {
+      soundUploadTargetFolder = SOUND_CUSTOM_ROOT;
       document.getElementById("sound-upload-input")?.click();
+    });
+    document.getElementById("sound-new-folder-btn")?.addEventListener("click", () => {
+      createSoundFolder(null);
     });
     document.getElementById("sound-upload-input")?.addEventListener("change", async (e) => {
       const files = [...(e.target.files || [])];
       e.target.value = "";
+      const folderId = soundUploadTargetFolder || SOUND_CUSTOM_ROOT;
+      if (!soundFoldersById.has(folderId)) {
+        soundPrefs.customFolders.push({
+          id: SOUND_CUSTOM_ROOT,
+          label: "Своя музыка",
+          parentId: null,
+        });
+      }
       for (const file of files) {
         if (!file.type.startsWith("audio/") && !/\.(ogg|mp3|wav|m4a|flac)$/i.test(file.name)) continue;
         const id = `custom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
@@ -1863,24 +2138,23 @@
         soundCustomMeta.push({
           id,
           title: file.name.replace(/\.[^.]+$/, ""),
-          group: SOUND_CUSTOM_GROUP,
+          folderId,
         });
-        soundPrefs.enabled[id] = true;
+        soundPrefs.enabled[id] = false;
         soundPrefs.order.unshift(id);
       }
-      rebuildTrackMap();
+      rebuildSoundMaps();
       syncSoundOrderWithCatalog();
       saveSoundPrefs();
       renderSoundSettingsUi();
       showToast("Музыка добавлена");
     });
 
-    // UI click SFX (buttons / interactive controls)
     document.addEventListener(
       "click",
       (e) => {
         const t = e.target.closest(
-          "button, .mc-btn, .hub-nav__btn, .main-tabs__btn, .catalog-card, .studio-tile, .studio-ctx__btn, .sound-track__play, .sound-track__toggle, .sound-order-btn, a.footer-link"
+          "button, .mc-btn, .hub-nav__btn, .main-tabs__btn, .catalog-card, .studio-tile, .studio-ctx__btn, .sound-track__play, .sound-track__toggle, .sound-order-btn, .sound-group__toggle, .sound-group__add, a.footer-link"
         );
         if (!t) return;
         if (t.closest("#sound-sfx-volume, #sound-music-volume")) return;

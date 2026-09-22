@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "music:index": "node scripts/build-music-index-from-gdrive.js"
   },
   "engines": {
     "node": ">=20"

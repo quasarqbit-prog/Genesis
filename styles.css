@@ -2181,9 +2181,86 @@ h3,
   text-align: right;
 }
 
-.sound-upload-btn {
-  width: 100%;
+.sound-music-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 10px;
+}
+
+.sound-music-toolbar .mc-btn {
+  flex: 1 1 auto;
+}
+
+.sound-group__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 2px solid rgba(107, 90, 138, 0.35);
+  background: rgba(20, 12, 36, 0.55);
+}
+
+.sound-group__toggle {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid rgba(107, 90, 138, 0.45);
+  background: rgba(16, 9, 28, 0.85);
+  color: var(--accent);
+  font-family: var(--font-ded);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.sound-group__title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-ded);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sound-group__add {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid rgba(196, 255, 77, 0.4);
+  background: rgba(16, 9, 28, 0.85);
+  color: var(--accent);
+  font-family: var(--font-ded);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sound-group__body {
+  padding-left: 8px;
+}
+
+.sound-group__body[hidden] {
+  display: none !important;
+}
+
+.sound-group.is-nested {
+  margin: 6px 8px 8px;
+  border-color: rgba(107, 90, 138, 0.3);
 }
 
 .sound-music-list {
@@ -2203,15 +2280,7 @@ h3,
 }
 
 .sound-group__title {
-  margin: 0;
-  padding: 8px 10px;
-  font-family: var(--font-ded);
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--text);
-  border-bottom: 2px solid rgba(107, 90, 138, 0.35);
-  background: rgba(20, 12, 36, 0.55);
+  cursor: pointer;
 }
 
 .sound-track {
@@ -2306,6 +2375,7 @@ h3,
 
 .sound-order-btn {
   appearance: none;
+  position: relative;
   flex: 1 1 0;
   margin: 0;
   padding: 8px 6px;
@@ -2321,6 +2391,37 @@ h3,
 .sound-order-btn:hover {
   color: var(--accent);
   border-color: rgba(196, 255, 77, 0.45);
+}
+
+.sound-order-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  z-index: 40;
+  width: max-content;
+  max-width: min(220px, 70vw);
+  padding: 6px 8px;
+  border: 2px solid #b388ff;
+  background: rgba(16, 8, 28, 0.98);
+  color: #efe8ff;
+  font-family: var(--font-ded);
+  font-size: 11px;
+  line-height: 1.3;
+  letter-spacing: 0;
+  white-space: nowrap;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+
+.sound-order-btn:hover::after,
+.sound-order-btn:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
 }
 
 .profile-hero {

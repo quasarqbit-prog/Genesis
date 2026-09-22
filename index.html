@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=55" />
+  <link rel="stylesheet" href="styles.css?v=58" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -390,15 +390,19 @@
 
               <div class="sound-block sound-block--music">
                 <p class="sound-block__title">Фоновая музыка</p>
-                <button type="button" class="mc-btn mc-btn--compact sound-upload-btn" id="sound-upload-btn">Загрузить свою музыку</button>
+                <div class="sound-music-toolbar">
+                  <button type="button" class="mc-btn mc-btn--compact" id="sound-upload-btn">Загрузить музыку</button>
+                  <button type="button" class="mc-btn mc-btn--compact mc-btn--ghost" id="sound-new-folder-btn">Новая папка</button>
+                </div>
                 <input id="sound-upload-input" type="file" accept="audio/*,.ogg,.mp3,.wav,.m4a" multiple hidden />
+                <input id="sound-upload-folder-id" type="hidden" value="" />
 
                 <div class="sound-music-list" id="sound-music-list"></div>
 
                 <div class="sound-order-row" role="group" aria-label="Порядок воспроизведения">
-                  <button type="button" class="sound-order-btn is-active" data-sound-order="forward" title="Сверху вниз">↓</button>
-                  <button type="button" class="sound-order-btn" data-sound-order="reverse" title="Снизу вверх">↑</button>
-                  <button type="button" class="sound-order-btn" data-sound-order="shuffle" title="Случайный порядок">⟳</button>
+                  <button type="button" class="sound-order-btn is-active" data-sound-order="forward" data-tip="Сверху вниз" title="Сверху вниз" aria-label="Сверху вниз">↓</button>
+                  <button type="button" class="sound-order-btn" data-sound-order="reverse" data-tip="Снизу вверх" title="Снизу вверх" aria-label="Снизу вверх">↑</button>
+                  <button type="button" class="sound-order-btn" data-sound-order="shuffle" data-tip="Случайный порядок" title="Случайный порядок" aria-label="Случайный порядок">⟳</button>
                 </div>
               </div>
             </div>
@@ -1616,6 +1620,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=55"></script>
+  <script src="script.js?v=58"></script>
 </body>
 </html>
