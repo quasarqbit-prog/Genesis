@@ -28,6 +28,9 @@ const TELEGRAM_BOT_USERNAME = (process.env.TELEGRAM_BOT_USERNAME || "").replace(
 );
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 const AVATARS_DIR = path.join(UPLOADS_DIR, "avatars");
+const DATA_DIR = path.join(__dirname, "data");
+const RULES_FILE = path.join(DATA_DIR, "rules.json");
+const RULES_DEFAULT_FILE = path.join(__dirname, "rules-default.json");
 
 const app = express();
 const server = http.createServer(app);
@@ -73,6 +76,7 @@ const pool = mysql.createPool({
 
 function ensureUploadDirs() {
   fs.mkdirSync(AVATARS_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 function signToken(user) {
@@ -2590,6 +2594,119 @@ app.get("/api/admin/users", adminMiddleware, async (_req, res) => {
   } catch (err) {
     console.error("admin users:", err);
     return res.status(500).json({ error: "Ошибка списка пользователей" });
+  }
+});
+
+function loadDefaultRulesDoc() {
+  try {
+    const raw = fs.readFileSync(RULES_DEFAULT_FILE, "utf8");
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn("rules-default.json:", err.message);
+    return {
+      title: "Правила сервера",
+      intro:
+        "Обязательны к исполнению всеми игроками без исключения. Незнание правил не освобождает от ответственности.",
+      sections: [],
+    };
+  }
+}
+
+function normalizeRulesDoc(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const sectionsIn = Array.isArray(src.sections) ? src.sections : [];
+  const sections = sectionsIn.map((sec, idx) => {
+    const number = Math.max(1, Number(sec?.number) || idx + 1);
+    const itemsIn = Array.isArray(sec?.items) ? sec.items : [];
+    return {
+      id: String(sec?.id || `s${number}-${Date.now()}-${idx}`).slice(0, 64),
+      number,
+      title: String(sec?.title || `Раздел ${number}`).trim().slice(0, 120),
+      penalty: String(sec?.penalty || "").trim().slice(0, 500),
+      penaltyNote: String(sec?.penaltyNote || "").trim().slice(0, 500),
+      note: String(sec?.note || "").trim().slice(0, 2000),
+      items: itemsIn.map((item, j) => ({
+        id: String(item?.id || `i${number}-${j}-${Date.now()}`).slice(0, 64),
+        code: String(item?.code || `${number}.${j + 1}`).trim().slice(0, 16),
+        text: String(item?.text || "").trim().slice(0, 4000),
+        bullets: Array.isArray(item?.bullets)
+          ? item.bullets
+              .map((b) => String(b || "").trim().slice(0, 1000))
+              .filter(Boolean)
+              .slice(0, 30)
+          : [],
+      })),
+    };
+  });
+  sections.sort((a, b) => a.number - b.number || a.title.localeCompare(b.title, "ru"));
+  return {
+    title: String(src.title || "Правила сервера").trim().slice(0, 120),
+    intro: String(src.intro || "").trim().slice(0, 2000),
+    sections,
+  };
+}
+
+function readRulesDoc() {
+  ensureUploadDirs();
+  if (!fs.existsSync(RULES_FILE)) {
+    const doc = normalizeRulesDoc(loadDefaultRulesDoc());
+    fs.writeFileSync(RULES_FILE, JSON.stringify(doc, null, 2), "utf8");
+    return doc;
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(RULES_FILE, "utf8"));
+    return normalizeRulesDoc(raw);
+  } catch (err) {
+    console.warn("rules.json corrupt, reseeding:", err.message);
+    const doc = normalizeRulesDoc(loadDefaultRulesDoc());
+    fs.writeFileSync(RULES_FILE, JSON.stringify(doc, null, 2), "utf8");
+    return doc;
+  }
+}
+
+function writeRulesDoc(doc) {
+  ensureUploadDirs();
+  const normalized = normalizeRulesDoc(doc);
+  fs.writeFileSync(RULES_FILE, JSON.stringify(normalized, null, 2), "utf8");
+  return normalized;
+}
+
+app.get("/api/rules", (_req, res) => {
+  try {
+    return res.json({ ok: true, rules: readRulesDoc() });
+  } catch (err) {
+    console.error("rules get:", err);
+    return res.status(500).json({ error: "Не удалось загрузить правила" });
+  }
+});
+
+app.put("/api/rules", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const rules = writeRulesDoc(req.body?.rules || req.body);
+    io.emit("rules:updated", { rules });
+    return res.json({ ok: true, rules });
+  } catch (err) {
+    console.error("rules put:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось сохранить правила",
+    });
+  }
+});
+
+app.post("/api/rules/reset", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const rules = writeRulesDoc(loadDefaultRulesDoc());
+    io.emit("rules:updated", { rules });
+    return res.json({ ok: true, rules });
+  } catch (err) {
+    console.error("rules reset:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось сбросить правила",
+    });
   }
 });
 

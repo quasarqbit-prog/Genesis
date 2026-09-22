@@ -3,6 +3,7 @@ node_modules/
 *.log
 .DS_Store
 uploads/
+data/
 tmp/
 
 *.exe

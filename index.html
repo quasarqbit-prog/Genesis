@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=35" />
+  <link rel="stylesheet" href="styles.css?v=36" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -45,189 +45,25 @@
 
           <div class="main-tab-panel main-tab-panel--scroll" data-main-panel="rules" id="main-panel-rules" hidden>
             <section class="rules main-embed-rules" id="rules">
-      <aside class="rules-side" aria-label="Разделы правил">
-        <p class="rules-side__title">Разделы</p>
-        <nav class="rules-toc" id="rules-toc">
-          <button type="button" class="rules-toc__btn is-active" data-rule="rule-1">1. Безопасность</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-2">2. Расы</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-3">3. Территория</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-4">4. Читы</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-5">5. Общение</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-6">6. Ники и скины</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-7">7. Администрация</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-8">8. Ответственность</button>
-        </nav>
-      </aside>
+              <aside class="rules-side" aria-label="Разделы правил">
+                <p class="rules-side__title">Разделы</p>
+                <nav class="rules-toc" id="rules-toc"></nav>
+                <div class="rules-side__actions" id="rules-founder-side" hidden>
+                  <button type="button" class="rules-action-btn" id="rules-add-section">+ Раздел</button>
+                  <button type="button" class="rules-action-btn" id="rules-edit-intro">Вступление</button>
+                </div>
+              </aside>
 
-      <div class="rules-body" id="rules-body">
-        <header class="rules-head">
-          <h1 class="rules-head__title">Правила сервера</h1>
-          <p class="rules-head__lead">Обязательны к исполнению всеми игроками</p>
-        </header>
+              <div class="rules-body" id="rules-body">
+                <header class="rules-head">
+                  <h1 class="rules-head__title" id="rules-doc-title">Правила сервера</h1>
+                  <p class="rules-head__lead" id="rules-doc-intro"></p>
+                </header>
 
-        <article class="rule-block" id="rule-1">
-          <h2 class="rule-block__title">1. Безопасность игроков</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">1.1.</span>
-              Запрещено причинять вред другим игрокам любыми способами, особенно через обходные методы:
-              ловушки с лавой/TNT, выталкивание в пропасть или в мобов, использование багов и эксплойтов
-              для убийства, удушение блоками, заманивание в опасные зоны и т.п.
-            </li>
-            <li>
-              <span class="rule-num">1.2.</span>
-              Любые попытки убить или покалечить игрока способом, не предусмотренным разработчиками,
-              строго запрещены.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 24 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-2">
-          <h2 class="rule-block__title">2. Расы и социальное взаимодействие</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">2.1.</span>
-              У каждого игрока есть своя раса на сервере — уважайте выбор и особенности других игроков.
-            </li>
-            <li>
-              <span class="rule-num">2.2.</span>
-              Запрещено эксплуатировать других игроков и их способности: принуждать к рабству,
-              бесплатному труду, отбирать ресурсы силой или через обман, использовать чужую расу
-              как повод для дискриминации или давления.
-            </li>
-            <li>
-              <span class="rule-num">2.3.</span>
-              Любое сотрудничество (торговля, совместные постройки, найм) — только по добровольному
-              согласию сторон.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 48 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-3">
-          <h2 class="rule-block__title">3. Территория и постройки</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">3.1.</span>
-              Гриферство запрещено: разрушение, порча или изменение чужих построек без разрешения владельца.
-            </li>
-            <li>
-              <span class="rule-num">3.2.</span>
-              Воровство из чужих сундуков, домов и хранилищ запрещено.
-            </li>
-            <li>
-              <span class="rule-num">3.3.</span>
-              Не стройте слишком близко к чужим участкам без согласия соседей.
-            </li>
-            <li>
-              <span class="rule-num">3.4.</span>
-              Не оставляйте после себя огромные ямы, вырубленные леса без остатков летающей листвы
-              и прочий беспорядок в общем ландшафте.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 48 часов.</li>
-            <li>Есть возможность избежать наказания вернув или восстановив ресурсы/постройки.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-4">
-          <h2 class="rule-block__title">4. Читы и эксплойты</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">4.1.</span>
-              Использование чит-клиентов, x-ray, дюпов (дублирования предметов), автокликеров и любых
-              сторонних программ, дающих особое нечестное преимущество, запрещено.
-            </li>
-            <li>
-              <span class="rule-num">4.2.</span>
-              Использование багов игры в корыстных целях (для получения ресурсов, урона другим игрокам
-              и т.д.) запрещено. О найденных багах сообщайте администрации.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 48 часов.</li>
-          </ul>
-          <p class="rule-note">
-            Примечание: Использование вспомогательных модов по типу: карты, авто-инструмента, авто рыбалки
-            и так далее — разрешены.
-          </p>
-        </article>
-
-        <article class="rule-block" id="rule-5">
-          <h2 class="rule-block__title">5. Общение в чате</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">5.1.</span>
-              Уважительное общение — обязательно. Оскорбления, травля, разжигание конфликтов запрещены.
-              Просто маты без контекста оскорбления можно.
-            </li>
-            <li>
-              <span class="rule-num">5.2.</span>
-              Спам, флуд, реклама других серверов и проектов без разрешения администрации запрещены.
-            </li>
-            <li>
-              <span class="rule-num">5.3.</span>
-              Запрещён контент 18+, дискриминация по любому признаку, политические и религиозные споры.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 15 минут до 3 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-6">
-          <h2 class="rule-block__title">6. Никнеймы и скины</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">6.1.</span>
-              Ник и скин не должны содержать оскорбления, нацистскую и экстремистскую символику,
-              а также имена администрации сервера без разрешения.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 12 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-7">
-          <h2 class="rule-block__title">7. Администрация</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">7.1.</span>
-              Решения администрации обязательны к исполнению. Спорные ситуации решаются через жалобы
-              основателю сервера, а не самосудом.
-            </li>
-            <li>
-              <span class="rule-num">7.2.</span>
-              Попытки обмануть или манипулировать администрацией (ложные жалобы, подставы) наказываются.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 96 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-8">
-          <h2 class="rule-block__title">8. Ответственность</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">8.1.</span>
-              За нарушение правил — предупреждение, временное отстранение или постоянный бан в зависимости
-              от тяжести и повторяемости нарушения.
-            </li>
-            <li>
-              <span class="rule-num">8.2.</span>
-              Незнание правил не освобождает от ответственности.
-            </li>
-          </ol>
-        </article>
-      </div>
+                <div class="rules-section-view" id="rules-section-view">
+                  <p class="rules-pick">Выберите раздел слева</p>
+                </div>
+              </div>
             </section>
           </div>
 
@@ -1529,6 +1365,54 @@
     </section>
   </main>
 
+  
+  <div class="rules-modal" id="rules-modal" hidden>
+    <div class="rules-modal__panel" role="dialog" aria-modal="true" aria-labelledby="rules-modal-title">
+      <div class="rules-modal__head">
+        <h2 class="rules-modal__title" id="rules-modal-title">Редактирование</h2>
+        <button type="button" class="auth-modal__close" id="rules-modal-close" aria-label="Закрыть">×</button>
+      </div>
+      <form class="rules-modal__form" id="rules-modal-form" novalidate>
+        <div class="field-block" id="rules-field-title-wrap">
+          <label class="field-label" for="rules-field-title">Заголовок</label>
+          <input class="field-input" id="rules-field-title" type="text" maxlength="120" />
+        </div>
+        <div class="field-block" id="rules-field-number-wrap" hidden>
+          <label class="field-label" for="rules-field-number">Номер раздела</label>
+          <input class="field-input" id="rules-field-number" type="number" min="1" max="99" step="1" />
+        </div>
+        <div class="field-block" id="rules-field-code-wrap" hidden>
+          <label class="field-label" for="rules-field-code">Пункт (например 1.1)</label>
+          <input class="field-input" id="rules-field-code" type="text" maxlength="16" />
+        </div>
+        <div class="field-block" id="rules-field-text-wrap">
+          <label class="field-label" for="rules-field-text">Текст</label>
+          <textarea class="field-area" id="rules-field-text" rows="5"></textarea>
+        </div>
+        <div class="field-block" id="rules-field-bullets-wrap" hidden>
+          <label class="field-label" for="rules-field-bullets">Подпункты (каждый с новой строки)</label>
+          <textarea class="field-area" id="rules-field-bullets" rows="4"></textarea>
+        </div>
+        <div class="field-block" id="rules-field-penalty-wrap" hidden>
+          <label class="field-label" for="rules-field-penalty">Наказание</label>
+          <textarea class="field-area field-area--sm" id="rules-field-penalty" rows="2"></textarea>
+        </div>
+        <div class="field-block" id="rules-field-penalty-note-wrap" hidden>
+          <label class="field-label" for="rules-field-penalty-note">Примечание к наказанию</label>
+          <textarea class="field-area field-area--sm" id="rules-field-penalty-note" rows="2"></textarea>
+        </div>
+        <div class="field-block" id="rules-field-note-wrap" hidden>
+          <label class="field-label" for="rules-field-note">Примечание раздела</label>
+          <textarea class="field-area field-area--sm" id="rules-field-note" rows="3"></textarea>
+        </div>
+        <div class="rules-modal__actions">
+          <button type="button" class="mc-btn mc-btn--ghost" id="rules-modal-cancel">Отмена</button>
+          <button type="submit" class="mc-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="toast" id="toast" hidden>IP скопирован</div>
 
   <footer class="footer" id="app-footer" hidden>
@@ -1541,6 +1425,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=35"></script>
+  <script src="script.js?v=36"></script>
 </body>
 </html>

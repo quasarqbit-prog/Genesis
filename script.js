@@ -333,6 +333,12 @@
   /* Auth / API / Socket */
   let authToken = localStorage.getItem(AUTH_TOKEN_KEY) || "";
   let authUser = null;
+  let rulesDoc = null;
+  let rulesLoaded = false;
+  let rulesLoadPromise = null;
+  let activeRulesSectionId = null;
+  let rulesModalMode = null;
+  let rulesModalMeta = null;
   try {
     if (authToken) {
       const cachedUser = JSON.parse(localStorage.getItem(AUTH_USER_KEY) || "null");
@@ -572,6 +578,13 @@
         applyAuthUi({ syncHubFields: false });
       }
       renderPlayersDirectory();
+    });
+    socket.on("rules:updated", (payload) => {
+      if (payload?.rules) {
+        rulesDoc = payload.rules;
+        rulesLoaded = true;
+        renderRulesUi();
+      }
     });
     socket.on("connect_error", () => {
       /* API может быть недоступен офлайн — UI продолжает работать локально */
@@ -1386,10 +1399,12 @@
     });
     shell?.classList.toggle("is-bare-main", name === "compendium");
     if (name === "rules") {
-      const body = document.getElementById("rules-body");
-      if (body) body.scrollTop = 0;
-      document.querySelectorAll(".rules-toc__btn").forEach((btn) => {
-        btn.classList.toggle("is-active", btn.dataset.rule === "rule-1");
+      ensureRulesLoaded().then(() => {
+        if (!activeRulesSectionId && rulesDoc?.sections?.length) {
+          openRulesSection(rulesDoc.sections[0].id);
+        } else {
+          renderRulesUi();
+        }
       });
     }
     if (name === "server") {
@@ -4725,65 +4740,365 @@
 
   serverIpBtn?.addEventListener("click", copyServerIp);
 
-  function setActiveRuleToc(id) {
-    rulesToc?.querySelectorAll(".rules-toc__btn").forEach((btn) => {
-      btn.classList.toggle("is-active", btn.dataset.rule === id);
-    });
+  function canEditRules() {
+    return String(authUser?.role || "") === "founder";
   }
 
-  if (rulesBody) {
-    // id принудительно выбранного раздела; шпион его не перезаписывает пока идёт скрол
-    let forcedRuleId = null;
-    let spyUnlockTimer = 0;
+  function uid(prefix) {
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  }
 
-    function unlockSpy() {
-      forcedRuleId = null;
-    }
-
-    // scrollend — стандартный способ детектировать конец скрола
-    const supportsScrollEnd = "onscrollend" in rulesBody;
-
-    if (supportsScrollEnd) {
-      rulesBody.addEventListener("scrollend", unlockSpy);
-    } else {
-      // fallback: таймер сбрасывается при каждом scroll-событии
-      rulesBody.addEventListener("scroll", () => {
-        window.clearTimeout(spyUnlockTimer);
-        spyUnlockTimer = window.setTimeout(unlockSpy, 150);
-      });
-    }
-
-    rulesBody.addEventListener("scroll", () => {
-      if (forcedRuleId !== null) return; // заблокировано кликом
-      const blocks = [...rulesBody.querySelectorAll(".rule-block")];
-      if (!blocks.length) return;
-      const top = rulesBody.scrollTop + 24;
-      let current = blocks[0].id;
-      for (const block of blocks) {
-        if (block.offsetTop <= top) current = block.id;
+  async function ensureRulesLoaded(force = false) {
+    if (rulesLoaded && !force) return rulesDoc;
+    if (rulesLoadPromise && !force) return rulesLoadPromise;
+    rulesLoadPromise = (async () => {
+      try {
+        const data = await api("/api/rules");
+        rulesDoc = data.rules || { title: "Правила сервера", intro: "", sections: [] };
+        rulesLoaded = true;
+        return rulesDoc;
+      } catch (err) {
+        showToast(err.message || "Не удалось загрузить правила");
+        rulesDoc = rulesDoc || { title: "Правила сервера", intro: "", sections: [] };
+        return rulesDoc;
+      } finally {
+        rulesLoadPromise = null;
       }
-      setActiveRuleToc(current);
-    });
+    })();
+    return rulesLoadPromise;
+  }
 
-    rulesToc?.addEventListener("click", (e) => {
-      const btn = e.target.closest(".rules-toc__btn");
-      if (!btn) return;
-      const id = btn.dataset.rule;
-      const target = document.getElementById(id);
-      if (!target) return;
+  async function saveRulesDoc() {
+    if (!canEditRules() || !rulesDoc) return;
+    try {
+      const data = await api("/api/rules", {
+        method: "PUT",
+        body: JSON.stringify({ rules: rulesDoc }),
+      });
+      if (data.rules) rulesDoc = data.rules;
+      renderRulesUi();
+    } catch (err) {
+      showToast(err.message || "Не удалось сохранить правила");
+      throw err;
+    }
+  }
 
-      // Принудительно фиксируем нужный пункт — шпион не перезапишет
-      forcedRuleId = id;
-      window.clearTimeout(spyUnlockTimer);
-      setActiveRuleToc(id);
+  function getActiveRulesSection() {
+    if (!rulesDoc?.sections?.length) return null;
+    return (
+      rulesDoc.sections.find((s) => s.id === activeRulesSectionId) ||
+      rulesDoc.sections[0] ||
+      null
+    );
+  }
 
-      const targetTop = target.offsetTop;
-      rulesBody.scrollTo({ top: Math.max(0, targetTop - 12), behavior: "smooth" });
+  function openRulesSection(sectionId) {
+    activeRulesSectionId = sectionId;
+    const body = document.getElementById("rules-body");
+    if (body) body.scrollTop = 0;
+    renderRulesUi();
+  }
 
-      // Страховочный разблок если scrollend не сработает (напр. уже в нужной позиции)
-      spyUnlockTimer = window.setTimeout(unlockSpy, 1200);
+  function renderRulesUi() {
+    const toc = document.getElementById("rules-toc");
+    const titleEl = document.getElementById("rules-doc-title");
+    const introEl = document.getElementById("rules-doc-intro");
+    const view = document.getElementById("rules-section-view");
+    const founderSide = document.getElementById("rules-founder-side");
+    const founder = canEditRules();
+    if (founderSide) founderSide.hidden = !founder;
+    if (!rulesDoc) return;
+
+    if (titleEl) titleEl.textContent = rulesDoc.title || "Правила сервера";
+    if (introEl) introEl.textContent = rulesDoc.intro || "";
+
+    const sections = Array.isArray(rulesDoc.sections) ? rulesDoc.sections : [];
+    if (toc) {
+      toc.innerHTML = sections
+        .map((sec) => {
+          const active = sec.id === activeRulesSectionId ? " is-active" : "";
+          return `<button type="button" class="rules-toc__btn${active}" data-section-id="${escapeHtml(
+            sec.id
+          )}">${escapeHtml(`${sec.number}. ${sec.title}`)}</button>`;
+        })
+        .join("");
+    }
+
+    if (!view) return;
+    const section = getActiveRulesSection();
+    if (!section) {
+      view.innerHTML = `<p class="rules-pick">Выберите раздел слева</p>`;
+      return;
+    }
+
+    const itemsHtml = (section.items || [])
+      .map((item) => {
+        const bullets =
+          Array.isArray(item.bullets) && item.bullets.length
+            ? `<ul class="rule-sublist">${item.bullets
+                .map((b) => `<li>${escapeHtml(b)}</li>`)
+                .join("")}</ul>`
+            : "";
+        const actions = founder
+          ? `<div class="rule-item__actions">
+              <button type="button" class="rules-mini-btn" data-rules-edit-item="${escapeHtml(
+                item.id
+              )}">Изменить</button>
+              <button type="button" class="rules-mini-btn rules-mini-btn--danger" data-rules-del-item="${escapeHtml(
+                item.id
+              )}">Удалить</button>
+            </div>`
+          : "";
+        return `<article class="rule-item" data-item-id="${escapeHtml(item.id)}">
+          <div class="rule-item__row">
+            <span class="rule-num">${escapeHtml(item.code)}.</span>
+            <div class="rule-item__body">
+              <p class="rule-item__text">${escapeHtml(item.text)}</p>
+              ${bullets}
+            </div>
+          </div>
+          ${actions}
+        </article>`;
+      })
+      .join("");
+
+    const founderBar = founder
+      ? `<div class="rules-section-actions">
+          <button type="button" class="rules-action-btn" id="rules-edit-section">Изменить раздел</button>
+          <button type="button" class="rules-action-btn" id="rules-add-item">+ Пункт</button>
+          <button type="button" class="rules-action-btn rules-action-btn--danger" id="rules-del-section">Удалить раздел</button>
+        </div>`
+      : "";
+
+    const penalty = section.penalty
+      ? `<ul class="rule-penalty"><li><strong>Наказание:</strong> ${escapeHtml(
+          section.penalty
+        )}${
+          section.penaltyNote
+            ? ` <em>${escapeHtml(section.penaltyNote)}</em>`
+            : ""
+        }</li></ul>`
+      : "";
+    const note = section.note
+      ? `<p class="rule-note">${escapeHtml(section.note)}</p>`
+      : "";
+
+    view.innerHTML = `
+      ${founderBar}
+      <article class="rule-block is-active-section">
+        <h2 class="rule-block__title">${escapeHtml(
+          `${section.number}. ${section.title}`
+        )}</h2>
+        <div class="rule-list rule-list--cards">${itemsHtml || `<p class="rules-pick">В этом разделе пока нет пунктов</p>`}</div>
+        ${penalty}
+        ${note}
+      </article>`;
+  }
+
+  function setRulesModalFields(mode) {
+    const map = {
+      intro: ["title", "text"],
+      section: ["title", "number", "penalty", "penalty-note", "note"],
+      item: ["code", "text", "bullets"],
+    };
+    const show = new Set(map[mode] || []);
+    [
+      "title",
+      "number",
+      "code",
+      "text",
+      "bullets",
+      "penalty",
+      "penalty-note",
+      "note",
+    ].forEach((key) => {
+      const wrap = document.getElementById(`rules-field-${key}-wrap`);
+      if (wrap) wrap.hidden = !show.has(key);
     });
   }
+
+  function openRulesModal(mode, meta = {}) {
+    if (!canEditRules()) return;
+    rulesModalMode = mode;
+    rulesModalMeta = meta;
+    const modal = document.getElementById("rules-modal");
+    const title = document.getElementById("rules-modal-title");
+    setRulesModalFields(mode);
+    const titleInput = document.getElementById("rules-field-title");
+    const numberInput = document.getElementById("rules-field-number");
+    const codeInput = document.getElementById("rules-field-code");
+    const textInput = document.getElementById("rules-field-text");
+    const bulletsInput = document.getElementById("rules-field-bullets");
+    const penaltyInput = document.getElementById("rules-field-penalty");
+    const penaltyNoteInput = document.getElementById("rules-field-penalty-note");
+    const noteInput = document.getElementById("rules-field-note");
+
+    if (mode === "intro") {
+      if (title) title.textContent = "Вступление";
+      if (titleInput) titleInput.value = rulesDoc?.title || "";
+      if (textInput) textInput.value = rulesDoc?.intro || "";
+    } else if (mode === "section") {
+      const sec = meta.section || null;
+      if (title) title.textContent = sec ? "Изменить раздел" : "Новый раздел";
+      if (titleInput) titleInput.value = sec?.title || "";
+      if (numberInput) {
+        numberInput.value = sec?.number || (rulesDoc?.sections?.length || 0) + 1;
+      }
+      if (penaltyInput) penaltyInput.value = sec?.penalty || "";
+      if (penaltyNoteInput) penaltyNoteInput.value = sec?.penaltyNote || "";
+      if (noteInput) noteInput.value = sec?.note || "";
+    } else if (mode === "item") {
+      const item = meta.item || null;
+      const sec = getActiveRulesSection();
+      if (title) title.textContent = item ? "Изменить пункт" : "Новый пункт";
+      if (codeInput) {
+        codeInput.value =
+          item?.code ||
+          `${sec?.number || 1}.${(sec?.items?.length || 0) + 1}`;
+      }
+      if (textInput) textInput.value = item?.text || "";
+      if (bulletsInput) {
+        bulletsInput.value = Array.isArray(item?.bullets)
+          ? item.bullets.join("\n")
+          : "";
+      }
+    }
+    if (modal) modal.hidden = false;
+  }
+
+  function closeRulesModal() {
+    const modal = document.getElementById("rules-modal");
+    if (modal) modal.hidden = true;
+    rulesModalMode = null;
+    rulesModalMeta = null;
+  }
+
+  document.getElementById("rules-toc")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".rules-toc__btn[data-section-id]");
+    if (!btn) return;
+    openRulesSection(btn.getAttribute("data-section-id"));
+  });
+
+  document.getElementById("rules-add-section")?.addEventListener("click", () => {
+    openRulesModal("section", { section: null });
+  });
+
+  document.getElementById("rules-edit-intro")?.addEventListener("click", () => {
+    openRulesModal("intro");
+  });
+
+  document.getElementById("rules-section-view")?.addEventListener("click", (e) => {
+    if (!canEditRules()) return;
+    if (e.target.closest("#rules-edit-section")) {
+      openRulesModal("section", { section: getActiveRulesSection() });
+      return;
+    }
+    if (e.target.closest("#rules-add-item")) {
+      openRulesModal("item", { item: null });
+      return;
+    }
+    if (e.target.closest("#rules-del-section")) {
+      const sec = getActiveRulesSection();
+      if (!sec || !rulesDoc) return;
+      if (!window.confirm(`Удалить раздел «${sec.number}. ${sec.title}»?`)) return;
+      rulesDoc.sections = rulesDoc.sections.filter((s) => s.id !== sec.id);
+      activeRulesSectionId = rulesDoc.sections[0]?.id || null;
+      saveRulesDoc();
+      return;
+    }
+    const editItem = e.target.closest("[data-rules-edit-item]");
+    if (editItem) {
+      const id = editItem.getAttribute("data-rules-edit-item");
+      const sec = getActiveRulesSection();
+      const item = sec?.items?.find((it) => it.id === id);
+      if (item) openRulesModal("item", { item });
+      return;
+    }
+    const delItem = e.target.closest("[data-rules-del-item]");
+    if (delItem) {
+      const id = delItem.getAttribute("data-rules-del-item");
+      const sec = getActiveRulesSection();
+      if (!sec) return;
+      if (!window.confirm("Удалить этот пункт?")) return;
+      sec.items = (sec.items || []).filter((it) => it.id !== id);
+      saveRulesDoc();
+    }
+  });
+
+  document.getElementById("rules-modal-close")?.addEventListener("click", closeRulesModal);
+  document.getElementById("rules-modal-cancel")?.addEventListener("click", closeRulesModal);
+  document.getElementById("rules-modal")?.addEventListener("click", (e) => {
+    if (e.target.id === "rules-modal") closeRulesModal();
+  });
+
+  document.getElementById("rules-modal-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!canEditRules() || !rulesDoc || !rulesModalMode) return;
+    const title = String(document.getElementById("rules-field-title")?.value || "").trim();
+    const number = Number(document.getElementById("rules-field-number")?.value);
+    const code = String(document.getElementById("rules-field-code")?.value || "").trim();
+    const text = String(document.getElementById("rules-field-text")?.value || "").trim();
+    const bullets = String(document.getElementById("rules-field-bullets")?.value || "")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const penalty = String(document.getElementById("rules-field-penalty")?.value || "").trim();
+    const penaltyNote = String(
+      document.getElementById("rules-field-penalty-note")?.value || ""
+    ).trim();
+    const note = String(document.getElementById("rules-field-note")?.value || "").trim();
+
+    try {
+      if (rulesModalMode === "intro") {
+        rulesDoc.title = title || "Правила сервера";
+        rulesDoc.intro = text;
+      } else if (rulesModalMode === "section") {
+        const existing = rulesModalMeta?.section;
+        if (existing) {
+          existing.title = title || existing.title;
+          existing.number = Number.isFinite(number) && number > 0 ? number : existing.number;
+          existing.penalty = penalty;
+          existing.penaltyNote = penaltyNote;
+          existing.note = note;
+        } else {
+          const sec = {
+            id: uid("s"),
+            number: Number.isFinite(number) && number > 0 ? number : rulesDoc.sections.length + 1,
+            title: title || "Новый раздел",
+            penalty,
+            penaltyNote,
+            note,
+            items: [],
+          };
+          rulesDoc.sections.push(sec);
+          activeRulesSectionId = sec.id;
+        }
+        rulesDoc.sections.sort((a, b) => a.number - b.number);
+      } else if (rulesModalMode === "item") {
+        const sec = getActiveRulesSection();
+        if (!sec) return;
+        const existing = rulesModalMeta?.item;
+        if (existing) {
+          existing.code = code || existing.code;
+          existing.text = text;
+          existing.bullets = bullets;
+        } else {
+          sec.items = sec.items || [];
+          sec.items.push({
+            id: uid("i"),
+            code: code || `${sec.number}.${sec.items.length + 1}`,
+            text,
+            bullets,
+          });
+        }
+      }
+      await saveRulesDoc();
+      closeRulesModal();
+      showToast("Правила сохранены");
+    } catch {
+      /* toast already shown */
+    }
+  });
 
   buildCatalog();
   updateAuthChrome();
@@ -4792,8 +5107,8 @@
     await loadProfileFromServer();
     loadFormFromStorage();
     updateRegisterChrome();
-    // Старый UI (раса / каталог) скрыт — только фон и auth
     applyAuthUi();
+    ensureRulesLoaded();
   })();
 
   /* ---------- Main loop ---------- */
