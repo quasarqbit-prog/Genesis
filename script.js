@@ -5837,7 +5837,9 @@
         modelTexture: data?.modelTexture || "/assets/model/model/texture.png",
       };
     } catch {
-      ordersSkinUrls = Array.from({ length: 17 }, (_, i) => `/assets/model/skin/${i + 1}.png`);
+      ordersSkinUrls = [1, 2, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17].map(
+        (n) => `/assets/model/skin/${n}.png`
+      );
       ordersAssets.skins = ordersSkinUrls;
     }
     ordersSkinLoaded = true;
