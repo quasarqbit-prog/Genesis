@@ -369,7 +369,9 @@ h3,
   min-width: 0;
   min-height: 0;
   display: grid;
+  grid-template-columns: 1fr;
   grid-template-rows: auto minmax(0, 1fr);
+  position: relative;
   background: rgba(16, 9, 28, 0.58);
   border: 3px solid var(--border-hi);
   box-shadow:
@@ -379,7 +381,34 @@ h3,
   animation: hub-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.studio-stage {
+  display: none;
+  min-width: 0;
+  min-height: 0;
+}
+
+.studio-canvas {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  margin: 18px;
+  border: 2px solid rgba(107, 90, 138, 0.45);
+  background: rgba(12, 7, 22, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: grid;
+  place-items: center;
+}
+
+.studio-canvas__label {
+  font-family: var(--font-ded);
+  font-size: 14px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .presence-strip {
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -438,6 +467,7 @@ h3,
   height: 52px;
   flex: 0 0 auto;
   padding: 0;
+  margin: 0;
   border: 3px solid #6a6575;
   background: rgba(20, 12, 36, 0.75);
   box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
@@ -445,6 +475,8 @@ h3,
   display: grid;
   place-items: center;
   cursor: pointer;
+  font: inherit;
+  color: inherit;
   transition:
     border-color 0.25s ease,
     filter 0.25s ease;
@@ -573,11 +605,16 @@ h3,
 }
 
 .app-shell__main {
+  grid-row: 2;
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
   background: rgba(12, 7, 22, 0.28);
+}
+
+.settings-drawer {
+  z-index: 6;
 }
 
 @keyframes hub-rise {
@@ -1188,6 +1225,127 @@ h3,
 
   .presence-user {
     width: 58px;
+  }
+}
+
+/* ---------- Desktop layout ---------- */
+@media (min-width: 721px) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr) 118px;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .studio-stage {
+    display: flex;
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 0;
+    background: transparent;
+  }
+
+  .presence-strip {
+    grid-column: 2;
+    grid-row: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: 118px;
+    height: auto;
+    max-height: none;
+    padding: 14px 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-bottom: none;
+    border-left: 3px solid var(--border-hi);
+    gap: 12px;
+  }
+
+  .presence-self {
+    width: 100%;
+  }
+
+  .presence-divider {
+    flex: 0 0 3px;
+    width: 70%;
+    height: 3px;
+    align-self: center;
+    margin: 0;
+  }
+
+  .presence-rail {
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: visible;
+    gap: 10px;
+  }
+
+  .presence-staff,
+  .presence-others {
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    height: auto;
+    gap: 10px;
+  }
+
+  .presence-user {
+    width: 100%;
+    height: auto;
+  }
+
+  .presence-tip {
+    left: auto;
+    right: calc(100% + 8px);
+    bottom: 50%;
+    transform: translateY(50%);
+  }
+
+  .presence-strip::-webkit-scrollbar,
+  .presence-rail::-webkit-scrollbar {
+    width: 8px;
+    height: auto;
+  }
+
+  .settings-drawer {
+    position: absolute;
+    top: 0;
+    right: 118px;
+    bottom: 0;
+    grid-row: auto;
+    width: min(50vw, 520px);
+    max-width: calc(100% - 118px);
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr);
+    transform: translateX(calc(100% + 24px));
+    transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+    border-left: 3px solid var(--border-hi);
+    background: rgba(14, 8, 24, 0.94);
+    box-shadow: -6px 0 0 rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .settings-drawer.is-open {
+    transform: translateX(0);
+    pointer-events: auto;
+    visibility: visible;
+  }
+
+  .settings-drawer .hub-body {
+    overflow-y: auto;
+  }
+
+  .presence-avatar--self {
+    cursor: pointer;
+  }
+
+  .presence-avatar--self:hover {
+    border-color: var(--accent);
   }
 }
 

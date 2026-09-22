@@ -997,6 +997,30 @@
     });
   }
 
+  function isDesktopLayout() {
+    return window.matchMedia("(min-width: 721px)").matches;
+  }
+
+  function setSettingsDrawerOpen(open) {
+    const drawer = document.getElementById("settings-drawer");
+    const btn = document.getElementById("profile-avatar-btn");
+    if (!drawer) return;
+    const next = Boolean(open);
+    if (!isDesktopLayout()) {
+      drawer.classList.remove("is-open");
+      if (btn) btn.setAttribute("aria-expanded", "false");
+      return;
+    }
+    drawer.classList.toggle("is-open", next);
+    if (btn) btn.setAttribute("aria-expanded", next ? "true" : "false");
+  }
+
+  function toggleSettingsDrawer() {
+    if (!isDesktopLayout()) return;
+    const drawer = document.getElementById("settings-drawer");
+    setSettingsDrawerOpen(!drawer?.classList.contains("is-open"));
+  }
+
   function setPanelTab(tab) {
     const name = String(tab || "controller");
     document.querySelectorAll(".panel-subnav__btn").forEach((btn) => {
@@ -1967,11 +1991,37 @@
         return;
       }
       setHubTab(tab);
+      if (isDesktopLayout()) setSettingsDrawerOpen(true);
       if (tab === "panel") {
         renderConsoleHistory();
         syncPanelAccess();
       }
     });
+  });
+
+  document.getElementById("profile-avatar-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!isDesktopLayout()) return;
+    toggleSettingsDrawer();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (isDesktopLayout()) setSettingsDrawerOpen(false);
+  });
+
+  window.matchMedia("(min-width: 721px)").addEventListener("change", (e) => {
+    if (!e.matches) setSettingsDrawerOpen(false);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!isDesktopLayout()) return;
+    const drawer = document.getElementById("settings-drawer");
+    if (!drawer?.classList.contains("is-open")) return;
+    if (e.target.closest("#settings-drawer") || e.target.closest("#profile-avatar-btn")) {
+      return;
+    }
+    setSettingsDrawerOpen(false);
   });
 
   document.querySelectorAll(".panel-subnav__btn[data-panel-tab]").forEach((btn) => {

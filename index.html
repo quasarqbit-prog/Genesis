@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=17" />
+  <link rel="stylesheet" href="styles.css?v=18" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -24,12 +24,25 @@
 
   <header class="profile-bar ui-layer" id="topbar" hidden>
     <div class="app-shell" id="profile-card">
-      <div class="presence-strip" aria-label="Игроки">
+      <section class="studio-stage" id="studio-stage" aria-label="Творческая студия">
+        <div class="studio-canvas">
+          <p class="studio-canvas__label">Творческая студия</p>
+        </div>
+      </section>
+
+      <aside class="presence-strip" aria-label="Игроки">
         <div class="presence-self">
-          <div class="presence-avatar presence-avatar--self" id="profile-avatar-btn" aria-hidden="true">
+          <button
+            type="button"
+            class="presence-avatar presence-avatar--self"
+            id="profile-avatar-btn"
+            aria-label="Настройки профиля"
+            aria-expanded="false"
+            aria-controls="settings-drawer"
+          >
             <img id="profile-avatar-img" alt="" hidden />
             <span class="presence-avatar__fallback" id="profile-avatar-fallback">?</span>
-          </div>
+          </button>
         </div>
 
         <div class="presence-divider" aria-hidden="true"></div>
@@ -39,9 +52,9 @@
           <div class="presence-divider presence-divider--soft" id="presence-staff-divider" hidden aria-hidden="true"></div>
           <div class="presence-others" id="presence-others"></div>
         </div>
-      </div>
+      </aside>
 
-      <div class="app-shell__main">
+      <div class="app-shell__main settings-drawer" id="settings-drawer">
         <nav class="hub-nav" aria-label="Разделы">
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
           <button type="button" class="hub-nav__btn" data-hub-tab="panel" id="hub-tab-panel" hidden>Панель</button>
@@ -1290,6 +1303,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=17"></script>
+  <script src="script.js?v=18"></script>
 </body>
 </html>
