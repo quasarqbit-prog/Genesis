@@ -1913,6 +1913,37 @@
     return ids.map((id) => soundTracksById.get(id)).filter(Boolean);
   }
 
+  function getTracksInFolderTree(folderId) {
+    const prefix = `${folderId}/`;
+    return [...soundTracksById.values()].filter((t) => {
+      const fid = t.folderId || "";
+      return fid === folderId || fid.startsWith(prefix);
+    });
+  }
+
+  function toggleFolderPlaylist(folderId) {
+    const tracks = getTracksInFolderTree(folderId);
+    if (!tracks.length) return;
+    const allOn = tracks.every((t) => soundPrefs.enabled[t.id]);
+    const next = !allOn;
+    for (const t of tracks) soundPrefs.enabled[t.id] = next;
+    soundShuffleBag = [];
+    saveSoundPrefs();
+    const list = getEnabledOrderedIds();
+    if (!list.length) {
+      stopBackgroundMusic();
+      stopMusicPreview();
+    } else if (
+      soundMusicAudio?.dataset.trackId &&
+      !soundPrefs.enabled[soundMusicAudio.dataset.trackId]
+    ) {
+      playNextMusicTrack();
+    } else {
+      ensureMusicPlaying();
+    }
+    renderSoundSettingsUi();
+  }
+
   function createSoundFolder(parentId) {
     const label = String(window.prompt("Название папки:", "Новая папка") || "").trim();
     if (!label) return;
@@ -2076,6 +2107,25 @@
       renderSoundSettingsUi();
     });
 
+    const folderEnable = document.createElement("button");
+    folderEnable.type = "button";
+    folderEnable.className = "sound-group__folder-toggle";
+    const folderTracks = getTracksInFolderTree(folderId);
+    const folderAllOn =
+      folderTracks.length > 0 && folderTracks.every((t) => soundPrefs.enabled[t.id]);
+    const folderSomeOn = folderTracks.some((t) => soundPrefs.enabled[t.id]);
+    folderEnable.classList.toggle("is-on", folderAllOn);
+    folderEnable.classList.toggle("is-partial", folderSomeOn && !folderAllOn);
+    folderEnable.textContent = folderAllOn || folderSomeOn ? "×" : "";
+    folderEnable.title = folderAllOn
+      ? "Выключить всю музыку в папке"
+      : "Включить всю музыку в папке";
+    folderEnable.disabled = folderTracks.length === 0;
+    folderEnable.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFolderPlaylist(folderId);
+    });
+
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "sound-group__add";
@@ -2097,7 +2147,7 @@
       document.getElementById("sound-upload-input")?.click();
     });
 
-    head.append(toggle, title, uploadHere, addBtn);
+    head.append(toggle, title, folderEnable, uploadHere, addBtn);
     section.appendChild(head);
 
     const body = document.createElement("div");
@@ -2276,7 +2326,7 @@
       "click",
       (e) => {
         const t = e.target.closest(
-          "button, .mc-btn, .hub-nav__btn, .main-tabs__btn, .catalog-card, .studio-tile, .studio-ctx__btn, .sound-track__play, .sound-track__toggle, .sound-order-btn, .sound-group__toggle, .sound-group__add, .sound-master-toggle, .sound-group__link, a.footer-link"
+          "button, .mc-btn, .hub-nav__btn, .main-tabs__btn, .catalog-card, .studio-tile, .studio-ctx__btn, .sound-track__play, .sound-track__toggle, .sound-order-btn, .sound-group__toggle, .sound-group__add, .sound-group__folder-toggle, .sound-master-toggle, .sound-group__link, a.footer-link"
         );
         if (!t) return;
         if (t.closest("#sound-sfx-volume, #sound-music-volume")) return;

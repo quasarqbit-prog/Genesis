@@ -2274,6 +2274,37 @@ h3,
   cursor: pointer;
 }
 
+.sound-group__folder-toggle {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid rgba(107, 90, 138, 0.45);
+  background: rgba(16, 9, 28, 0.85);
+  color: transparent;
+  font-family: var(--font-ded);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sound-group__folder-toggle.is-on {
+  color: var(--accent);
+  border-color: rgba(196, 255, 77, 0.55);
+}
+
+.sound-group__folder-toggle.is-partial {
+  color: #d4b45a;
+  border-color: rgba(212, 180, 90, 0.55);
+}
+
+.sound-group__folder-toggle:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .sound-group__body {
   padding-left: 8px;
 }
