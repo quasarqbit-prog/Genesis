@@ -1373,6 +1373,37 @@
     });
   }
 
+  function setMainTab(tab) {
+    const name = String(tab || "studio");
+    const shell = document.getElementById("profile-card");
+    document.querySelectorAll(".main-tabs__btn[data-main-tab]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-main-tab") === name);
+    });
+    document.querySelectorAll(".main-tab-panel[data-main-panel]").forEach((panel) => {
+      const on = panel.getAttribute("data-main-panel") === name;
+      panel.classList.toggle("is-active", on);
+      panel.hidden = !on;
+    });
+    shell?.classList.toggle("is-bare-main", name === "compendium");
+    if (name === "rules") {
+      const body = document.getElementById("rules-body");
+      if (body) body.scrollTop = 0;
+      document.querySelectorAll(".rules-toc__btn").forEach((btn) => {
+        btn.classList.toggle("is-active", btn.dataset.rule === "rule-1");
+      });
+    }
+    if (name === "server") {
+      const panel = document.getElementById("main-panel-server");
+      if (panel) panel.scrollTop = 0;
+    }
+  }
+
+  document.getElementById("main-tabs")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".main-tabs__btn[data-main-tab]");
+    if (!btn) return;
+    setMainTab(btn.getAttribute("data-main-tab"));
+  });
+
   function isDesktopLayout() {
     return window.matchMedia("(min-width: 721px)").matches;
   }
@@ -3162,16 +3193,12 @@
   const MAIN_VIEWS = {
     register: panels,
     catalog,
-    rules,
-    server: serverView,
     content: contentFlow,
   };
 
   const STAGE_MODE_BY_VIEW = {
     register: null,
     catalog: "is-catalog",
-    rules: "is-rules",
-    server: "is-server",
     content: "is-content",
   };
 
@@ -3303,24 +3330,13 @@
   }
 
   function showRulesView(animate = true) {
-    return activateMainView("rules", {
-      animate,
-      beforeShow: () => {
-        if (rulesBody) rulesBody.scrollTop = 0;
-        setActiveRuleToc("rule-1");
-        setNavActive("rules");
-      },
-    });
+    setMainTab("rules");
+    return Promise.resolve();
   }
 
   function showServerView(animate = true) {
-    return activateMainView("server", {
-      animate,
-      beforeShow: () => {
-        if (serverView) serverView.scrollTop = 0;
-        setNavActive("server");
-      },
-    });
+    setMainTab("server");
+    return Promise.resolve();
   }
 
   function resetSurveyScroll() {

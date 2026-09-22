@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=34" />
+  <link rel="stylesheet" href="styles.css?v=35" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -24,11 +24,260 @@
 
   <header class="profile-bar ui-layer" id="topbar" hidden>
     <div class="app-shell" id="profile-card">
-      <section class="studio-stage" id="studio-stage" aria-label="Творческая студия">
-        <div class="studio-canvas">
-          <p class="studio-canvas__label">Творческая студия</p>
+      <section class="studio-stage" id="studio-stage" aria-label="Главный экран">
+        <nav class="main-tabs" id="main-tabs" aria-label="Разделы">
+          <button type="button" class="main-tabs__btn is-active" data-main-tab="studio">Студия</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="compendium">Компендиум</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="rules">Правила</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="server">Сервер</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="patch">Патч-ноут</button>
+        </nav>
+
+        <div class="main-tab-panels" id="main-tab-panels">
+          <div class="main-tab-panel is-active" data-main-panel="studio" id="main-panel-studio">
+            <div class="studio-canvas">
+              <p class="studio-canvas__label">Творческая студия</p>
+            </div>
+          </div>
+
+          <div class="main-tab-panel main-tab-panel--bare" data-main-panel="compendium" id="main-panel-compendium" hidden>
+          </div>
+
+          <div class="main-tab-panel main-tab-panel--scroll" data-main-panel="rules" id="main-panel-rules" hidden>
+            <section class="rules main-embed-rules" id="rules">
+      <aside class="rules-side" aria-label="Разделы правил">
+        <p class="rules-side__title">Разделы</p>
+        <nav class="rules-toc" id="rules-toc">
+          <button type="button" class="rules-toc__btn is-active" data-rule="rule-1">1. Безопасность</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-2">2. Расы</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-3">3. Территория</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-4">4. Читы</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-5">5. Общение</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-6">6. Ники и скины</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-7">7. Администрация</button>
+          <button type="button" class="rules-toc__btn" data-rule="rule-8">8. Ответственность</button>
+        </nav>
+      </aside>
+
+      <div class="rules-body" id="rules-body">
+        <header class="rules-head">
+          <h1 class="rules-head__title">Правила сервера</h1>
+          <p class="rules-head__lead">Обязательны к исполнению всеми игроками</p>
+        </header>
+
+        <article class="rule-block" id="rule-1">
+          <h2 class="rule-block__title">1. Безопасность игроков</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">1.1.</span>
+              Запрещено причинять вред другим игрокам любыми способами, особенно через обходные методы:
+              ловушки с лавой/TNT, выталкивание в пропасть или в мобов, использование багов и эксплойтов
+              для убийства, удушение блоками, заманивание в опасные зоны и т.п.
+            </li>
+            <li>
+              <span class="rule-num">1.2.</span>
+              Любые попытки убить или покалечить игрока способом, не предусмотренным разработчиками,
+              строго запрещены.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 24 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-2">
+          <h2 class="rule-block__title">2. Расы и социальное взаимодействие</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">2.1.</span>
+              У каждого игрока есть своя раса на сервере — уважайте выбор и особенности других игроков.
+            </li>
+            <li>
+              <span class="rule-num">2.2.</span>
+              Запрещено эксплуатировать других игроков и их способности: принуждать к рабству,
+              бесплатному труду, отбирать ресурсы силой или через обман, использовать чужую расу
+              как повод для дискриминации или давления.
+            </li>
+            <li>
+              <span class="rule-num">2.3.</span>
+              Любое сотрудничество (торговля, совместные постройки, найм) — только по добровольному
+              согласию сторон.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 48 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-3">
+          <h2 class="rule-block__title">3. Территория и постройки</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">3.1.</span>
+              Гриферство запрещено: разрушение, порча или изменение чужих построек без разрешения владельца.
+            </li>
+            <li>
+              <span class="rule-num">3.2.</span>
+              Воровство из чужих сундуков, домов и хранилищ запрещено.
+            </li>
+            <li>
+              <span class="rule-num">3.3.</span>
+              Не стройте слишком близко к чужим участкам без согласия соседей.
+            </li>
+            <li>
+              <span class="rule-num">3.4.</span>
+              Не оставляйте после себя огромные ямы, вырубленные леса без остатков летающей листвы
+              и прочий беспорядок в общем ландшафте.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 48 часов.</li>
+            <li>Есть возможность избежать наказания вернув или восстановив ресурсы/постройки.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-4">
+          <h2 class="rule-block__title">4. Читы и эксплойты</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">4.1.</span>
+              Использование чит-клиентов, x-ray, дюпов (дублирования предметов), автокликеров и любых
+              сторонних программ, дающих особое нечестное преимущество, запрещено.
+            </li>
+            <li>
+              <span class="rule-num">4.2.</span>
+              Использование багов игры в корыстных целях (для получения ресурсов, урона другим игрокам
+              и т.д.) запрещено. О найденных багах сообщайте администрации.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 48 часов.</li>
+          </ul>
+          <p class="rule-note">
+            Примечание: Использование вспомогательных модов по типу: карты, авто-инструмента, авто рыбалки
+            и так далее — разрешены.
+          </p>
+        </article>
+
+        <article class="rule-block" id="rule-5">
+          <h2 class="rule-block__title">5. Общение в чате</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">5.1.</span>
+              Уважительное общение — обязательно. Оскорбления, травля, разжигание конфликтов запрещены.
+              Просто маты без контекста оскорбления можно.
+            </li>
+            <li>
+              <span class="rule-num">5.2.</span>
+              Спам, флуд, реклама других серверов и проектов без разрешения администрации запрещены.
+            </li>
+            <li>
+              <span class="rule-num">5.3.</span>
+              Запрещён контент 18+, дискриминация по любому признаку, политические и религиозные споры.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 15 минут до 3 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-6">
+          <h2 class="rule-block__title">6. Никнеймы и скины</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">6.1.</span>
+              Ник и скин не должны содержать оскорбления, нацистскую и экстремистскую символику,
+              а также имена администрации сервера без разрешения.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 12 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-7">
+          <h2 class="rule-block__title">7. Администрация</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">7.1.</span>
+              Решения администрации обязательны к исполнению. Спорные ситуации решаются через жалобы
+              основателю сервера, а не самосудом.
+            </li>
+            <li>
+              <span class="rule-num">7.2.</span>
+              Попытки обмануть или манипулировать администрацией (ложные жалобы, подставы) наказываются.
+            </li>
+          </ol>
+          <ul class="rule-penalty">
+            <li>Отстранение от игры на время от 1 до 96 часов.</li>
+          </ul>
+        </article>
+
+        <article class="rule-block" id="rule-8">
+          <h2 class="rule-block__title">8. Ответственность</h2>
+          <ol class="rule-list">
+            <li>
+              <span class="rule-num">8.1.</span>
+              За нарушение правил — предупреждение, временное отстранение или постоянный бан в зависимости
+              от тяжести и повторяемости нарушения.
+            </li>
+            <li>
+              <span class="rule-num">8.2.</span>
+              Незнание правил не освобождает от ответственности.
+            </li>
+          </ol>
+        </article>
+      </div>
+            </section>
+          </div>
+
+          <div class="main-tab-panel main-tab-panel--scroll" data-main-panel="server" id="main-panel-server" hidden>
+            <section class="server main-embed-server" id="server">
+      <article class="server-panel">
+        <p class="server-lead">
+          <span class="server-brand">Genesis</span> — это приватный мирный сервер без PvP,
+          где каждый игрок может почувствовать себя тем, кем хочет.
+        </p>
+        <p class="server-text">
+          Здесь нет готовых шаблонов и обязательных ролей — игрок сам придумывает себе расу,
+          её способности и предназначение в мире, а другие уважают этот выбор и не пытаются
+          подчинить или эксплуатировать чужого персонажа.
+        </p>
+        <p class="server-text">
+          Мир Genesis живёт и растёт вместе с игроками: вы можете добавлять свой контент,
+          который станет частью общего сервера для всех.
+        </p>
+
+        <div class="server-meta-block">
+          <p class="server-meta-row">
+            <span class="server-meta-label">IP сервера:</span>
+            <button type="button" class="server-ip" id="server-ip-btn" title="Скопировать IP">
+              srv1001.godlike.club:26519
+            </button>
+          </p>
+          <p class="server-meta-row server-meta-row--soft">Minecraft 1.21.11 Fabric</p>
+          <a
+            class="mc-btn server-mod-btn"
+            id="server-mod-btn"
+            href="https://drive.google.com/uc?export=download&id=1exnMmynSp5HCRfYZsLrDXjmPzHzah2QY"
+            download="genesis-0.11.2.jar"
+            target="_blank"
+            rel="noopener noreferrer"
+          >УСТАНОВИТЬ МОД</a>
+          <p class="server-mod-hint">Скачает genesis-0.11.2.jar · положите в папку mods</p>
+        </div>
+      </article>
+            </section>
+          </div>
+
+          <div class="main-tab-panel main-tab-panel--scroll" data-main-panel="patch" id="main-panel-patch" hidden>
+            <div class="patch-empty" id="patch-notes">
+              <p class="patch-empty__text">Патч-ноут пока пуст</p>
+            </div>
+          </div>
         </div>
       </section>
+
 
       <aside class="presence-strip" aria-label="Игроки">
         <div class="presence-self">
@@ -859,231 +1108,8 @@
       </section>
     </div>
 
-    <section class="server stage-view" id="server" hidden>
-      <article class="server-panel">
-        <p class="server-lead">
-          <span class="server-brand">Genesis</span> — это приватный мирный сервер без PvP,
-          где каждый игрок может почувствовать себя тем, кем хочет.
-        </p>
-        <p class="server-text">
-          Здесь нет готовых шаблонов и обязательных ролей — игрок сам придумывает себе расу,
-          её способности и предназначение в мире, а другие уважают этот выбор и не пытаются
-          подчинить или эксплуатировать чужого персонажа.
-        </p>
-        <p class="server-text">
-          Мир Genesis живёт и растёт вместе с игроками: вы можете добавлять свой контент,
-          который станет частью общего сервера для всех.
-        </p>
-
-        <div class="server-meta-block">
-          <p class="server-meta-row">
-            <span class="server-meta-label">IP сервера:</span>
-            <button type="button" class="server-ip" id="server-ip-btn" title="Скопировать IP">
-              srv1001.godlike.club:26519
-            </button>
-          </p>
-          <p class="server-meta-row server-meta-row--soft">Minecraft 1.21.11 Fabric</p>
-          <a
-            class="mc-btn server-mod-btn"
-            id="server-mod-btn"
-            href="https://drive.google.com/uc?export=download&id=1exnMmynSp5HCRfYZsLrDXjmPzHzah2QY"
-            download="genesis-0.11.2.jar"
-            target="_blank"
-            rel="noopener noreferrer"
-          >УСТАНОВИТЬ МОД</a>
-          <p class="server-mod-hint">Скачает genesis-0.11.2.jar · положите в папку mods</p>
-        </div>
-      </article>
-    </section>
-
     <section class="catalog stage-view" id="catalog" hidden>
       <div class="catalog-inner" id="catalog-inner"></div>
-    </section>
-
-    <section class="rules stage-view" id="rules" hidden>
-      <aside class="rules-side" aria-label="Разделы правил">
-        <p class="rules-side__title">Разделы</p>
-        <nav class="rules-toc" id="rules-toc">
-          <button type="button" class="rules-toc__btn is-active" data-rule="rule-1">1. Безопасность</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-2">2. Расы</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-3">3. Территория</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-4">4. Читы</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-5">5. Общение</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-6">6. Ники и скины</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-7">7. Администрация</button>
-          <button type="button" class="rules-toc__btn" data-rule="rule-8">8. Ответственность</button>
-        </nav>
-      </aside>
-
-      <div class="rules-body" id="rules-body">
-        <header class="rules-head">
-          <h1 class="rules-head__title">Правила сервера</h1>
-          <p class="rules-head__lead">Обязательны к исполнению всеми игроками</p>
-        </header>
-
-        <article class="rule-block" id="rule-1">
-          <h2 class="rule-block__title">1. Безопасность игроков</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">1.1.</span>
-              Запрещено причинять вред другим игрокам любыми способами, особенно через обходные методы:
-              ловушки с лавой/TNT, выталкивание в пропасть или в мобов, использование багов и эксплойтов
-              для убийства, удушение блоками, заманивание в опасные зоны и т.п.
-            </li>
-            <li>
-              <span class="rule-num">1.2.</span>
-              Любые попытки убить или покалечить игрока способом, не предусмотренным разработчиками,
-              строго запрещены.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 24 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-2">
-          <h2 class="rule-block__title">2. Расы и социальное взаимодействие</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">2.1.</span>
-              У каждого игрока есть своя раса на сервере — уважайте выбор и особенности других игроков.
-            </li>
-            <li>
-              <span class="rule-num">2.2.</span>
-              Запрещено эксплуатировать других игроков и их способности: принуждать к рабству,
-              бесплатному труду, отбирать ресурсы силой или через обман, использовать чужую расу
-              как повод для дискриминации или давления.
-            </li>
-            <li>
-              <span class="rule-num">2.3.</span>
-              Любое сотрудничество (торговля, совместные постройки, найм) — только по добровольному
-              согласию сторон.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 48 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-3">
-          <h2 class="rule-block__title">3. Территория и постройки</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">3.1.</span>
-              Гриферство запрещено: разрушение, порча или изменение чужих построек без разрешения владельца.
-            </li>
-            <li>
-              <span class="rule-num">3.2.</span>
-              Воровство из чужих сундуков, домов и хранилищ запрещено.
-            </li>
-            <li>
-              <span class="rule-num">3.3.</span>
-              Не стройте слишком близко к чужим участкам без согласия соседей.
-            </li>
-            <li>
-              <span class="rule-num">3.4.</span>
-              Не оставляйте после себя огромные ямы, вырубленные леса без остатков летающей листвы
-              и прочий беспорядок в общем ландшафте.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 48 часов.</li>
-            <li>Есть возможность избежать наказания вернув или восстановив ресурсы/постройки.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-4">
-          <h2 class="rule-block__title">4. Читы и эксплойты</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">4.1.</span>
-              Использование чит-клиентов, x-ray, дюпов (дублирования предметов), автокликеров и любых
-              сторонних программ, дающих особое нечестное преимущество, запрещено.
-            </li>
-            <li>
-              <span class="rule-num">4.2.</span>
-              Использование багов игры в корыстных целях (для получения ресурсов, урона другим игрокам
-              и т.д.) запрещено. О найденных багах сообщайте администрации.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 48 часов.</li>
-          </ul>
-          <p class="rule-note">
-            Примечание: Использование вспомогательных модов по типу: карты, авто-инструмента, авто рыбалки
-            и так далее — разрешены.
-          </p>
-        </article>
-
-        <article class="rule-block" id="rule-5">
-          <h2 class="rule-block__title">5. Общение в чате</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">5.1.</span>
-              Уважительное общение — обязательно. Оскорбления, травля, разжигание конфликтов запрещены.
-              Просто маты без контекста оскорбления можно.
-            </li>
-            <li>
-              <span class="rule-num">5.2.</span>
-              Спам, флуд, реклама других серверов и проектов без разрешения администрации запрещены.
-            </li>
-            <li>
-              <span class="rule-num">5.3.</span>
-              Запрещён контент 18+, дискриминация по любому признаку, политические и религиозные споры.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 15 минут до 3 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-6">
-          <h2 class="rule-block__title">6. Никнеймы и скины</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">6.1.</span>
-              Ник и скин не должны содержать оскорбления, нацистскую и экстремистскую символику,
-              а также имена администрации сервера без разрешения.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 12 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-7">
-          <h2 class="rule-block__title">7. Администрация</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">7.1.</span>
-              Решения администрации обязательны к исполнению. Спорные ситуации решаются через жалобы
-              основателю сервера, а не самосудом.
-            </li>
-            <li>
-              <span class="rule-num">7.2.</span>
-              Попытки обмануть или манипулировать администрацией (ложные жалобы, подставы) наказываются.
-            </li>
-          </ol>
-          <ul class="rule-penalty">
-            <li>Отстранение от игры на время от 1 до 96 часов.</li>
-          </ul>
-        </article>
-
-        <article class="rule-block" id="rule-8">
-          <h2 class="rule-block__title">8. Ответственность</h2>
-          <ol class="rule-list">
-            <li>
-              <span class="rule-num">8.1.</span>
-              За нарушение правил — предупреждение, временное отстранение или постоянный бан в зависимости
-              от тяжести и повторяемости нарушения.
-            </li>
-            <li>
-              <span class="rule-num">8.2.</span>
-              Незнание правил не освобождает от ответственности.
-            </li>
-          </ol>
-        </article>
-      </div>
     </section>
 
     <section class="content-flow stage-view" id="content-flow" hidden>
@@ -1515,6 +1541,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=34"></script>
+  <script src="script.js?v=35"></script>
 </body>
 </html>
