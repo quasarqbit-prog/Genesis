@@ -789,8 +789,11 @@
     if (nickEl) nickEl.textContent = nick;
     if (idEl) idEl.textContent = `id ${id}`;
     mini.hidden = false;
-    const pad = 14;
+    // сначала ставим рядом с курсором, потом уточняем размер
+    mini.style.left = `${Math.max(8, clientX - 12)}px`;
+    mini.style.top = `${Math.max(8, clientY - 12)}px`;
     const rect = mini.getBoundingClientRect();
+    const pad = 14;
     let left = clientX - rect.width - pad;
     let top = clientY - rect.height / 2;
     if (left < 8) left = clientX + pad;
@@ -840,19 +843,25 @@
   }
 
   function bindPresenceTips() {
+    const strip = document.querySelector(".presence-strip");
     const rail = document.getElementById("presence-rail");
     if (!rail || rail.dataset.tipBound === "1") return;
     rail.dataset.tipBound = "1";
 
+    const cardFromEvent = (e) => {
+      const card = e.target.closest(".presence-user");
+      if (!card || !rail.contains(card)) return null;
+      return card;
+    };
+
     rail.addEventListener("pointermove", (e) => {
       if (!isDesktopLayout()) return;
-      const avatar = e.target.closest(".presence-avatar");
-      if (!avatar || !rail.contains(avatar)) {
+      const card = cardFromEvent(e);
+      if (!card) {
         hidePresenceMini();
         return;
       }
-      const card = avatar.closest(".presence-user");
-      const id = Number(card?.getAttribute("data-user-id"));
+      const id = Number(card.getAttribute("data-user-id"));
       const user = findDirectoryUser(id);
       if (!user) {
         hidePresenceMini();
@@ -866,20 +875,27 @@
     });
 
     rail.addEventListener("click", (e) => {
-      const avatar = e.target.closest(".presence-avatar");
-      if (!avatar || !rail.contains(avatar)) return;
+      const card = cardFromEvent(e);
+      if (!card) return;
       e.preventDefault();
       e.stopPropagation();
-      const card = avatar.closest(".presence-user");
-      const id = Number(card?.getAttribute("data-user-id"));
+      const id = Number(card.getAttribute("data-user-id"));
       const user = findDirectoryUser(id);
       if (!user) return;
       if (isDesktopLayout()) {
+        hidePresenceMini();
         setUserProfileDrawerOpen(true, user);
-        return;
       }
-      // мобилка: короткий title уже есть через aria-label
     });
+
+    // на всякий случай: клики по strip не глотаем
+    strip?.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (e.target.closest(".presence-user")) e.stopPropagation();
+      },
+      true
+    );
   }
 
   bindPresenceTips();
