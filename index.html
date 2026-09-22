@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=47" />
+  <link rel="stylesheet" href="styles.css?v=48" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -37,8 +37,12 @@
 
         <div class="main-tab-panels" id="main-tab-panels">
           <div class="main-tab-panel is-active" data-main-panel="studio" id="main-panel-studio">
-            <div class="studio-canvas">
-              <p class="studio-canvas__label">Творческая студия</p>
+            <div class="studio-workspace" id="studio-workspace">
+              <header class="studio-bar" id="studio-bar" hidden>
+                <button type="button" class="studio-bar__back" id="studio-back">← Назад</button>
+                <h2 class="studio-bar__title" id="studio-folder-title"></h2>
+              </header>
+              <div class="studio-grid" id="studio-grid" role="list"></div>
             </div>
           </div>
 
@@ -1440,6 +1444,69 @@
     </div>
   </div>
 
+  <div class="auth-modal ui-layer" id="studio-folder-modal" hidden>
+    <div class="auth-modal__panel studio-modal__panel" role="dialog" aria-modal="true" aria-labelledby="studio-folder-modal-title">
+      <div class="auth-modal__head">
+        <h2 class="auth-modal__title" id="studio-folder-modal-title">Новая папка</h2>
+        <button type="button" class="auth-modal__close" id="studio-folder-modal-close" aria-label="Закрыть">×</button>
+      </div>
+      <form class="studio-modal__form" id="studio-folder-form" novalidate>
+        <div class="field-block">
+          <label class="field-label" for="studio-folder-name">Название папки</label>
+          <input class="field-input" id="studio-folder-name" type="text" maxlength="48" required autocomplete="off" />
+        </div>
+        <div class="studio-modal__actions">
+          <button type="button" class="mc-btn mc-btn--ghost" id="studio-folder-cancel">Отмена</button>
+          <button type="submit" class="mc-btn">Создать</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="auth-modal ui-layer" id="studio-create-modal" hidden>
+    <div class="auth-modal__panel studio-modal__panel studio-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="studio-create-modal-title">
+      <div class="auth-modal__head">
+        <h2 class="auth-modal__title" id="studio-create-modal-title">Анкета контента</h2>
+        <button type="button" class="auth-modal__close" id="studio-create-modal-close" aria-label="Закрыть">×</button>
+      </div>
+      <form class="studio-modal__form" id="studio-create-form" novalidate>
+        <div class="field-block">
+          <label class="field-label" for="studio-create-name">Название</label>
+          <input class="field-input" id="studio-create-name" type="text" maxlength="64" required autocomplete="off" />
+        </div>
+        <p class="studio-modal__hint">Выберите тип контента</p>
+        <div class="studio-type-grid" id="studio-type-grid" role="listbox" aria-label="Типы контента"></div>
+        <p class="field-error" id="studio-create-error" hidden></p>
+        <div class="studio-modal__actions">
+          <button type="button" class="mc-btn mc-btn--ghost" id="studio-create-cancel">Отмена</button>
+          <button type="submit" class="mc-btn">Подтвердить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="auth-modal ui-layer" id="studio-edit-modal" hidden>
+    <div class="auth-modal__panel studio-modal__panel studio-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="studio-edit-modal-title">
+      <div class="auth-modal__head">
+        <h2 class="auth-modal__title" id="studio-edit-modal-title">Контент</h2>
+        <button type="button" class="auth-modal__close" id="studio-edit-modal-close" aria-label="Закрыть">×</button>
+      </div>
+      <form class="studio-modal__form" id="studio-edit-form" novalidate>
+        <p class="studio-edit__meta" id="studio-edit-meta"></p>
+        <div class="field-block studio-edit__body-block">
+          <label class="field-label" for="studio-edit-body">Текст</label>
+          <textarea class="field-area studio-edit__textarea" id="studio-edit-body" rows="12" placeholder="Опишите контент…"></textarea>
+        </div>
+        <div class="studio-modal__actions">
+          <button type="button" class="mc-btn mc-btn--ghost" id="studio-edit-delete">Удалить</button>
+          <span class="studio-modal__spacer"></span>
+          <button type="button" class="mc-btn mc-btn--ghost" id="studio-edit-cancel">Отмена</button>
+          <button type="submit" class="mc-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="patch-editor" id="patch-editor" hidden>
     <div class="patch-editor__panel" role="dialog" aria-modal="true" aria-labelledby="patch-editor-title">
       <div class="patch-editor__head">
@@ -1489,6 +1556,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=47"></script>
+  <script src="script.js?v=48"></script>
 </body>
 </html>

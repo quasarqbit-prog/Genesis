@@ -1707,6 +1707,9 @@
       panel.hidden = !on;
     });
     shell?.classList.toggle("is-bare-main", name === "compendium");
+    if (name === "studio") {
+      renderStudio();
+    }
     if (name === "compendium") {
       requestAnimationFrame(() => renderCompendiumBook());
     }
@@ -3472,6 +3475,302 @@
     { id: "sound", label: "Звуки / Музыка", icon: "assets/icons/sound.png" },
     { id: "command", label: "Консольные команды", icon: "assets/icons/command.png" },
   ];
+
+  const STUDIO_STORAGE_KEY = "genesis_studio_v1";
+  let studioDoc = { folders: [] };
+  let studioOpenFolderId = null;
+  let studioSelectedTypeId = null;
+  let studioEditingItemId = null;
+
+  function studioUid(prefix) {
+    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function loadStudioDoc() {
+    try {
+      const raw = localStorage.getItem(STUDIO_STORAGE_KEY);
+      if (!raw) {
+        studioDoc = { folders: [] };
+        return studioDoc;
+      }
+      const parsed = JSON.parse(raw);
+      studioDoc = {
+        folders: Array.isArray(parsed?.folders)
+          ? parsed.folders.map((f) => ({
+              id: String(f.id || studioUid("folder")),
+              name: String(f.name || "Папка"),
+              createdAt: Number(f.createdAt) || Date.now(),
+              items: Array.isArray(f.items)
+                ? f.items.map((it) => ({
+                    id: String(it.id || studioUid("item")),
+                    typeId: String(it.typeId || ""),
+                    name: String(it.name || "Контент"),
+                    body: String(it.body || ""),
+                    updatedAt: Number(it.updatedAt) || Date.now(),
+                  }))
+                : [],
+            }))
+          : [],
+      };
+    } catch (_) {
+      studioDoc = { folders: [] };
+    }
+    return studioDoc;
+  }
+
+  function saveStudioDoc() {
+    localStorage.setItem(STUDIO_STORAGE_KEY, JSON.stringify(studioDoc));
+  }
+
+  function getStudioFolder(id) {
+    return studioDoc.folders.find((f) => f.id === id) || null;
+  }
+
+  function getCatalogType(typeId) {
+    return CATALOG_TYPES.find((t) => t.id === typeId) || null;
+  }
+
+  function openStudioModal(id) {
+    setLayerOpen(document.getElementById(id), true);
+  }
+
+  function closeStudioModal(id) {
+    setLayerOpen(document.getElementById(id), false);
+  }
+
+  function renderStudioTypeGrid() {
+    const grid = document.getElementById("studio-type-grid");
+    if (!grid) return;
+    grid.innerHTML = "";
+    CATALOG_TYPES.forEach((type) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "studio-type-card";
+      btn.setAttribute("role", "option");
+      btn.dataset.typeId = type.id;
+      btn.classList.toggle("is-selected", studioSelectedTypeId === type.id);
+      btn.innerHTML = `
+        <img class="studio-type-card__img" src="${type.icon}" alt="" draggable="false" />
+        <span class="studio-type-card__label">${type.label}</span>
+      `;
+      btn.addEventListener("click", () => {
+        studioSelectedTypeId = type.id;
+        grid.querySelectorAll(".studio-type-card").forEach((card) => {
+          card.classList.toggle("is-selected", card.dataset.typeId === type.id);
+        });
+        const err = document.getElementById("studio-create-error");
+        if (err) {
+          err.hidden = true;
+          err.textContent = "";
+        }
+      });
+      grid.appendChild(btn);
+    });
+  }
+
+  function openStudioFolderModal() {
+    const input = document.getElementById("studio-folder-name");
+    if (input) input.value = "";
+    openStudioModal("studio-folder-modal");
+    requestAnimationFrame(() => input?.focus());
+  }
+
+  function openStudioCreateModal() {
+    if (!studioOpenFolderId) return;
+    studioSelectedTypeId = null;
+    const name = document.getElementById("studio-create-name");
+    const err = document.getElementById("studio-create-error");
+    if (name) name.value = "";
+    if (err) {
+      err.hidden = true;
+      err.textContent = "";
+    }
+    renderStudioTypeGrid();
+    openStudioModal("studio-create-modal");
+    requestAnimationFrame(() => name?.focus());
+  }
+
+  function openStudioEditModal(item) {
+    const type = getCatalogType(item.typeId);
+    studioEditingItemId = item.id;
+    const title = document.getElementById("studio-edit-modal-title");
+    const meta = document.getElementById("studio-edit-meta");
+    const body = document.getElementById("studio-edit-body");
+    if (title) title.textContent = item.name;
+    if (meta) meta.textContent = type ? type.label : item.typeId;
+    if (body) body.value = item.body || "";
+    openStudioModal("studio-edit-modal");
+    requestAnimationFrame(() => body?.focus());
+  }
+
+  function renderStudio() {
+    loadStudioDoc();
+    const grid = document.getElementById("studio-grid");
+    const bar = document.getElementById("studio-bar");
+    const title = document.getElementById("studio-folder-title");
+    if (!grid) return;
+
+    grid.innerHTML = "";
+    const folder = studioOpenFolderId ? getStudioFolder(studioOpenFolderId) : null;
+
+    if (!folder) {
+      studioOpenFolderId = null;
+      if (bar) bar.hidden = true;
+      if (title) title.textContent = "";
+
+      const plus = document.createElement("button");
+      plus.type = "button";
+      plus.className = "studio-tile studio-tile--plus";
+      plus.setAttribute("role", "listitem");
+      plus.innerHTML = `
+        <span class="studio-tile__plus" aria-hidden="true">+</span>
+        <span class="studio-tile__label">Новая папка</span>
+      `;
+      plus.addEventListener("click", () => openStudioFolderModal());
+      grid.appendChild(plus);
+
+      studioDoc.folders.forEach((f) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "studio-tile studio-tile--folder";
+        btn.setAttribute("role", "listitem");
+        btn.innerHTML = `
+          <span class="studio-tile__folder-mark" aria-hidden="true"></span>
+          <span class="studio-tile__label"></span>
+        `;
+        btn.querySelector(".studio-tile__label").textContent = f.name;
+        btn.addEventListener("click", () => {
+          studioOpenFolderId = f.id;
+          renderStudio();
+        });
+        grid.appendChild(btn);
+      });
+      return;
+    }
+
+    if (bar) bar.hidden = false;
+    if (title) title.textContent = folder.name;
+
+    const createBtn = document.createElement("button");
+    createBtn.type = "button";
+    createBtn.className = "studio-tile studio-tile--create";
+    createBtn.setAttribute("role", "listitem");
+    createBtn.innerHTML = `
+      <span class="studio-tile__plus" aria-hidden="true">+</span>
+      <span class="studio-tile__label">Создать анкету контента</span>
+    `;
+    createBtn.addEventListener("click", () => openStudioCreateModal());
+    grid.appendChild(createBtn);
+
+    folder.items.forEach((item) => {
+      const type = getCatalogType(item.typeId);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "studio-tile";
+      btn.setAttribute("role", "listitem");
+      btn.style.setProperty("--section-accent", "var(--accent)");
+      const icon = type?.icon || "assets/icons/item.png";
+      btn.innerHTML = `
+        <img class="studio-tile__icon" src="${icon}" alt="" draggable="false" />
+        <span class="studio-tile__label"></span>
+      `;
+      btn.querySelector(".studio-tile__label").textContent = item.name;
+      btn.addEventListener("click", () => openStudioEditModal(item));
+      grid.appendChild(btn);
+    });
+  }
+
+  function bindStudioUi() {
+    document.getElementById("studio-back")?.addEventListener("click", () => {
+      studioOpenFolderId = null;
+      renderStudio();
+    });
+
+    const folderModal = "studio-folder-modal";
+    document.getElementById("studio-folder-modal-close")?.addEventListener("click", () => closeStudioModal(folderModal));
+    document.getElementById("studio-folder-cancel")?.addEventListener("click", () => closeStudioModal(folderModal));
+    document.getElementById("studio-folder-form")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const input = document.getElementById("studio-folder-name");
+      const name = String(input?.value || "").trim();
+      if (!name) {
+        input?.focus();
+        return;
+      }
+      loadStudioDoc();
+      studioDoc.folders.push({
+        id: studioUid("folder"),
+        name,
+        createdAt: Date.now(),
+        items: [],
+      });
+      saveStudioDoc();
+      closeStudioModal(folderModal);
+      renderStudio();
+    });
+
+    const createModal = "studio-create-modal";
+    document.getElementById("studio-create-modal-close")?.addEventListener("click", () => closeStudioModal(createModal));
+    document.getElementById("studio-create-cancel")?.addEventListener("click", () => closeStudioModal(createModal));
+    document.getElementById("studio-create-form")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const nameInput = document.getElementById("studio-create-name");
+      const err = document.getElementById("studio-create-error");
+      const name = String(nameInput?.value || "").trim();
+      if (!name) {
+        nameInput?.focus();
+        return;
+      }
+      if (!studioSelectedTypeId) {
+        if (err) {
+          err.hidden = false;
+          err.textContent = "Выберите тип контента";
+        }
+        return;
+      }
+      const folder = getStudioFolder(studioOpenFolderId);
+      if (!folder) return;
+      folder.items.push({
+        id: studioUid("item"),
+        typeId: studioSelectedTypeId,
+        name,
+        body: "",
+        updatedAt: Date.now(),
+      });
+      saveStudioDoc();
+      closeStudioModal(createModal);
+      renderStudio();
+    });
+
+    const editModal = "studio-edit-modal";
+    document.getElementById("studio-edit-modal-close")?.addEventListener("click", () => closeStudioModal(editModal));
+    document.getElementById("studio-edit-cancel")?.addEventListener("click", () => closeStudioModal(editModal));
+    document.getElementById("studio-edit-delete")?.addEventListener("click", () => {
+      const folder = getStudioFolder(studioOpenFolderId);
+      if (!folder || !studioEditingItemId) return;
+      folder.items = folder.items.filter((it) => it.id !== studioEditingItemId);
+      saveStudioDoc();
+      studioEditingItemId = null;
+      closeStudioModal(editModal);
+      renderStudio();
+    });
+    document.getElementById("studio-edit-form")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const folder = getStudioFolder(studioOpenFolderId);
+      const item = folder?.items.find((it) => it.id === studioEditingItemId);
+      if (!item) return;
+      const body = document.getElementById("studio-edit-body");
+      item.body = String(body?.value || "");
+      item.updatedAt = Date.now();
+      saveStudioDoc();
+      closeStudioModal(editModal);
+      renderStudio();
+    });
+  }
+
+  bindStudioUi();
+  loadStudioDoc();
+  renderStudio();
 
   function collectFormValues() {
     const form = {};
