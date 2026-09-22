@@ -362,6 +362,10 @@
   let pendingAvatarReset = false;
   let profileCache = { registered: false, form: {} };
   let socket = null;
+  let studioTab = "create"; // create | review
+  let studioReviewList = [];
+  let studioOpenReviewId = null;
+  let studioEditReadOnly = false;
 
   async function api(path, options = {}) {
     const headers = {
@@ -405,6 +409,19 @@
     persistAuthUser(authUser);
     connectSocket();
     updateAuthChrome();
+    updateStudioSubtabsUi();
+    if (authToken) {
+      syncStudioMineStatuses().then(() => {
+        if (document.querySelector('.main-tab-panel[data-main-panel="studio"].is-active')) {
+          renderStudio();
+        }
+      });
+    } else if (studioTab === "review") {
+      studioTab = "create";
+      studioOpenReviewId = null;
+      studioReviewList = [];
+      renderStudio();
+    }
   }
 
   function clearAuthSession() {
@@ -523,6 +540,9 @@
       updateAuthChrome();
       fillHubRaceFields();
       await loadPlayersDirectory();
+      if (document.querySelector('.main-tab-panel[data-main-panel="studio"].is-active')) {
+        renderStudio();
+      }
       return profileCache;
     } catch (err) {
       if (err.status === 401) clearAuthSession();
@@ -1391,6 +1411,7 @@
     syncAvatar(hubAvatarImg, hubAvatarFallback, displayNick);
     syncPrivacyMarks();
     syncPanelAccess();
+    updateStudioSubtabsUi();
     // Не перерисовываем весь presence-strip отсюда — это срывает загрузку чужих аватарок
   }
 
@@ -2622,7 +2643,14 @@
     });
     shell?.classList.toggle("is-bare-main", name === "compendium");
     if (name === "studio") {
-      renderStudio();
+      const refresh = async () => {
+        await syncStudioMineStatuses();
+        if (studioTab === "review" && isStudioStaffViewer()) {
+          await loadStudioReviewList();
+        }
+        renderStudio();
+      };
+      refresh();
     }
     if (name === "compendium") {
       requestAnimationFrame(() => renderCompendiumBook());
@@ -4438,6 +4466,9 @@
               name: String(f.name || "Папка"),
               color: normalizeStudioColor(f.color),
               createdAt: Number(f.createdAt) || Date.now(),
+              submissionId: f.submissionId != null ? Number(f.submissionId) : null,
+              submissionStatus: f.submissionStatus ? String(f.submissionStatus) : null,
+              submissionReason: f.submissionReason != null ? String(f.submissionReason) : "",
               items: Array.isArray(f.items)
                 ? f.items.map((it) => ({
                     id: String(it.id || studioUid("item")),
@@ -4579,6 +4610,179 @@
     placeStudioMenu(document.getElementById("studio-item-menu"), clientX, clientY);
   }
 
+  function isStudioStaffViewer() {
+    return Boolean(authToken && isStaffUser(authUser));
+  }
+
+  function studioStatusTip(status, reason) {
+    const s = String(status || "");
+    if (s === "rejected") {
+      const why = String(reason || "").trim();
+      return why ? `Отклонено: ${why}` : "Отклонено";
+    }
+    if (s === "approved") return "Одобрено";
+    if (s === "added") return "Добавлено в игру";
+    if (s === "pending") return "В обработке";
+    return "";
+  }
+
+  function appendStudioStar(visual, status, reason) {
+    if (!visual || !status) return;
+    const star = document.createElement("span");
+    star.className = `studio-tile__star studio-tile__star--${status}`;
+    star.textContent = "★";
+    star.title = studioStatusTip(status, reason);
+    visual.appendChild(star);
+  }
+
+  function updateStudioSubtabsUi() {
+    const tabs = document.getElementById("studio-subtabs");
+    if (!tabs) return;
+    const staff = Boolean(authToken && isStaffUser(authUser));
+    tabs.hidden = !staff;
+    if (!staff && studioTab === "review") {
+      studioTab = "create";
+      studioOpenReviewId = null;
+    }
+    tabs.querySelectorAll("[data-studio-tab]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-studio-tab") === studioTab);
+    });
+  }
+
+  function updateStudioReviewActionsUi(sub) {
+    const wrap = document.getElementById("studio-review-actions");
+    const rejectBtn = document.getElementById("studio-review-reject");
+    const approveBtn = document.getElementById("studio-review-approve");
+    const addedBtn = document.getElementById("studio-review-added");
+    if (!wrap) return;
+    if (studioTab !== "review" || !sub) {
+      wrap.hidden = true;
+      return;
+    }
+    wrap.hidden = false;
+    if (rejectBtn) rejectBtn.hidden = false;
+    const st = String(sub.status || "pending");
+    if (approveBtn) approveBtn.hidden = st === "approved" || st === "added";
+    if (addedBtn) {
+      addedBtn.hidden = st !== "approved" && st !== "added";
+      addedBtn.disabled = st === "added";
+      addedBtn.textContent = st === "added" ? "Добавлено" : "Добавлено";
+    }
+  }
+
+  async function syncStudioMineStatuses() {
+    if (!authToken) return;
+    try {
+      const data = await api("/api/studio/submissions/mine");
+      const list = Array.isArray(data?.submissions) ? data.submissions : [];
+      loadStudioDoc();
+      let changed = false;
+      list.forEach((sub) => {
+        const folder = studioDoc.folders.find((f) => f.id === sub.clientFolderId);
+        if (!folder) return;
+        const nextId = Number(sub.id) || null;
+        const nextStatus = String(sub.status || "pending");
+        const nextReason = String(sub.reason || "");
+        if (
+          folder.submissionId !== nextId ||
+          folder.submissionStatus !== nextStatus ||
+          folder.submissionReason !== nextReason
+        ) {
+          folder.submissionId = nextId;
+          folder.submissionStatus = nextStatus;
+          folder.submissionReason = nextReason;
+          changed = true;
+        }
+      });
+      if (changed) saveStudioDoc();
+    } catch (_) {
+      /* ignore offline / unauthorized */
+    }
+  }
+
+  async function loadStudioReviewList() {
+    if (!isStudioStaffViewer()) {
+      studioReviewList = [];
+      return;
+    }
+    try {
+      const data = await api("/api/studio/submissions");
+      studioReviewList = Array.isArray(data?.submissions) ? data.submissions : [];
+    } catch (err) {
+      studioReviewList = [];
+      showToast(err.message || "Не удалось загрузить анкеты");
+    }
+  }
+
+  function getOpenReviewSubmission() {
+    if (!studioOpenReviewId) return null;
+    return studioReviewList.find((s) => Number(s.id) === Number(studioOpenReviewId)) || null;
+  }
+
+  async function submitStudioFolder(folderId) {
+    if (!authToken) {
+      showToast("Войдите, чтобы отправить папку");
+      return;
+    }
+    loadStudioDoc();
+    const folder = getStudioFolder(folderId);
+    if (!folder) return;
+    if (!folder.items?.length) {
+      showToast("В папке нет анкет");
+      return;
+    }
+    const ok = window.confirm(
+      `Отправить папку «${folder.name}» на рассмотрение админам и помощникам?`
+    );
+    if (!ok) return;
+    try {
+      const payload = {
+        items: folder.items.map((it) => ({
+          id: it.id,
+          typeId: it.typeId,
+          name: it.name,
+          body: it.body || "",
+          blocks: Array.isArray(it.blocks) ? it.blocks : [],
+          updatedAt: it.updatedAt || Date.now(),
+        })),
+      };
+      const data = await api("/api/studio/submissions", {
+        method: "POST",
+        body: JSON.stringify({
+          clientFolderId: folder.id,
+          folderName: folder.name,
+          folderColor: folder.color || STUDIO_DEFAULT_COLOR,
+          payload,
+        }),
+      });
+      const sub = data?.submission;
+      if (sub) {
+        folder.submissionId = Number(sub.id) || null;
+        folder.submissionStatus = String(sub.status || "pending");
+        folder.submissionReason = String(sub.reason || "");
+        saveStudioDoc();
+      }
+      showToast("Отправлено на рассмотрение");
+      renderStudio();
+    } catch (err) {
+      showToast(err.message || "Не удалось отправить");
+    }
+  }
+
+  async function patchStudioSubmission(id, body) {
+    const data = await api(`/api/studio/submissions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    const sub = data?.submission;
+    if (sub) {
+      const idx = studioReviewList.findIndex((s) => Number(s.id) === Number(sub.id));
+      if (idx >= 0) studioReviewList[idx] = sub;
+      else studioReviewList.unshift(sub);
+    }
+    return sub;
+  }
+
   function openStudioFolderModal() {
     studioRenamingFolderId = null;
     renderStudioColorSwatches();
@@ -4627,15 +4831,27 @@
     requestAnimationFrame(() => name?.focus());
   }
 
-  function openStudioEditModal(item) {
+  function openStudioEditModal(item, { readOnly = false } = {}) {
     const type = getCatalogType(item.typeId);
     studioEditingItemId = item.id;
+    studioEditReadOnly = Boolean(readOnly);
     const title = document.getElementById("studio-edit-modal-title");
     const meta = document.getElementById("studio-edit-meta");
     const nameInput = document.getElementById("studio-edit-name");
+    const addBtn = document.getElementById("studio-block-add-btn");
+    const saveBtn = document.querySelector("#studio-edit-form button[type='submit']");
     if (title) title.textContent = type ? type.label : "Анкета контента";
     if (meta) meta.textContent = type ? type.label : item.typeId || "";
-    if (nameInput) nameInput.value = item.name || "";
+    if (nameInput) {
+      nameInput.value = item.name || "";
+      nameInput.readOnly = studioEditReadOnly;
+      nameInput.disabled = studioEditReadOnly;
+    }
+    if (addBtn) addBtn.hidden = studioEditReadOnly;
+    if (saveBtn) {
+      saveBtn.hidden = false;
+      saveBtn.textContent = studioEditReadOnly ? "Закрыть" : "Сохранить";
+    }
 
     studioEditBlocks = migrateItemBodyToBlocks(item);
     studioBlockFiles.clear();
@@ -4653,17 +4869,110 @@
     renderStudioBlocks();
     document.getElementById("studio-block-type-menu").hidden = true;
     openStudioModal("studio-edit-modal");
-    requestAnimationFrame(() => nameInput?.focus());
+    requestAnimationFrame(() => {
+      if (!studioEditReadOnly) nameInput?.focus();
+    });
   }
 
   function renderStudio() {
     loadStudioDoc();
+    updateStudioSubtabsUi();
     const grid = document.getElementById("studio-grid");
     const bar = document.getElementById("studio-bar");
     const title = document.getElementById("studio-folder-title");
     if (!grid) return;
 
     grid.innerHTML = "";
+    const reviewMode = studioTab === "review" && isStudioStaffViewer();
+
+    if (reviewMode) {
+      const sub = studioOpenReviewId ? getOpenReviewSubmission() : null;
+      if (!sub) {
+        studioOpenReviewId = null;
+        if (bar) bar.hidden = true;
+        if (title) title.textContent = "";
+        updateStudioReviewActionsUi(null);
+
+        if (!studioReviewList.length) {
+          const empty = document.createElement("p");
+          empty.className = "studio-empty";
+          empty.textContent = "Пока нет отправленных анкет";
+          grid.appendChild(empty);
+          return;
+        }
+
+        studioReviewList.forEach((s) => {
+          const color = normalizeStudioColor(s.folderColor);
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "studio-tile studio-tile--folder catalog-card";
+          btn.setAttribute("role", "listitem");
+          btn.style.setProperty("--section-accent", color);
+          btn.innerHTML = `
+            <span class="catalog-card__visual" aria-hidden="true">
+              <span class="catalog-card__shadow"></span>
+              <img class="catalog-card__img" src="assets/folder.png" alt="" draggable="false" />
+            </span>
+            <span class="catalog-card__label studio-tile__label-stack">
+              <span class="studio-tile__name"></span>
+              <span class="studio-tile__sub"></span>
+            </span>
+          `;
+          const visual = btn.querySelector(".catalog-card__visual");
+          appendStudioStar(visual, s.status || "pending", s.reason);
+          btn.querySelector(".studio-tile__name").textContent = s.folderName || "Папка";
+          btn.querySelector(".studio-tile__sub").textContent = s.submitterMcNick || "—";
+          btn.addEventListener("click", () => {
+            hideStudioMenus();
+            studioOpenReviewId = Number(s.id);
+            renderStudio();
+          });
+          grid.appendChild(btn);
+        });
+        return;
+      }
+
+      if (bar) bar.hidden = false;
+      if (title) {
+        title.textContent = `${sub.folderName || "Папка"} · ${sub.submitterMcNick || ""}`.trim();
+      }
+      updateStudioReviewActionsUi(sub);
+
+      const items = Array.isArray(sub.payload?.items) ? sub.payload.items : [];
+      if (!items.length) {
+        const empty = document.createElement("p");
+        empty.className = "studio-empty";
+        empty.textContent = "В этой папке нет анкет";
+        grid.appendChild(empty);
+        return;
+      }
+
+      items.forEach((item) => {
+        const type = getCatalogType(item.typeId);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "studio-tile catalog-card";
+        btn.setAttribute("role", "listitem");
+        btn.style.setProperty("--section-accent", "var(--accent)");
+        const icon = type?.icon || "assets/icons/item.png";
+        btn.innerHTML = `
+          <span class="catalog-card__visual" aria-hidden="true">
+            <span class="catalog-card__shadow"></span>
+            <img class="catalog-card__img" src="${icon}" alt="" draggable="false" />
+          </span>
+          <span class="catalog-card__label"></span>
+        `;
+        btn.querySelector(".catalog-card__label").textContent = item.name || "Анкета";
+        btn.addEventListener("click", () => {
+          hideStudioMenus();
+          openStudioEditModal(item, { readOnly: !isFounderViewer() });
+        });
+        grid.appendChild(btn);
+      });
+      return;
+    }
+
+    updateStudioReviewActionsUi(null);
     const folder = studioOpenFolderId ? getStudioFolder(studioOpenFolderId) : null;
 
     if (!folder) {
@@ -4699,6 +5008,10 @@
           </span>
           <span class="catalog-card__label"></span>
         `;
+        const visual = btn.querySelector(".catalog-card__visual");
+        if (f.submissionStatus) {
+          appendStudioStar(visual, f.submissionStatus, f.submissionReason);
+        }
         btn.querySelector(".catalog-card__label").textContent = f.name;
         btn.addEventListener("click", () => {
           hideStudioMenus();
@@ -4763,7 +5076,24 @@
 
   function bindStudioUi() {
     document.getElementById("studio-back")?.addEventListener("click", () => {
+      if (studioTab === "review") {
+        studioOpenReviewId = null;
+      } else {
+        studioOpenFolderId = null;
+      }
+      renderStudio();
+    });
+
+    document.getElementById("studio-subtabs")?.addEventListener("click", async (e) => {
+      const btn = e.target.closest("[data-studio-tab]");
+      if (!btn) return;
+      const next = btn.getAttribute("data-studio-tab");
+      if (next !== "create" && next !== "review") return;
+      if (next === "review" && !isStudioStaffViewer()) return;
+      studioTab = next;
       studioOpenFolderId = null;
+      studioOpenReviewId = null;
+      if (studioTab === "review") await loadStudioReviewList();
       renderStudio();
     });
 
@@ -4796,6 +5126,9 @@
           name,
           color,
           createdAt: Date.now(),
+          submissionId: null,
+          submissionStatus: null,
+          submissionReason: "",
           items: [],
         });
       }
@@ -4819,7 +5152,7 @@
         return;
       }
       if (act === "send") {
-        // placeholder: send folder later
+        submitStudioFolder(folderId);
         return;
       }
       if (act === "delete") {
@@ -4906,35 +5239,117 @@
 
     const editModal = "studio-edit-modal";
     document.getElementById("studio-edit-modal-close")?.addEventListener("click", () => closeStudioModal(editModal));
-    document.getElementById("studio-edit-form")?.addEventListener("submit", (e) => {
+    document.getElementById("studio-edit-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const folder = getStudioFolder(studioOpenFolderId);
-      const item = folder?.items.find((it) => it.id === studioEditingItemId);
-      if (!item) return;
+      if (studioEditReadOnly) {
+        closeStudioModal(editModal);
+        return;
+      }
       const nameInput = document.getElementById("studio-edit-name");
       const name = String(nameInput?.value || "").trim();
       if (!name) {
         nameInput?.focus();
         return;
       }
-      item.name = name;
-      item.blocks = serializeStudioBlocksMeta(studioEditBlocks);
-      // Keep legacy body as joined text blocks for compatibility
-      item.body = item.blocks
+      const blocks = serializeStudioBlocksMeta(studioEditBlocks);
+      const bodyText = blocks
         .filter((b) => b.type === "text")
         .map((b) => b.body || "")
         .filter(Boolean)
         .join("\n\n");
+
+      if (studioTab === "review" && studioOpenReviewId) {
+        const sub = getOpenReviewSubmission();
+        if (!sub || !isFounderViewer()) return;
+        const items = Array.isArray(sub.payload?.items) ? [...sub.payload.items] : [];
+        const idx = items.findIndex((it) => String(it.id) === String(studioEditingItemId));
+        if (idx < 0) return;
+        items[idx] = {
+          ...items[idx],
+          name,
+          blocks,
+          body: bodyText,
+          updatedAt: Date.now(),
+        };
+        try {
+          await patchStudioSubmission(studioOpenReviewId, {
+            payload: { ...sub.payload, items },
+          });
+          closeStudioModal(editModal);
+          renderStudio();
+          showToast("Сохранено");
+        } catch (err) {
+          showToast(err.message || "Не удалось сохранить");
+        }
+        return;
+      }
+
+      const folder = getStudioFolder(studioOpenFolderId);
+      const item = folder?.items.find((it) => it.id === studioEditingItemId);
+      if (!item) return;
+      item.name = name;
+      item.blocks = blocks;
+      item.body = bodyText;
       item.updatedAt = Date.now();
       saveStudioDoc();
       closeStudioModal(editModal);
       renderStudio();
       showToast("Сохранено");
     });
+
+    document.getElementById("studio-review-reject")?.addEventListener("click", () => {
+      if (!studioOpenReviewId) return;
+      const reason = document.getElementById("studio-reject-reason");
+      if (reason) reason.value = "";
+      openStudioModal("studio-reject-modal");
+      requestAnimationFrame(() => reason?.focus());
+    });
+    document.getElementById("studio-reject-modal-close")?.addEventListener("click", () => {
+      closeStudioModal("studio-reject-modal");
+    });
+    document.getElementById("studio-reject-form")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const reasonEl = document.getElementById("studio-reject-reason");
+      const reason = String(reasonEl?.value || "").trim();
+      if (!reason) {
+        reasonEl?.focus();
+        return;
+      }
+      if (!studioOpenReviewId) return;
+      try {
+        await patchStudioSubmission(studioOpenReviewId, { status: "rejected", reason });
+        closeStudioModal("studio-reject-modal");
+        showToast("Отклонено");
+        renderStudio();
+      } catch (err) {
+        showToast(err.message || "Не удалось отклонить");
+      }
+    });
+    document.getElementById("studio-review-approve")?.addEventListener("click", async () => {
+      if (!studioOpenReviewId) return;
+      try {
+        await patchStudioSubmission(studioOpenReviewId, { status: "approved" });
+        showToast("Одобрено");
+        renderStudio();
+      } catch (err) {
+        showToast(err.message || "Не удалось одобрить");
+      }
+    });
+    document.getElementById("studio-review-added")?.addEventListener("click", async () => {
+      if (!studioOpenReviewId) return;
+      try {
+        await patchStudioSubmission(studioOpenReviewId, { status: "added" });
+        showToast("Отмечено как добавлено");
+        renderStudio();
+      } catch (err) {
+        showToast(err.message || "Не удалось обновить");
+      }
+    });
   }
 
   bindStudioUi();
   loadStudioDoc();
+  syncStudioMineStatuses().then(() => renderStudio());
   renderStudio();
 
   function collectFormValues() {
@@ -5892,28 +6307,41 @@
 
   function createStudioBlock(type) {
     const id = `sb_${Date.now().toString(36)}_${studioBlockIdSeq++}`;
-    if (type === "text") return { id, type: "text", body: "" };
+    const defaultTitle =
+      type === "text" ? "Текст" : type === "craft" ? "Рецепт" : "Файл";
+    if (type === "text") return { id, type: "text", title: defaultTitle, body: "" };
     if (type === "craft") {
       return {
         id,
         type: "craft",
+        title: defaultTitle,
         mode: "3x3",
         cells: Array(9).fill(""),
         legend: {},
         smeltItem: "",
       };
     }
-    return { id, type: "file", fileName: "", ext: "", size: 0, dataUrl: "" };
+    return { id, type: "file", title: defaultTitle, fileName: "", ext: "", size: 0, dataUrl: "" };
   }
 
   function cloneStudioBlocks(blocks) {
     return (Array.isArray(blocks) ? blocks : []).map((b) => {
       if (!b || typeof b !== "object") return null;
-      if (b.type === "text") return { id: String(b.id || createStudioBlock("text").id), type: "text", body: String(b.body || "") };
+      const defaultTitle =
+        b.type === "text" ? "Текст" : b.type === "craft" ? "Рецепт" : "Файл";
+      if (b.type === "text") {
+        return {
+          id: String(b.id || createStudioBlock("text").id),
+          type: "text",
+          title: String(b.title || defaultTitle),
+          body: String(b.body || ""),
+        };
+      }
       if (b.type === "craft") {
         return {
           id: String(b.id || createStudioBlock("craft").id),
           type: "craft",
+          title: String(b.title || defaultTitle),
           mode: normalizeCraftMode(b.mode || "3x3") === "none" ? "3x3" : normalizeCraftMode(b.mode || "3x3"),
           cells: Array.isArray(b.cells) ? b.cells.map((c) => String(c || "")) : Array(9).fill(""),
           legend: b.legend && typeof b.legend === "object" ? { ...b.legend } : {},
@@ -5924,6 +6352,7 @@
         return {
           id: String(b.id || createStudioBlock("file").id),
           type: "file",
+          title: String(b.title || defaultTitle),
           fileName: String(b.fileName || ""),
           ext: String(b.ext || ""),
           size: Number(b.size) || 0,
@@ -5978,6 +6407,8 @@
       nameInp.placeholder = `Название предмета для «${sym}»`;
       nameInp.maxLength = 64;
       nameInp.value = block.legend[sym] || "";
+      nameInp.disabled = studioEditReadOnly;
+      nameInp.readOnly = studioEditReadOnly;
       nameInp.addEventListener("input", () => {
         block.legend[sym] = nameInp.value;
       });
@@ -6003,7 +6434,9 @@
       btn.className = `craft-tab${block.mode === m ? " is-active" : ""}`;
       btn.dataset.craft = m;
       btn.textContent = label;
+      btn.disabled = studioEditReadOnly;
       btn.addEventListener("click", () => {
+        if (studioEditReadOnly) return;
         const prev = block.mode;
         block.mode = m;
         if (m === "2x2" || m === "3x3") {
@@ -6029,6 +6462,8 @@
       inp.maxLength = 64;
       inp.placeholder = "Например: железная руда";
       inp.value = block.smeltItem || "";
+      inp.disabled = studioEditReadOnly;
+      inp.readOnly = studioEditReadOnly;
       inp.addEventListener("input", () => {
         block.smeltItem = inp.value;
       });
@@ -6058,6 +6493,8 @@
       inp.type = "text";
       inp.maxLength = 1;
       inp.value = val || "";
+      inp.disabled = studioEditReadOnly;
+      inp.readOnly = studioEditReadOnly;
       inp.addEventListener("input", () => {
         const ch = inp.value.slice(-1).toUpperCase();
         inp.value = ch;
@@ -6084,19 +6521,23 @@
 
       const head = document.createElement("div");
       head.className = "race-block__head";
-      const title = document.createElement("h3");
-      title.className = "race-block__title";
-      title.textContent =
-        block.type === "text"
-          ? `Текст #${index + 1}`
-          : block.type === "craft"
-            ? `Рецепт #${index + 1}`
-            : `Файл #${index + 1}`;
+      const title = document.createElement("input");
+      title.type = "text";
+      title.className = "race-block__title-input";
+      title.maxLength = 64;
+      title.value =
+        block.title ||
+        (block.type === "text" ? "Текст" : block.type === "craft" ? "Рецепт" : "Файл");
+      title.disabled = studioEditReadOnly;
+      title.addEventListener("input", () => {
+        block.title = title.value;
+      });
       const del = document.createElement("button");
       del.type = "button";
       del.className = "race-block__del";
       del.textContent = "×";
       del.title = "Удалить блок";
+      del.hidden = studioEditReadOnly;
       del.addEventListener("click", () => {
         studioBlockFiles.delete(block.id);
         studioEditBlocks = studioEditBlocks.filter((b) => b.id !== block.id);
@@ -6112,6 +6553,7 @@
         const toolbar = document.createElement("div");
         toolbar.className = "patch-md-toolbar";
         toolbar.setAttribute("role", "toolbar");
+        toolbar.hidden = studioEditReadOnly;
         [
           ["bold", "B", "Жирный"],
           ["italic", "I", "Курсив"],
@@ -6134,11 +6576,13 @@
         ta.rows = 5;
         ta.placeholder = "Опишите контент…";
         ta.value = block.body || "";
+        ta.readOnly = studioEditReadOnly;
         ta.addEventListener("input", () => {
           block.body = ta.value;
           autosizeArea(ta);
         });
         toolbar.addEventListener("click", (e) => {
+          if (studioEditReadOnly) return;
           const btn = e.target.closest("[data-md]");
           if (!btn) return;
           applyMdToSelection(btn.getAttribute("data-md"), ta);
@@ -6163,25 +6607,28 @@
             ? `${block.fileName} · ${formatBytes(block.size || 0)}`
             : `${block.fileName} · нужно выбрать файл снова`;
           if (!hasBytes) name.classList.add("is-missing");
-          const clear = document.createElement("button");
-          clear.type = "button";
-          clear.className = "mc-btn mc-btn--compact mc-btn--ghost";
-          clear.textContent = hasBytes ? "Убрать" : "Выбрать";
-          clear.addEventListener("click", () => {
-            if (hasBytes) {
-              studioBlockFiles.delete(block.id);
-              block.fileName = "";
-              block.ext = "";
-              block.size = 0;
-              block.dataUrl = "";
-              renderStudioBlocks();
-            } else {
-              studioBlockFileTargetId = block.id;
-              document.getElementById("studio-block-file-input")?.click();
-            }
-          });
-          fileRow.append(name, clear);
-        } else {
+          fileRow.appendChild(name);
+          if (!studioEditReadOnly) {
+            const clear = document.createElement("button");
+            clear.type = "button";
+            clear.className = "mc-btn mc-btn--compact mc-btn--ghost";
+            clear.textContent = hasBytes ? "Убрать" : "Выбрать";
+            clear.addEventListener("click", () => {
+              if (hasBytes) {
+                studioBlockFiles.delete(block.id);
+                block.fileName = "";
+                block.ext = "";
+                block.size = 0;
+                block.dataUrl = "";
+                renderStudioBlocks();
+              } else {
+                studioBlockFileTargetId = block.id;
+                document.getElementById("studio-block-file-input")?.click();
+              }
+            });
+            fileRow.appendChild(clear);
+          }
+        } else if (!studioEditReadOnly) {
           const pick = document.createElement("button");
           pick.type = "button";
           pick.className = "mc-btn mc-btn--compact";
@@ -6191,6 +6638,11 @@
             document.getElementById("studio-block-file-input")?.click();
           });
           fileRow.appendChild(pick);
+        } else {
+          const empty = document.createElement("div");
+          empty.className = "race-block__file-name";
+          empty.textContent = "Файл не прикреплён";
+          fileRow.appendChild(empty);
         }
         body.append(hint, fileRow);
       }
@@ -6215,6 +6667,7 @@
   }
 
   document.getElementById("studio-block-add-btn")?.addEventListener("click", () => {
+    if (studioEditReadOnly) return;
     const menu = document.getElementById("studio-block-type-menu");
     if (!menu) return;
     menu.hidden = !menu.hidden;

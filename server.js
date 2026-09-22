@@ -486,6 +486,34 @@ async function ensureSchema() {
       `ALTER TABLE profiles ADD COLUMN show_online_frame TINYINT(1) NOT NULL DEFAULT 1 AFTER show_server_online`
     );
   }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS studio_submissions (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      client_folder_id VARCHAR(64) NOT NULL,
+      submitter_id INT UNSIGNED NOT NULL,
+      submitter_mc_nick VARCHAR(16) NOT NULL,
+      folder_name VARCHAR(128) NOT NULL,
+      folder_color VARCHAR(16) NOT NULL DEFAULT '#8ec8ff',
+      payload_json JSON NOT NULL,
+      status ENUM('pending', 'rejected', 'approved', 'added') NOT NULL DEFAULT 'pending',
+      reason TEXT NULL,
+      reviewed_by INT UNSIGNED NULL,
+      reviewed_at TIMESTAMP NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_studio_sub_submitter (submitter_id),
+      KEY idx_studio_sub_status (status),
+      KEY idx_studio_sub_client (submitter_id, client_folder_id),
+      CONSTRAINT fk_studio_sub_user
+        FOREIGN KEY (submitter_id) REFERENCES users (id)
+        ON DELETE CASCADE,
+      CONSTRAINT fk_studio_sub_reviewer
+        FOREIGN KEY (reviewed_by) REFERENCES users (id)
+        ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
 }
 
 async function ensureFounderIdZero(founderId) {
@@ -2843,6 +2871,199 @@ app.get("/api/music/stream/:id", (req, res) => {
 
 app.get("/api/music/file/:id", (req, res) => {
   proxyGdriveFile(String(req.params.id || ""), req, res);
+});
+
+function mapStudioSubmissionRow(row) {
+  let payload = row.payload_json;
+  if (typeof payload === "string") {
+    try {
+      payload = JSON.parse(payload);
+    } catch {
+      payload = {};
+    }
+  }
+  return {
+    id: Number(row.id),
+    clientFolderId: String(row.client_folder_id || ""),
+    submitterId: Number(row.submitter_id),
+    submitterMcNick: String(row.submitter_mc_nick || ""),
+    folderName: String(row.folder_name || ""),
+    folderColor: String(row.folder_color || "#8ec8ff"),
+    payload: payload && typeof payload === "object" ? payload : {},
+    status: String(row.status || "pending"),
+    reason: row.reason != null ? String(row.reason) : "",
+    reviewedBy: row.reviewed_by != null ? Number(row.reviewed_by) : null,
+    reviewedAt: row.reviewed_at || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
+app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const clientFolderId = String(body.clientFolderId || "").trim().slice(0, 64);
+    const folderName = String(body.folderName || "").trim().slice(0, 128);
+    const folderColor = String(body.folderColor || "#8ec8ff").trim().slice(0, 16);
+    const payload = body.payload && typeof body.payload === "object" ? body.payload : null;
+    if (!clientFolderId || !folderName || !payload) {
+      return res.status(400).json({ error: "Нужны clientFolderId, folderName и payload" });
+    }
+    const mcNick = String(req.user.mcNick || "").slice(0, 16);
+    const [result] = await pool.execute(
+      `INSERT INTO studio_submissions
+        (client_folder_id, submitter_id, submitter_mc_nick, folder_name, folder_color, payload_json, status, reason, reviewed_by, reviewed_at)
+       VALUES
+        (:clientFolderId, :submitterId, :submitterMcNick, :folderName, :folderColor, CAST(:payload AS JSON), 'pending', NULL, NULL, NULL)`,
+      {
+        clientFolderId,
+        submitterId: req.user.id,
+        submitterMcNick: mcNick,
+        folderName,
+        folderColor,
+        payload: JSON.stringify(payload),
+      }
+    );
+    const id = Number(result.insertId);
+    const [rows] = await pool.execute(
+      `SELECT * FROM studio_submissions WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    return res.json({ ok: true, submission: mapStudioSubmissionRow(rows[0]) });
+  } catch (err) {
+    console.error("studio submit:", err);
+    return res.status(500).json({ error: "Не удалось отправить папку" });
+  }
+});
+
+app.get("/api/studio/submissions/mine", authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT s.*
+       FROM studio_submissions s
+       INNER JOIN (
+         SELECT client_folder_id, MAX(id) AS max_id
+         FROM studio_submissions
+         WHERE submitter_id = :uid
+         GROUP BY client_folder_id
+       ) latest ON latest.max_id = s.id
+       WHERE s.submitter_id = :uid
+       ORDER BY s.updated_at DESC`,
+      { uid: req.user.id }
+    );
+    return res.json({
+      ok: true,
+      submissions: rows.map(mapStudioSubmissionRow),
+    });
+  } catch (err) {
+    console.error("studio mine:", err);
+    return res.status(500).json({ error: "Не удалось загрузить статусы" });
+  }
+});
+
+app.get("/api/studio/submissions", staffMiddleware, async (_req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT s.*
+       FROM studio_submissions s
+       INNER JOIN (
+         SELECT submitter_id, client_folder_id, MAX(id) AS max_id
+         FROM studio_submissions
+         GROUP BY submitter_id, client_folder_id
+       ) latest ON latest.max_id = s.id
+       ORDER BY
+         FIELD(s.status, 'pending', 'approved', 'rejected', 'added'),
+         s.updated_at DESC
+       LIMIT 500`
+    );
+    return res.json({
+      ok: true,
+      submissions: rows.map(mapStudioSubmissionRow),
+    });
+  } catch (err) {
+    console.error("studio list:", err);
+    return res.status(500).json({ error: "Не удалось загрузить анкеты" });
+  }
+});
+
+app.get("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(
+      `SELECT * FROM studio_submissions WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    return res.json({ ok: true, submission: mapStudioSubmissionRow(rows[0]) });
+  } catch (err) {
+    console.error("studio get:", err);
+    return res.status(500).json({ error: "Не удалось загрузить анкету" });
+  }
+});
+
+app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(
+      `SELECT * FROM studio_submissions WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+
+    const wantsPayload = req.body?.payload && typeof req.body.payload === "object";
+    if (wantsPayload) {
+      await assertFounderActor(req);
+      await pool.execute(
+        `UPDATE studio_submissions
+         SET payload_json = CAST(:payload AS JSON)
+         WHERE id = :id`,
+        { id, payload: JSON.stringify(req.body.payload) }
+      );
+    }
+
+    const status = String(req.body?.status || "").trim();
+    if (status) {
+      if (!["rejected", "approved", "added"].includes(status)) {
+        return res.status(400).json({ error: "Некорректный статус" });
+      }
+      const reason = String(req.body?.reason || "").trim().slice(0, 2000);
+      if (status === "rejected" && !reason) {
+        return res.status(400).json({ error: "Укажите причину отклонения" });
+      }
+      const current = String(rows[0].status || "pending");
+      if (status === "added" && current !== "approved" && current !== "added") {
+        return res.status(400).json({ error: "Сначала одобрите анкету" });
+      }
+      await pool.execute(
+        `UPDATE studio_submissions
+         SET status = :status,
+             reason = :reason,
+             reviewed_by = :reviewedBy,
+             reviewed_at = CURRENT_TIMESTAMP
+         WHERE id = :id`,
+        {
+          id,
+          status,
+          reason: status === "rejected" ? reason : rows[0].reason || null,
+          reviewedBy: req.user.id,
+        }
+      );
+    } else if (!wantsPayload) {
+      return res.status(400).json({ error: "Нужен status или payload" });
+    }
+
+    const [next] = await pool.execute(
+      `SELECT * FROM studio_submissions WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    return res.json({ ok: true, submission: mapStudioSubmissionRow(next[0]) });
+  } catch (err) {
+    console.error("studio patch:", err);
+    const status = err.status || 500;
+    return res.status(status).json({ error: err.message || "Не удалось обновить статус" });
+  }
 });
 
 app.put("/api/rules", authMiddleware, async (req, res) => {

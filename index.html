@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=64" />
+  <link rel="stylesheet" href="styles.css?v=66" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -38,11 +38,20 @@
         <div class="main-tab-panels" id="main-tab-panels">
           <div class="main-tab-panel is-active" data-main-panel="studio" id="main-panel-studio">
             <div class="studio-workspace" id="studio-workspace">
+              <nav class="studio-subtabs" id="studio-subtabs" hidden aria-label="Разделы студии">
+                <button type="button" class="studio-subtabs__btn is-active" data-studio-tab="create">Создание</button>
+                <button type="button" class="studio-subtabs__btn" data-studio-tab="review">Анкеты</button>
+              </nav>
               <header class="studio-bar" id="studio-bar" hidden>
                 <button type="button" class="studio-bar__back" id="studio-back">← Назад</button>
                 <h2 class="studio-bar__title" id="studio-folder-title"></h2>
               </header>
               <div class="studio-grid" id="studio-grid" role="list"></div>
+              <div class="studio-review-actions" id="studio-review-actions" hidden>
+                <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-reject">Отклонить</button>
+                <button type="button" class="mc-btn" id="studio-review-approve">Одобрить</button>
+                <button type="button" class="mc-btn" id="studio-review-added" hidden>Добавлено</button>
+              </div>
             </div>
           </div>
 
@@ -1592,6 +1601,26 @@
     </div>
   </div>
 
+  <div class="auth-modal ui-layer" id="studio-reject-modal" hidden>
+    <div class="popup-shell">
+      <button type="button" class="popup-close" id="studio-reject-modal-close" aria-label="Закрыть">×</button>
+      <div class="auth-modal__panel" role="dialog" aria-modal="true" aria-labelledby="studio-reject-modal-title">
+        <div class="auth-modal__head">
+          <h2 class="auth-modal__title" id="studio-reject-modal-title">Отклонить анкету</h2>
+        </div>
+        <form class="studio-modal__form" id="studio-reject-form" novalidate>
+          <div class="field-block">
+            <label class="field-label" for="studio-reject-reason">Причина</label>
+            <textarea class="field-area" id="studio-reject-reason" rows="4" required placeholder="Почему отклонено…"></textarea>
+          </div>
+          <div class="studio-modal__actions">
+            <button type="submit" class="mc-btn">Отклонить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div class="patch-editor" id="patch-editor" hidden>
     <div class="popup-shell popup-shell--wide">
       <button type="button" class="popup-close" id="patch-editor-close" aria-label="Закрыть">×</button>
@@ -1642,6 +1671,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=64"></script>
+  <script src="script.js?v=66"></script>
 </body>
 </html>
