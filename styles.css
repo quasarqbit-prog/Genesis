@@ -1185,6 +1185,11 @@ h3,
   align-items: center;
   gap: 8px;
   margin-top: 4px;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding-top: 8px;
+  background: linear-gradient(180deg, transparent, rgba(12, 7, 22, 0.98) 28%);
 }
 
 .studio-modal__spacer {
@@ -1273,11 +1278,12 @@ h3,
 }
 
 .studio-edit__meta {
-  margin: 0;
+  margin: 4px 0 0;
   font-family: var(--font-ded);
   font-size: 11px;
   color: var(--muted);
   letter-spacing: 0.4px;
+  text-transform: uppercase;
 }
 
 .studio-edit__body-block {
@@ -5836,7 +5842,20 @@ h3,
   background: rgba(251, 113, 133, 0.08);
 }
 
-.race-blocks {
+.studio-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(72vh, 720px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.studio-blocks-field {
+  margin: 0;
+}
+
+.studio-blocks {
   display: flex;
   flex-direction: column;
   gap: 12px;

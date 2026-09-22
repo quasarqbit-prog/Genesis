@@ -326,10 +326,6 @@
   const itemTextures = [];
   const itemAudio = [];
   const structureSchematics = [];
-  /** @type {Array<object>} */
-  let raceBlocks = [];
-  /** @type {Map<string, {name:string,ext:string,bytes:Uint8Array,size:number}>} */
-  const raceBlockFiles = new Map();
   const COMMAND_RE = /^[A-Za-z0-9_\/]+$/;
   let skinIdSeq = 1;
   let contentContext = { mode: "new", prefix: "NEW*", type: "item" };
@@ -4448,6 +4444,7 @@
                     typeId: String(it.typeId || ""),
                     name: String(it.name || "Контент"),
                     body: String(it.body || ""),
+                    blocks: Array.isArray(it.blocks) ? it.blocks : [],
                     updatedAt: Number(it.updatedAt) || Date.now(),
                   }))
                 : [],
@@ -4635,12 +4632,28 @@
     studioEditingItemId = item.id;
     const title = document.getElementById("studio-edit-modal-title");
     const meta = document.getElementById("studio-edit-meta");
-    const body = document.getElementById("studio-edit-body");
-    if (title) title.textContent = item.name;
-    if (meta) meta.textContent = type ? type.label : item.typeId;
-    if (body) body.value = item.body || "";
+    const nameInput = document.getElementById("studio-edit-name");
+    if (title) title.textContent = type ? type.label : "Анкета контента";
+    if (meta) meta.textContent = type ? type.label : item.typeId || "";
+    if (nameInput) nameInput.value = item.name || "";
+
+    studioEditBlocks = migrateItemBodyToBlocks(item);
+    studioBlockFiles.clear();
+    studioEditBlocks.forEach((b) => {
+      if (b.type === "file" && b.dataUrl) {
+        studioBlockFiles.set(b.id, {
+          name: b.fileName || "file",
+          ext: b.ext || "",
+          bytes: new Uint8Array(),
+          size: b.size || 0,
+          dataUrl: b.dataUrl,
+        });
+      }
+    });
+    renderStudioBlocks();
+    document.getElementById("studio-block-type-menu").hidden = true;
     openStudioModal("studio-edit-modal");
-    requestAnimationFrame(() => body?.focus());
+    requestAnimationFrame(() => nameInput?.focus());
   }
 
   function renderStudio() {
@@ -4876,16 +4889,19 @@
       }
       const folder = getStudioFolder(studioOpenFolderId);
       if (!folder) return;
-      folder.items.push({
+      const item = {
         id: studioUid("item"),
         typeId: studioSelectedTypeId,
         name,
         body: "",
+        blocks: [],
         updatedAt: Date.now(),
-      });
+      };
+      folder.items.push(item);
       saveStudioDoc();
       closeStudioModal(createModal);
       renderStudio();
+      openStudioEditModal(item);
     });
 
     const editModal = "studio-edit-modal";
@@ -4895,12 +4911,25 @@
       const folder = getStudioFolder(studioOpenFolderId);
       const item = folder?.items.find((it) => it.id === studioEditingItemId);
       if (!item) return;
-      const body = document.getElementById("studio-edit-body");
-      item.body = String(body?.value || "");
+      const nameInput = document.getElementById("studio-edit-name");
+      const name = String(nameInput?.value || "").trim();
+      if (!name) {
+        nameInput?.focus();
+        return;
+      }
+      item.name = name;
+      item.blocks = serializeStudioBlocksMeta(studioEditBlocks);
+      // Keep legacy body as joined text blocks for compatibility
+      item.body = item.blocks
+        .filter((b) => b.type === "text")
+        .map((b) => b.body || "")
+        .filter(Boolean)
+        .join("\n\n");
       item.updatedAt = Date.now();
       saveStudioDoc();
       closeStudioModal(editModal);
       renderStudio();
+      showToast("Сохранено");
     });
   }
 
@@ -4914,7 +4943,6 @@
       const el = document.getElementById(id);
       form[id] = el ? el.value : "";
     });
-    form.blocks = serializeRaceBlocksMeta();
     return form;
   }
 
@@ -4942,41 +4970,6 @@
       if (!el || form[id] == null) return;
       el.value = form[id];
     });
-    if (Array.isArray(form.blocks)) {
-      raceBlocks = form.blocks
-        .map((b) => {
-          if (!b || typeof b !== "object") return null;
-          if (b.type === "text") {
-            return { id: String(b.id || createRaceBlock("text").id), type: "text", body: String(b.body || "") };
-          }
-          if (b.type === "craft") {
-            return {
-              id: String(b.id || createRaceBlock("craft").id),
-              type: "craft",
-              mode: normalizeCraftMode(b.mode || "3x3") === "none" ? "3x3" : normalizeCraftMode(b.mode || "3x3"),
-              cells: Array.isArray(b.cells) ? b.cells.map((c) => String(c || "")) : Array(9).fill(""),
-              legend: b.legend && typeof b.legend === "object" ? { ...b.legend } : {},
-              smeltItem: String(b.smeltItem || ""),
-            };
-          }
-          if (b.type === "file") {
-            return {
-              id: String(b.id || createRaceBlock("file").id),
-              type: "file",
-              fileName: String(b.fileName || ""),
-              ext: String(b.ext || ""),
-              size: Number(b.size) || 0,
-            };
-          }
-          return null;
-        })
-        .filter(Boolean);
-      // Drop file blobs that weren't restored (only metadata survives storage)
-      for (const id of [...raceBlockFiles.keys()]) {
-        if (!raceBlocks.some((b) => b.id === id && b.type === "file")) raceBlockFiles.delete(id);
-      }
-      renderRaceBlocks();
-    }
     document.querySelectorAll(".field-area").forEach((area) => autosizeArea(area));
   }
 
@@ -5346,26 +5339,9 @@
       ["Особые механики", val("mechanics")],
     ];
 
-    const anketaParts = [
-      sections
-        .map(([label, text]) => `${label}:\n${text || "—"}`)
-        .join("\n\n---\n\n"),
-    ];
-
-    raceBlocks.forEach((block, i) => {
-      const n = i + 1;
-      if (block.type === "text") {
-        anketaParts.push(`Доп. блок (текст #${n}):\n${(block.body || "").trim() || "—"}`);
-      } else if (block.type === "craft") {
-        anketaParts.push(`Доп. блок (рецепт #${n}):\n${raceCraftToText(block)}`);
-      } else if (block.type === "file") {
-        anketaParts.push(
-          `Доп. блок (файл #${n}):\n${block.fileName || "файл не выбран"}`
-        );
-      }
-    });
-
-    const anketa = anketaParts.join("\n\n---\n\n");
+    const anketa = sections
+      .map(([label, text]) => `${label}:\n${text || "—"}`)
+      .join("\n\n---\n\n");
 
     const files = [
       { name: "анкета.txt", bytes: encodeUtf8(anketa) },
@@ -5379,19 +5355,6 @@
     raceAudio.forEach((a, i) => {
       const num = String(i + 1).padStart(2, "0");
       files.push({ name: `audio/audio_${num}.${a.ext}`, bytes: a.bytes });
-    });
-
-    let fileIdx = 0;
-    raceBlocks.forEach((block) => {
-      if (block.type !== "file") return;
-      const stored = raceBlockFiles.get(block.id);
-      if (!stored?.bytes) return;
-      fileIdx += 1;
-      const num = String(fileIdx).padStart(2, "0");
-      const safeName = String(stored.name || `file_${num}.${stored.ext || "bin"}`)
-        .replace(/[\\/:*?"<>|]+/g, "_")
-        .slice(0, 80);
-      files.push({ name: `blocks/${num}_${safeName}`, bytes: stored.bytes });
     });
 
     return files;
@@ -5911,13 +5874,24 @@
     hideSpinner("race-audio-spinner");
   });
 
-  /* ---------- Race custom blocks ---------- */
-  const RACE_BLOCK_FILE_MAX = 8 * 1024 * 1024;
-  let raceBlockIdSeq = 1;
-  let raceBlockFileTargetId = null;
+  /* ---------- Studio content blocks ---------- */
+  const STUDIO_BLOCK_FILE_MAX = 8 * 1024 * 1024;
+  let studioBlockIdSeq = 1;
+  let studioBlockFileTargetId = null;
+  /** Working copy while edit modal is open */
+  let studioEditBlocks = [];
+  /** @type {Map<string, {name:string,ext:string,bytes:Uint8Array,size:number,dataUrl?:string}>} */
+  const studioBlockFiles = new Map();
 
-  function createRaceBlock(type) {
-    const id = `rb_${Date.now().toString(36)}_${raceBlockIdSeq++}`;
+  function formatBytes(n) {
+    if (!Number.isFinite(n) || n < 0) return "0 Б";
+    if (n < 1024) return `${n} Б`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} КБ`;
+    return `${(n / (1024 * 1024)).toFixed(1)} МБ`;
+  }
+
+  function createStudioBlock(type) {
+    const id = `sb_${Date.now().toString(36)}_${studioBlockIdSeq++}`;
     if (type === "text") return { id, type: "text", body: "" };
     if (type === "craft") {
       return {
@@ -5929,57 +5903,61 @@
         smeltItem: "",
       };
     }
-    return { id, type: "file", fileName: "", ext: "", size: 0 };
+    return { id, type: "file", fileName: "", ext: "", size: 0, dataUrl: "" };
   }
 
-  function serializeRaceBlocksMeta() {
-    return raceBlocks.map((b) => {
-      if (b.type === "text") return { id: b.id, type: "text", body: b.body || "" };
+  function cloneStudioBlocks(blocks) {
+    return (Array.isArray(blocks) ? blocks : []).map((b) => {
+      if (!b || typeof b !== "object") return null;
+      if (b.type === "text") return { id: String(b.id || createStudioBlock("text").id), type: "text", body: String(b.body || "") };
       if (b.type === "craft") {
         return {
-          id: b.id,
+          id: String(b.id || createStudioBlock("craft").id),
           type: "craft",
-          mode: b.mode || "3x3",
-          cells: Array.isArray(b.cells) ? [...b.cells] : [],
-          legend: { ...(b.legend || {}) },
-          smeltItem: b.smeltItem || "",
+          mode: normalizeCraftMode(b.mode || "3x3") === "none" ? "3x3" : normalizeCraftMode(b.mode || "3x3"),
+          cells: Array.isArray(b.cells) ? b.cells.map((c) => String(c || "")) : Array(9).fill(""),
+          legend: b.legend && typeof b.legend === "object" ? { ...b.legend } : {},
+          smeltItem: String(b.smeltItem || ""),
         };
       }
-      return {
-        id: b.id,
-        type: "file",
-        fileName: b.fileName || "",
-        ext: b.ext || "",
-        size: b.size || 0,
-      };
+      if (b.type === "file") {
+        return {
+          id: String(b.id || createStudioBlock("file").id),
+          type: "file",
+          fileName: String(b.fileName || ""),
+          ext: String(b.ext || ""),
+          size: Number(b.size) || 0,
+          dataUrl: String(b.dataUrl || ""),
+        };
+      }
+      return null;
+    }).filter(Boolean);
+  }
+
+  function serializeStudioBlocksMeta(blocks) {
+    return cloneStudioBlocks(blocks).map((b) => {
+      if (b.type === "file") {
+        const stored = studioBlockFiles.get(b.id);
+        return {
+          ...b,
+          dataUrl: stored?.dataUrl || b.dataUrl || "",
+        };
+      }
+      return b;
     });
   }
 
-  function raceCraftToText(block) {
-    const mode = normalizeCraftMode(block.mode || "3x3");
-    if (mode === "smelt") return `Плавка: ${(block.smeltItem || "").trim() || "—"}`;
-    const size = mode === "2x2" ? 2 : 3;
-    const cells = Array.isArray(block.cells) ? block.cells : [];
-    const rows = [];
-    for (let r = 0; r < size; r += 1) {
-      rows.push(
-        Array.from({ length: size }, (_, c) => cells[r * size + c] || "0").join("|")
-      );
-    }
-    const legend = Object.entries(block.legend || {})
-      .filter(([sym]) => cells.includes(sym))
-      .map(([sym, name]) => `${sym} — ${name || "—"}`);
-    return [`Крафт ${size}×${size}:`, ...rows, ``, `Легенда:`, ...legend].join("\n");
+  function migrateItemBodyToBlocks(item) {
+    const blocks = cloneStudioBlocks(item.blocks);
+    if (blocks.length) return blocks;
+    const body = String(item.body || "").trim();
+    if (!body) return [];
+    const block = createStudioBlock("text");
+    block.body = body;
+    return [block];
   }
 
-  function formatBytes(n) {
-    if (!Number.isFinite(n) || n < 0) return "0 Б";
-    if (n < 1024) return `${n} Б`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} КБ`;
-    return `${(n / (1024 * 1024)).toFixed(1)} МБ`;
-  }
-
-  function syncRaceCraftLegend(block, legendEl) {
+  function syncStudioCraftLegend(block, legendEl) {
     if (!legendEl) return;
     if (!block.legend || typeof block.legend !== "object") block.legend = {};
     const cells = Array.isArray(block.cells) ? block.cells : [];
@@ -6008,7 +5986,7 @@
     });
   }
 
-  function renderRaceBlockCraft(block, bodyEl) {
+  function renderStudioBlockCraft(block, bodyEl) {
     const mode = normalizeCraftMode(block.mode || "3x3");
     block.mode = mode === "none" ? "3x3" : mode;
 
@@ -6035,7 +6013,7 @@
           for (let i = 0; i < Math.min(count, prevCells.length); i += 1) next[i] = prevCells[i] || "";
           block.cells = next;
         }
-        if (prev !== m) renderRaceBlocks();
+        if (prev !== m) renderStudioBlocks();
       });
       tabs.appendChild(btn);
     });
@@ -6084,22 +6062,22 @@
         const ch = inp.value.slice(-1).toUpperCase();
         inp.value = ch;
         block.cells[idx] = ch;
-        syncRaceCraftLegend(block, legend);
+        syncStudioCraftLegend(block, legend);
       });
       cell.appendChild(inp);
       grid.appendChild(cell);
     });
     bodyEl.appendChild(grid);
-    syncRaceCraftLegend(block, legend);
+    syncStudioCraftLegend(block, legend);
     bodyEl.appendChild(legend);
   }
 
-  function renderRaceBlocks() {
-    const list = document.getElementById("race-blocks-list");
+  function renderStudioBlocks() {
+    const list = document.getElementById("studio-blocks-list");
     if (!list) return;
     list.innerHTML = "";
 
-    raceBlocks.forEach((block, index) => {
+    studioEditBlocks.forEach((block, index) => {
       const card = document.createElement("section");
       card.className = "race-block";
       card.dataset.blockId = block.id;
@@ -6120,10 +6098,9 @@
       del.textContent = "×";
       del.title = "Удалить блок";
       del.addEventListener("click", () => {
-        raceBlockFiles.delete(block.id);
-        raceBlocks = raceBlocks.filter((b) => b.id !== block.id);
-        renderRaceBlocks();
-        saveFormToStorage();
+        studioBlockFiles.delete(block.id);
+        studioEditBlocks = studioEditBlocks.filter((b) => b.id !== block.id);
+        renderStudioBlocks();
       });
       head.append(title, del);
       card.appendChild(head);
@@ -6155,7 +6132,7 @@
         const ta = document.createElement("textarea");
         ta.className = "field-area race-block__textarea";
         ta.rows = 5;
-        ta.placeholder = "Текст блока в Markdown…";
+        ta.placeholder = "Опишите контент…";
         ta.value = block.body || "";
         ta.addEventListener("input", () => {
           block.body = ta.value;
@@ -6171,17 +6148,17 @@
         body.append(toolbar, ta);
         requestAnimationFrame(() => autosizeArea(ta));
       } else if (block.type === "craft") {
-        renderRaceBlockCraft(block, body);
-        } else {
+        renderStudioBlockCraft(block, body);
+      } else {
         const hint = document.createElement("p");
         hint.className = "field-hint";
-        hint.textContent = `Текстура, звук, модель, схематика или любой файл · до ${formatBytes(RACE_BLOCK_FILE_MAX)}`;
+        hint.textContent = `Текстура, звук, модель, схематика или любой файл · до ${formatBytes(STUDIO_BLOCK_FILE_MAX)}`;
         const fileRow = document.createElement("div");
         fileRow.className = "race-block__file-row";
+        const hasBytes = studioBlockFiles.has(block.id) || Boolean(block.dataUrl);
         if (block.fileName) {
           const name = document.createElement("div");
           name.className = "race-block__file-name";
-          const hasBytes = raceBlockFiles.has(block.id);
           name.textContent = hasBytes
             ? `${block.fileName} · ${formatBytes(block.size || 0)}`
             : `${block.fileName} · нужно выбрать файл снова`;
@@ -6192,15 +6169,15 @@
           clear.textContent = hasBytes ? "Убрать" : "Выбрать";
           clear.addEventListener("click", () => {
             if (hasBytes) {
-              raceBlockFiles.delete(block.id);
+              studioBlockFiles.delete(block.id);
               block.fileName = "";
               block.ext = "";
               block.size = 0;
-              renderRaceBlocks();
-              saveFormToStorage();
+              block.dataUrl = "";
+              renderStudioBlocks();
             } else {
-              raceBlockFileTargetId = block.id;
-              document.getElementById("race-block-file-input")?.click();
+              studioBlockFileTargetId = block.id;
+              document.getElementById("studio-block-file-input")?.click();
             }
           });
           fileRow.append(name, clear);
@@ -6210,8 +6187,8 @@
           pick.className = "mc-btn mc-btn--compact";
           pick.textContent = "Выбрать файл";
           pick.addEventListener("click", () => {
-            raceBlockFileTargetId = block.id;
-            document.getElementById("race-block-file-input")?.click();
+            studioBlockFileTargetId = block.id;
+            document.getElementById("studio-block-file-input")?.click();
           });
           fileRow.appendChild(pick);
         }
@@ -6223,59 +6200,70 @@
     });
   }
 
-  function addRaceBlock(type) {
-    raceBlocks.push(createRaceBlock(type));
-    renderRaceBlocks();
-    saveFormToStorage();
+  function addStudioBlock(type) {
+    studioEditBlocks.push(createStudioBlock(type));
+    renderStudioBlocks();
   }
 
-  document.getElementById("race-block-add-btn")?.addEventListener("click", () => {
-    const menu = document.getElementById("race-block-type-menu");
+  function bytesToDataUrl(bytes, mime) {
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return `data:${mime || "application/octet-stream"};base64,${btoa(binary)}`;
+  }
+
+  document.getElementById("studio-block-add-btn")?.addEventListener("click", () => {
+    const menu = document.getElementById("studio-block-type-menu");
     if (!menu) return;
     menu.hidden = !menu.hidden;
   });
 
-  document.getElementById("race-block-type-menu")?.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-race-block-type]");
+  document.getElementById("studio-block-type-menu")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-studio-block-type]");
     if (!btn) return;
-    addRaceBlock(btn.getAttribute("data-race-block-type"));
-    document.getElementById("race-block-type-menu").hidden = true;
+    addStudioBlock(btn.getAttribute("data-studio-block-type"));
+    document.getElementById("studio-block-type-menu").hidden = true;
   });
 
   document.addEventListener("click", (e) => {
-    const menu = document.getElementById("race-block-type-menu");
-    const addBtn = document.getElementById("race-block-add-btn");
+    const menu = document.getElementById("studio-block-type-menu");
+    const addBtn = document.getElementById("studio-block-add-btn");
     if (!menu || menu.hidden) return;
     if (menu.contains(e.target) || addBtn?.contains(e.target)) return;
     menu.hidden = true;
   });
 
-  document.getElementById("race-block-file-input")?.addEventListener("change", async (e) => {
+  document.getElementById("studio-block-file-input")?.addEventListener("change", async (e) => {
     const input = e.target;
     const file = input.files?.[0];
     input.value = "";
-    const block = raceBlocks.find((b) => b.id === raceBlockFileTargetId);
-    raceBlockFileTargetId = null;
+    const block = studioEditBlocks.find((b) => b.id === studioBlockFileTargetId);
+    studioBlockFileTargetId = null;
     if (!file || !block || block.type !== "file") return;
-    if (file.size > RACE_BLOCK_FILE_MAX) {
-      showToast(`Файл слишком большой (до ${formatBytes(RACE_BLOCK_FILE_MAX)})`);
+    if (file.size > STUDIO_BLOCK_FILE_MAX) {
+      showToast(`Файл слишком большой (до ${formatBytes(STUDIO_BLOCK_FILE_MAX)})`);
       return;
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
-    raceBlockFiles.set(block.id, {
+    const dataUrl = bytesToDataUrl(bytes, file.type || "application/octet-stream");
+    studioBlockFiles.set(block.id, {
       name: file.name,
       ext: extFromName(file.name),
       bytes,
       size: file.size,
+      dataUrl,
     });
     block.fileName = file.name;
     block.ext = extFromName(file.name);
     block.size = file.size;
-    renderRaceBlocks();
-    saveFormToStorage();
+    block.dataUrl = dataUrl;
+    renderStudioBlocks();
     showToast("Файл добавлен");
   });
 
+  /* ---------- Content form (item) ---------- */
   /* ---------- Content form (item) ---------- */
   const contentForm = document.getElementById("content-form");
   const contentSubmit = document.getElementById("content-submit");

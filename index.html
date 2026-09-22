@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=63" />
+  <link rel="stylesheet" href="styles.css?v=64" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -914,24 +914,6 @@
           ></textarea>
         </div>
 
-        <div class="field-block race-blocks-field">
-          <div class="field-label">
-            Дополнительные блоки
-            <span class="opt">необязательно</span>
-            <span class="field-tip" tabindex="0" data-tip="Можно добавить текст (Markdown), рецепт крафта или загрузку файла.">?</span>
-          </div>
-          <div class="race-blocks" id="race-blocks-list"></div>
-          <div class="race-blocks-add">
-            <button type="button" class="mc-btn mc-btn--compact mc-btn--ghost" id="race-block-add-btn">+ Добавить блок</button>
-            <div class="race-blocks-menu" id="race-block-type-menu" hidden role="menu">
-              <button type="button" class="race-blocks-menu__btn" data-race-block-type="text" role="menuitem">Текст</button>
-              <button type="button" class="race-blocks-menu__btn" data-race-block-type="craft" role="menuitem">Рецепт крафта</button>
-              <button type="button" class="race-blocks-menu__btn" data-race-block-type="file" role="menuitem">Загрузка контента</button>
-            </div>
-          </div>
-          <input id="race-block-file-input" type="file" hidden />
-        </div>
-
         <div class="field-block">
           <div class="field-label">
             Скины
@@ -1580,14 +1562,28 @@
       <button type="button" class="popup-close" id="studio-edit-modal-close" aria-label="Закрыть">×</button>
       <div class="auth-modal__panel studio-modal__panel studio-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="studio-edit-modal-title">
         <div class="auth-modal__head">
-          <h2 class="auth-modal__title" id="studio-edit-modal-title">Контент</h2>
-        </div>
-        <form class="studio-modal__form" id="studio-edit-form" novalidate>
+          <h2 class="auth-modal__title" id="studio-edit-modal-title">Анкета контента</h2>
           <p class="studio-edit__meta" id="studio-edit-meta"></p>
-          <div class="field-block studio-edit__body-block">
-            <label class="field-label" for="studio-edit-body">Текст</label>
-            <textarea class="field-area studio-edit__textarea" id="studio-edit-body" rows="12" placeholder="Опишите контент…"></textarea>
+        </div>
+        <form class="studio-modal__form studio-edit-form" id="studio-edit-form" novalidate>
+          <div class="field-block">
+            <label class="field-label" for="studio-edit-name">Название</label>
+            <input class="field-input" id="studio-edit-name" type="text" maxlength="64" required autocomplete="off" />
           </div>
+
+          <div class="field-block studio-blocks-field">
+            <div class="studio-blocks" id="studio-blocks-list"></div>
+            <div class="race-blocks-add">
+              <button type="button" class="mc-btn mc-btn--compact mc-btn--ghost" id="studio-block-add-btn">+ Добавить блок</button>
+              <div class="race-blocks-menu" id="studio-block-type-menu" hidden role="menu">
+                <button type="button" class="race-blocks-menu__btn" data-studio-block-type="text" role="menuitem">Текст</button>
+                <button type="button" class="race-blocks-menu__btn" data-studio-block-type="craft" role="menuitem">Рецепт крафта</button>
+                <button type="button" class="race-blocks-menu__btn" data-studio-block-type="file" role="menuitem">Загрузка контента</button>
+              </div>
+            </div>
+            <input id="studio-block-file-input" type="file" hidden />
+          </div>
+
           <div class="studio-modal__actions">
             <button type="submit" class="mc-btn">Сохранить</button>
           </div>
@@ -1646,6 +1642,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=63"></script>
+  <script src="script.js?v=64"></script>
 </body>
 </html>
