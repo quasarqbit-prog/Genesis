@@ -4626,13 +4626,21 @@
     return "";
   }
 
-  function appendStudioStar(visual, status, reason) {
-    if (!visual || !status) return;
+  function appendStudioStar(host, status, reason) {
+    if (!host || !status) return;
+    const tip = studioStatusTip(status, reason);
+    if (!tip) return;
     const star = document.createElement("span");
     star.className = `studio-tile__star studio-tile__star--${status}`;
     star.textContent = "★";
-    star.title = studioStatusTip(status, reason);
-    visual.appendChild(star);
+    star.setAttribute("data-tip", tip);
+    star.setAttribute("aria-label", tip);
+    star.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    star.addEventListener("pointerdown", (e) => e.stopPropagation());
+    host.appendChild(star);
   }
 
   function updateStudioSubtabsUi() {
@@ -4918,8 +4926,7 @@
               <span class="studio-tile__sub"></span>
             </span>
           `;
-          const visual = btn.querySelector(".catalog-card__visual");
-          appendStudioStar(visual, s.status || "pending", s.reason);
+          appendStudioStar(btn, s.status || "pending", s.reason);
           btn.querySelector(".studio-tile__name").textContent = s.folderName || "Папка";
           btn.querySelector(".studio-tile__sub").textContent = s.submitterMcNick || "—";
           btn.addEventListener("click", () => {
@@ -5008,9 +5015,8 @@
           </span>
           <span class="catalog-card__label"></span>
         `;
-        const visual = btn.querySelector(".catalog-card__visual");
         if (f.submissionStatus) {
-          appendStudioStar(visual, f.submissionStatus, f.submissionReason);
+          appendStudioStar(btn, f.submissionStatus, f.submissionReason);
         }
         btn.querySelector(".catalog-card__label").textContent = f.name;
         btn.addEventListener("click", () => {

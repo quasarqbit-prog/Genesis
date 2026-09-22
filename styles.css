@@ -912,14 +912,55 @@ h3,
 
 .studio-tile__star {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  z-index: 2;
+  top: 4px;
+  right: 4px;
+  z-index: 6;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 14px;
   line-height: 1;
   pointer-events: auto;
+  cursor: help;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+}
+
+.studio-tile__star::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  z-index: 40;
+  width: max-content;
+  max-width: min(240px, 70vw);
+  padding: 6px 8px;
+  border: 2px solid #b388ff;
+  background: rgba(16, 8, 28, 0.98);
+  color: #efe8ff;
+  font-family: var(--font-ded);
+  font-size: 11px;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-transform: none;
+  text-shadow: none;
+  filter: none;
+  white-space: normal;
+  text-align: left;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+
+.studio-tile__star:hover::after,
+.studio-tile__star:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
 }
 
 .studio-tile__star--pending {
@@ -1027,6 +1068,7 @@ h3,
 .studio-tile {
   appearance: none;
   margin: 0;
+  position: relative;
   position: relative;
   display: flex;
   flex-direction: column;
