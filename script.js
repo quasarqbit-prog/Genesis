@@ -701,11 +701,10 @@
     if (mcNick && mcNick !== fullNick) tipParts.push(`игра: ${mcNick}`);
     tipParts.push(`id ${id}`);
     const tip = escapeHtml(tipParts.join(" · "));
-    return `<article class="presence-user ${cls}" data-user-id="${id}" data-tip="${tip}">
+    return `<article class="presence-user ${cls}" data-user-id="${id}">
       <div class="presence-user__nick">${nick}</div>
-      <button type="button" class="presence-avatar" title="${tip}" aria-label="${tip}">${avatarHtml}</button>
+      <button type="button" class="presence-avatar" aria-label="${tip}">${avatarHtml}</button>
       <div class="presence-user__tg">${tg || "—"}</div>
-      <div class="presence-tip" hidden>${tip}</div>
     </article>`;
   }
 
@@ -732,13 +731,112 @@
     othersHost.querySelectorAll("img[data-avatar-base]").forEach(wirePresenceAvatarImg);
   }
 
-  function hidePresenceTips(exceptEl = null) {
-    document.querySelectorAll(".presence-user.is-tip-open").forEach((el) => {
-      if (exceptEl && el === exceptEl) return;
-      el.classList.remove("is-tip-open");
-      const tip = el.querySelector(".presence-tip");
-      if (tip) tip.hidden = true;
-    });
+  function findDirectoryUser(id) {
+    return directoryUsers.find((u) => Number(u.id) === Number(id)) || null;
+  }
+
+  function fillProfileAvatar(host, user, statusClass) {
+    if (!host) return;
+    host.classList.remove("is-site", "is-server", "is-banned", "is-offline");
+    host.classList.add(statusClass || "is-offline");
+    const img = host.querySelector("img");
+    const fallback = host.querySelector(
+      ".presence-mini__fallback, .user-profile-card__fallback, .presence-avatar__fallback"
+    );
+    const nick = String(user?.siteNick || user?.mcNick || "?").trim() || "?";
+    const url = playerAvatarSrc(user?.avatarUrl);
+    if (img && url) {
+      img.hidden = false;
+      img.onerror = () => {
+        img.hidden = true;
+        if (fallback) {
+          fallback.hidden = false;
+          fallback.textContent = nick.slice(0, 1).toUpperCase();
+        }
+      };
+      img.src = url;
+      if (fallback) fallback.hidden = true;
+    } else {
+      if (img) {
+        img.removeAttribute("src");
+        img.hidden = true;
+      }
+      if (fallback) {
+        fallback.hidden = false;
+        fallback.textContent = nick.slice(0, 1).toUpperCase();
+      }
+    }
+  }
+
+  function hidePresenceMini() {
+    const mini = document.getElementById("presence-mini-card");
+    if (mini) mini.hidden = true;
+  }
+
+  function showPresenceMini(user, clientX, clientY) {
+    const mini = document.getElementById("presence-mini-card");
+    if (!mini || !user || !isDesktopLayout()) return;
+    const nick = String(user.siteNick || user.mcNick || "—").trim() || "—";
+    const id = Number(user.id);
+    const status = presenceClass(user);
+    fillProfileAvatar(
+      document.getElementById("presence-mini-avatar"),
+      user,
+      status
+    );
+    const nickEl = document.getElementById("presence-mini-nick");
+    const idEl = document.getElementById("presence-mini-id");
+    if (nickEl) nickEl.textContent = nick;
+    if (idEl) idEl.textContent = `id ${id}`;
+    mini.hidden = false;
+    const pad = 14;
+    const rect = mini.getBoundingClientRect();
+    let left = clientX - rect.width - pad;
+    let top = clientY - rect.height / 2;
+    if (left < 8) left = clientX + pad;
+    if (top < 8) top = 8;
+    if (top + rect.height > window.innerHeight - 8) {
+      top = Math.max(8, window.innerHeight - rect.height - 8);
+    }
+    mini.style.left = `${Math.round(left)}px`;
+    mini.style.top = `${Math.round(top)}px`;
+  }
+
+  function setUserProfileDrawerOpen(open, user = null) {
+    const drawer = document.getElementById("user-profile-drawer");
+    if (!drawer) return;
+    if (!isDesktopLayout()) {
+      drawer.classList.remove("is-open");
+      drawer.setAttribute("aria-hidden", "true");
+      return;
+    }
+    if (open && user) {
+      const nick = String(user.siteNick || user.mcNick || "—").trim() || "—";
+      const mcNick = String(user.mcNick || "").trim();
+      const status = presenceClass(user);
+      fillProfileAvatar(
+        document.getElementById("user-profile-avatar"),
+        user,
+        status
+      );
+      const nickEl = document.getElementById("user-profile-nick");
+      const metaEl = document.getElementById("user-profile-meta");
+      const idEl = document.getElementById("user-profile-id");
+      if (nickEl) nickEl.textContent = nick;
+      if (metaEl) {
+        metaEl.textContent =
+          mcNick && mcNick !== nick ? `игра: ${mcNick}` : "";
+        metaEl.hidden = !metaEl.textContent;
+      }
+      if (idEl) idEl.textContent = `id ${Number(user.id)}`;
+      setSettingsDrawerOpen(false);
+      drawer.classList.add("is-open");
+      drawer.setAttribute("aria-hidden", "false");
+      hidePresenceMini();
+    } else {
+      drawer.classList.remove("is-open");
+      drawer.setAttribute("aria-hidden", "true");
+    }
   }
 
   function bindPresenceTips() {
@@ -746,43 +844,41 @@
     if (!rail || rail.dataset.tipBound === "1") return;
     rail.dataset.tipBound = "1";
 
-    rail.addEventListener("pointerover", (e) => {
+    rail.addEventListener("pointermove", (e) => {
+      if (!isDesktopLayout()) return;
       const avatar = e.target.closest(".presence-avatar");
-      if (!avatar || !rail.contains(avatar)) return;
+      if (!avatar || !rail.contains(avatar)) {
+        hidePresenceMini();
+        return;
+      }
       const card = avatar.closest(".presence-user");
-      if (!card) return;
-      hidePresenceTips(card);
-      card.classList.add("is-tip-open");
-      const tip = card.querySelector(".presence-tip");
-      if (tip) tip.hidden = false;
+      const id = Number(card?.getAttribute("data-user-id"));
+      const user = findDirectoryUser(id);
+      if (!user) {
+        hidePresenceMini();
+        return;
+      }
+      showPresenceMini(user, e.clientX, e.clientY);
     });
 
-    rail.addEventListener("pointerout", (e) => {
-      const card = e.target.closest(".presence-user");
-      if (!card || !rail.contains(card)) return;
-      const next = e.relatedTarget;
-      if (next && card.contains(next)) return;
-      card.classList.remove("is-tip-open");
-      const tip = card.querySelector(".presence-tip");
-      if (tip) tip.hidden = true;
+    rail.addEventListener("pointerleave", () => {
+      hidePresenceMini();
     });
 
     rail.addEventListener("click", (e) => {
       const avatar = e.target.closest(".presence-avatar");
       if (!avatar || !rail.contains(avatar)) return;
       e.preventDefault();
+      e.stopPropagation();
       const card = avatar.closest(".presence-user");
-      if (!card) return;
-      const open = !card.classList.contains("is-tip-open");
-      hidePresenceTips(open ? card : null);
-      card.classList.toggle("is-tip-open", open);
-      const tip = card.querySelector(".presence-tip");
-      if (tip) tip.hidden = !open;
-    });
-
-    document.addEventListener("click", (e) => {
-      if (e.target.closest(".presence-user")) return;
-      hidePresenceTips();
+      const id = Number(card?.getAttribute("data-user-id"));
+      const user = findDirectoryUser(id);
+      if (!user) return;
+      if (isDesktopLayout()) {
+        setUserProfileDrawerOpen(true, user);
+        return;
+      }
+      // мобилка: короткий title уже есть через aria-label
     });
   }
 
@@ -1011,6 +1107,7 @@
       if (btn) btn.setAttribute("aria-expanded", "false");
       return;
     }
+    if (next) setUserProfileDrawerOpen(false);
     drawer.classList.toggle("is-open", next);
     if (btn) btn.setAttribute("aria-expanded", next ? "true" : "false");
   }
@@ -2005,23 +2102,28 @@
     toggleSettingsDrawer();
   });
 
+  document.getElementById("settings-drawer-close")?.addEventListener("click", () => {
+    setSettingsDrawerOpen(false);
+  });
+
+  document.getElementById("user-profile-close")?.addEventListener("click", () => {
+    setUserProfileDrawerOpen(false);
+  });
+
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (isDesktopLayout()) setSettingsDrawerOpen(false);
+    if (!isDesktopLayout()) return;
+    setSettingsDrawerOpen(false);
+    setUserProfileDrawerOpen(false);
+    hidePresenceMini();
   });
 
   window.matchMedia("(min-width: 721px)").addEventListener("change", (e) => {
-    if (!e.matches) setSettingsDrawerOpen(false);
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!isDesktopLayout()) return;
-    const drawer = document.getElementById("settings-drawer");
-    if (!drawer?.classList.contains("is-open")) return;
-    if (e.target.closest("#settings-drawer") || e.target.closest("#profile-avatar-btn")) {
-      return;
+    if (!e.matches) {
+      setSettingsDrawerOpen(false);
+      setUserProfileDrawerOpen(false);
+      hidePresenceMini();
     }
-    setSettingsDrawerOpen(false);
   });
 
   document.querySelectorAll(".panel-subnav__btn[data-panel-tab]").forEach((btn) => {

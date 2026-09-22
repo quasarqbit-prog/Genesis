@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=20" />
+  <link rel="stylesheet" href="styles.css?v=21" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -55,6 +55,7 @@
       </aside>
 
       <div class="app-shell__main settings-drawer" id="settings-drawer">
+        <button type="button" class="drawer-close-btn" id="settings-drawer-close" aria-label="Закрыть настройки">×</button>
         <nav class="hub-nav" aria-label="Разделы">
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
           <button type="button" class="hub-nav__btn" data-hub-tab="panel" id="hub-tab-panel" hidden>Панель</button>
@@ -314,6 +315,32 @@
               </div>
             </div>
           </section>
+        </div>
+      </div>
+
+      <aside class="user-profile-drawer" id="user-profile-drawer" aria-hidden="true">
+        <button type="button" class="drawer-close-btn" id="user-profile-close" aria-label="Закрыть профиль">×</button>
+        <div class="user-profile-drawer__inner">
+          <div class="user-profile-card" id="user-profile-card">
+            <div class="user-profile-card__avatar is-offline" id="user-profile-avatar">
+              <img alt="" hidden />
+              <span class="user-profile-card__fallback">?</span>
+            </div>
+            <div class="user-profile-card__nick" id="user-profile-nick">—</div>
+            <div class="user-profile-card__meta" id="user-profile-meta"></div>
+            <div class="user-profile-card__id" id="user-profile-id">id —</div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="presence-mini" id="presence-mini-card" hidden>
+        <div class="presence-mini__avatar is-offline" id="presence-mini-avatar">
+          <img alt="" hidden />
+          <span class="presence-mini__fallback">?</span>
+        </div>
+        <div class="presence-mini__text">
+          <div class="presence-mini__nick" id="presence-mini-nick">—</div>
+          <div class="presence-mini__id" id="presence-mini-id">id —</div>
         </div>
       </div>
     </div>
@@ -1303,6 +1330,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=20"></script>
+  <script src="script.js?v=21"></script>
 </body>
 </html>
