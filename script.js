@@ -1437,6 +1437,7 @@
   let soundPrefs = {
     sfxVolume: 0.5,
     musicVolume: 0.2,
+    musicOn: true,
     orderMode: "forward",
     enabled: {},
     order: [],
@@ -1451,6 +1452,7 @@
   let soundMusicAudio = null;
   let soundPreviewAudio = null;
   let soundPreviewId = null;
+  let soundPreviewLoadingId = null;
   let soundPlaylistCursor = -1;
   let soundShuffleBag = [];
   let soundUnlockBound = false;
@@ -1464,6 +1466,7 @@
       const parsed = JSON.parse(raw);
       if (typeof parsed.sfxVolume === "number") soundPrefs.sfxVolume = clamp01(parsed.sfxVolume);
       if (typeof parsed.musicVolume === "number") soundPrefs.musicVolume = clamp01(parsed.musicVolume);
+      if (typeof parsed.musicOn === "boolean") soundPrefs.musicOn = parsed.musicOn;
       if (["forward", "reverse", "shuffle"].includes(parsed.orderMode)) {
         soundPrefs.orderMode = parsed.orderMode;
       }
@@ -1706,20 +1709,44 @@
   async function playMusicById(id, { preview = false } = {}) {
     const track = soundTracksById.get(id);
     if (!track) return;
+    if (!preview && !soundPrefs.musicOn) return;
     if (soundFailSkip.has(id) && !track.custom) return;
-    const src = await resolveTrackSrc(track);
-    if (!src) {
-      notifySoundLoadFail(id, null);
-      return;
-    }
 
     if (preview) {
+      // Pause button: stop preview of this track
+      if (
+        soundPreviewId === id &&
+        !soundPreviewLoadingId &&
+        soundPreviewAudio &&
+        !soundPreviewAudio.paused
+      ) {
+        stopMusicPreview();
+        ensureMusicPlaying();
+        renderSoundSettingsUi();
+        return;
+      }
+
       stopMusicPreview();
+      soundPreviewId = id;
+      soundPreviewLoadingId = id;
+      renderSoundSettingsUi();
+
+      const src = await resolveTrackSrc(track);
+      if (!src) {
+        notifySoundLoadFail(id, null);
+        stopMusicPreview();
+        renderSoundSettingsUi();
+        return;
+      }
+      // User switched to another preview while we resolved src
+      if (soundPreviewLoadingId !== id && soundPreviewId !== id) return;
+
       soundPreviewAudio = new Audio(src);
       soundPreviewAudio.volume = soundPrefs.musicVolume;
-      soundPreviewId = id;
+      soundPreviewAudio.preload = "auto";
       soundPreviewAudio.onended = () => {
-        soundPreviewId = null;
+        stopMusicPreview();
+        ensureMusicPlaying();
         renderSoundSettingsUi();
       };
       soundPreviewAudio.onerror = () => {
@@ -1727,13 +1754,31 @@
         stopMusicPreview();
         renderSoundSettingsUi();
       };
+      soundPreviewAudio.onplaying = () => {
+        if (soundPreviewId === id) {
+          soundPreviewLoadingId = null;
+          renderSoundSettingsUi();
+        }
+      };
+
+      if (soundMusicAudio && !soundMusicAudio.paused) soundMusicAudio.pause();
+
       try {
         await soundPreviewAudio.play();
+        if (soundPreviewId === id) soundPreviewLoadingId = null;
       } catch (err) {
         console.warn("Sound preview failed", err);
+        if (soundPreviewId === id) {
+          stopMusicPreview();
+        }
       }
-      if (soundMusicAudio && !soundMusicAudio.paused) soundMusicAudio.pause();
       renderSoundSettingsUi();
+      return;
+    }
+
+    const src = await resolveTrackSrc(track);
+    if (!src) {
+      notifySoundLoadFail(id, null);
       return;
     }
 
@@ -1748,7 +1793,6 @@
           soundFailSkip.add(failedId);
           notifySoundLoadFail(failedId, soundMusicAudio?.currentSrc || src);
         }
-        // Don't leave a "playing" silent element
         try {
           soundMusicAudio.pause();
           soundMusicAudio.removeAttribute("src");
@@ -1757,9 +1801,9 @@
           /* ignore */
         }
         delete soundMusicAudio.dataset.trackId;
-        // Avoid infinite skip loop when all enabled tracks are missing
         const list = getEnabledOrderedIds().filter((tid) => !soundFailSkip.has(tid));
         if (list.length) playNextMusicTrack();
+        else stopBackgroundMusic();
       });
     }
     soundMusicAudio.volume = soundPrefs.musicVolume;
@@ -1777,7 +1821,6 @@
       await soundMusicAudio.play();
     } catch (err) {
       console.warn("Sound play failed", id, src, err);
-      // NotAllowedError = wait for next user gesture
       if (err && err.name === "NotAllowedError") return;
       soundFailSkip.add(id);
       notifySoundLoadFail(id, src);
@@ -1790,19 +1833,46 @@
       soundPreviewAudio = null;
     }
     soundPreviewId = null;
+    soundPreviewLoadingId = null;
+  }
+
+  function stopBackgroundMusic() {
+    if (soundMusicAudio) {
+      try {
+        soundMusicAudio.pause();
+        soundMusicAudio.removeAttribute("src");
+        soundMusicAudio.load();
+      } catch (_) {
+        /* ignore */
+      }
+      delete soundMusicAudio.dataset.trackId;
+    }
+    soundPlaylistCursor = -1;
   }
 
   function playNextMusicTrack() {
+    if (!soundPrefs.musicOn) {
+      stopBackgroundMusic();
+      return;
+    }
     const list = getEnabledOrderedIds().filter((id) => !soundFailSkip.has(id));
-    if (!list.length) return;
+    if (!list.length) {
+      stopBackgroundMusic();
+      return;
+    }
     soundPlaylistCursor = (soundPlaylistCursor + 1) % list.length;
     playMusicById(list[soundPlaylistCursor]);
   }
 
   function ensureMusicPlaying() {
+    if (!soundPrefs.musicOn) return;
     if (soundPrefs.musicVolume <= 0.001) return;
+    if (soundPreviewId) return;
     const list = getEnabledOrderedIds().filter((id) => !soundFailSkip.has(id));
-    if (!list.length) return;
+    if (!list.length) {
+      stopBackgroundMusic();
+      return;
+    }
     if (
       soundMusicAudio &&
       !soundMusicAudio.paused &&
@@ -1866,15 +1936,29 @@
     row.draggable = true;
     row.dataset.trackId = track.id;
 
+    const isLoading = soundPreviewLoadingId === track.id;
+    const isPlaying =
+      soundPreviewId === track.id && !isLoading && soundPreviewAudio && !soundPreviewAudio.paused;
+
     const playBtn = document.createElement("button");
     playBtn.type = "button";
     playBtn.className = "sound-track__play";
-    if (soundPreviewId === track.id) playBtn.classList.add("is-active");
-    playBtn.textContent = soundPreviewId === track.id ? "■" : "▶";
-    playBtn.title = "Прослушать";
+    if (isLoading) playBtn.classList.add("is-loading");
+    if (isPlaying) playBtn.classList.add("is-active", "is-playing");
+    if (isLoading) {
+      playBtn.innerHTML = '<span class="sound-track__spinner" aria-hidden="true"></span>';
+      playBtn.title = "Загрузка…";
+    } else if (isPlaying) {
+      playBtn.textContent = "❚❚";
+      playBtn.title = "Пауза";
+    } else {
+      playBtn.textContent = "▶";
+      playBtn.title = "Прослушать";
+    }
     playBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (soundPreviewId === track.id) {
+      if (isLoading) return;
+      if (isPlaying) {
         stopMusicPreview();
         ensureMusicPlaying();
         renderSoundSettingsUi();
@@ -1899,7 +1983,14 @@
       soundPrefs.enabled[track.id] = !soundPrefs.enabled[track.id];
       soundShuffleBag = [];
       saveSoundPrefs();
-      if (!soundPrefs.enabled[track.id] && soundMusicAudio?.dataset.trackId === track.id) {
+      const list = getEnabledOrderedIds();
+      if (!list.length) {
+        stopBackgroundMusic();
+        stopMusicPreview();
+      } else if (
+        !soundPrefs.enabled[track.id] &&
+        soundMusicAudio?.dataset.trackId === track.id
+      ) {
         playNextMusicTrack();
       } else {
         ensureMusicPlaying();
@@ -2013,11 +2104,12 @@
     body.hidden = collapsed;
 
     if (!collapsed) {
-      getChildFolders(folderId).forEach((child) => {
-        renderSoundFolder(child.id, body, listEl, true);
-      });
+      // Tracks first (e.g. amethyst), then subfolders
       getTracksInFolder(folderId).forEach((track) => {
         body.appendChild(makeTrackRow(track, listEl));
+      });
+      getChildFolders(folderId).forEach((child) => {
+        renderSoundFolder(child.id, body, listEl, true);
       });
     }
 
@@ -2038,6 +2130,14 @@
     document.querySelectorAll("[data-sound-order]").forEach((btn) => {
       btn.classList.toggle("is-active", btn.getAttribute("data-sound-order") === soundPrefs.orderMode);
     });
+
+    const masterBtn = document.getElementById("sound-music-master");
+    if (masterBtn) {
+      const on = Boolean(soundPrefs.musicOn);
+      masterBtn.classList.toggle("is-on", on);
+      masterBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      masterBtn.textContent = on ? "Музыка: Вкл" : "Музыка: Выкл";
+    }
 
     const listEl = document.getElementById("sound-music-list");
     if (!listEl || !soundReady) return;
@@ -2119,6 +2219,17 @@
     });
     document.getElementById("sound-new-folder-btn")?.addEventListener("click", () => {
       createSoundFolder(null);
+    });
+    document.getElementById("sound-music-master")?.addEventListener("click", () => {
+      soundPrefs.musicOn = !soundPrefs.musicOn;
+      saveSoundPrefs();
+      if (!soundPrefs.musicOn) {
+        stopMusicPreview();
+        stopBackgroundMusic();
+      } else {
+        ensureMusicPlaying();
+      }
+      renderSoundSettingsUi();
     });
     document.getElementById("sound-upload-input")?.addEventListener("change", async (e) => {
       const files = [...(e.target.files || [])];

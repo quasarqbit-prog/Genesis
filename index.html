@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=58" />
+  <link rel="stylesheet" href="styles.css?v=59" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -396,6 +396,13 @@
                 </div>
                 <input id="sound-upload-input" type="file" accept="audio/*,.ogg,.mp3,.wav,.m4a" multiple hidden />
                 <input id="sound-upload-folder-id" type="hidden" value="" />
+
+                <button
+                  type="button"
+                  class="sound-master-toggle is-on"
+                  id="sound-music-master"
+                  aria-pressed="true"
+                >Музыка: Вкл</button>
 
                 <div class="sound-music-list" id="sound-music-list"></div>
 
@@ -1620,6 +1627,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=58"></script>
+  <script src="script.js?v=59"></script>
 </body>
 </html>

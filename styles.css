@@ -2192,6 +2192,30 @@ h3,
   flex: 1 1 auto;
 }
 
+.sound-master-toggle {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 2px solid rgba(107, 90, 138, 0.55);
+  background: rgba(16, 9, 28, 0.9);
+  color: var(--muted);
+  font-family: var(--font-ded);
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.sound-master-toggle.is-on {
+  color: var(--accent);
+  border-color: rgba(196, 255, 77, 0.5);
+  background: rgba(196, 255, 77, 0.08);
+}
+
 .sound-group__head {
   display: flex;
   align-items: center;
@@ -2324,6 +2348,33 @@ h3,
 .sound-track__play.is-active {
   border-color: var(--accent);
   background: rgba(196, 255, 77, 0.12);
+}
+
+.sound-track__play.is-loading {
+  pointer-events: none;
+  color: var(--accent);
+}
+
+.sound-track__play.is-playing {
+  font-size: 10px;
+  letter-spacing: -1px;
+}
+
+.sound-track__spinner {
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin: 0 auto;
+  border: 2px solid rgba(196, 255, 77, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: sound-spin 0.7s linear infinite;
+}
+
+@keyframes sound-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .sound-track__name {
