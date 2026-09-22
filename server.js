@@ -29,6 +29,7 @@ const TELEGRAM_BOT_USERNAME = (process.env.TELEGRAM_BOT_USERNAME || "").replace(
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 const AVATARS_DIR = path.join(UPLOADS_DIR, "avatars");
 const MODS_DIR = path.join(UPLOADS_DIR, "mods");
+const ORDERS_DIR = path.join(UPLOADS_DIR, "orders");
 const DATA_DIR = path.join(__dirname, "data");
 const RULES_FILE = path.join(DATA_DIR, "rules.json");
 const RULES_DEFAULT_FILE = path.join(__dirname, "rules-default.json");
@@ -87,6 +88,7 @@ const pool = mysql.createPool({
 function ensureUploadDirs() {
   fs.mkdirSync(AVATARS_DIR, { recursive: true });
   fs.mkdirSync(MODS_DIR, { recursive: true });
+  fs.mkdirSync(ORDERS_DIR, { recursive: true });
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
@@ -512,6 +514,33 @@ async function ensureSchema() {
         FOREIGN KEY (submitter_id) REFERENCES users (id)
         ON DELETE CASCADE,
       CONSTRAINT fk_studio_sub_reviewer
+        FOREIGN KEY (reviewed_by) REFERENCES users (id)
+        ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      submitter_id INT UNSIGNED NOT NULL,
+      submitter_mc_nick VARCHAR(16) NOT NULL,
+      kind ENUM('skin', 'model') NOT NULL,
+      description TEXT NOT NULL,
+      refs_json JSON NULL,
+      results_json JSON NULL,
+      status ENUM('pending', 'rejected', 'approved', 'ready') NOT NULL DEFAULT 'pending',
+      reason TEXT NULL,
+      reviewed_by INT UNSIGNED NULL,
+      reviewed_at TIMESTAMP NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_orders_submitter (submitter_id),
+      KEY idx_orders_status (status),
+      CONSTRAINT fk_orders_user
+        FOREIGN KEY (submitter_id) REFERENCES users (id)
+        ON DELETE CASCADE,
+      CONSTRAINT fk_orders_reviewer
         FOREIGN KEY (reviewed_by) REFERENCES users (id)
         ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -3183,6 +3212,304 @@ app.delete("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
   } catch (err) {
     console.error("studio delete:", err);
     return res.status(500).json({ error: "Не удалось удалить анкету" });
+  }
+});
+
+function parseJsonField(raw, fallback = []) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object") return raw;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
+function mapOrderRow(row) {
+  return {
+    id: Number(row.id),
+    submitterId: Number(row.submitter_id),
+    submitterMcNick: String(row.submitter_mc_nick || ""),
+    kind: String(row.kind || "skin"),
+    description: String(row.description || ""),
+    refs: parseJsonField(row.refs_json, []),
+    results: parseJsonField(row.results_json, []),
+    status: String(row.status || "pending"),
+    reason: row.reason != null ? String(row.reason) : "",
+    reviewedBy: row.reviewed_by != null ? Number(row.reviewed_by) : null,
+    reviewedAt: row.reviewed_at || null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
+function decodeDataUrlFile(dataUrl) {
+  const m = String(dataUrl || "").match(/^data:([^;]+);base64,(.+)$/i);
+  if (!m) return null;
+  try {
+    return {
+      mime: m[1],
+      buffer: Buffer.from(m[2], "base64"),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function safeOrderFileName(name, fallback = "file.png") {
+  const base = path.basename(String(name || fallback)).replace(/[^\w.\-]+/g, "_");
+  return (base || fallback).slice(0, 120);
+}
+
+async function saveOrderFiles(orderId, folder, files) {
+  const dir = path.join(ORDERS_DIR, String(orderId), folder);
+  fs.mkdirSync(dir, { recursive: true });
+  const saved = [];
+  for (const file of files) {
+    const decoded = decodeDataUrlFile(file?.dataUrl);
+    if (!decoded || !decoded.buffer.length) continue;
+    if (decoded.buffer.length > 4 * 1024 * 1024) continue;
+    const id = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const name = safeOrderFileName(file.name, `${id}.png`);
+    const abs = path.join(dir, `${id}__${name}`);
+    fs.writeFileSync(abs, decoded.buffer);
+    saved.push({
+      id,
+      name,
+      mime: decoded.mime || "application/octet-stream",
+      size: decoded.buffer.length,
+      path: `/uploads/orders/${orderId}/${folder}/${id}__${name}`,
+    });
+    if (saved.length >= 12) break;
+  }
+  return saved;
+}
+
+app.get("/api/orders/assets", (_req, res) => {
+  try {
+    const skinDir = path.join(__dirname, "assets", "model", "skin");
+    let skins = [];
+    if (fs.existsSync(skinDir)) {
+      skins = fs
+        .readdirSync(skinDir)
+        .filter((f) => /\.png$/i.test(f))
+        .map((f) => `/assets/model/skin/${encodeURIComponent(f)}`);
+    }
+    return res.json({
+      ok: true,
+      skins,
+      modelTexture: "/assets/model/model/texture.png",
+    });
+  } catch (err) {
+    console.error("orders assets:", err);
+    return res.status(500).json({ error: "Не удалось загрузить превью" });
+  }
+});
+
+app.post("/api/orders", authMiddleware, async (req, res) => {
+  try {
+    const kind = String(req.body?.kind || "").trim() === "model" ? "model" : "skin";
+    const description = String(req.body?.description || "").trim().slice(0, 4000);
+    if (!description) {
+      return res.status(400).json({ error: "Опишите заказ" });
+    }
+    const refsIn = Array.isArray(req.body?.refs) ? req.body.refs : [];
+    const mcNick = String(req.user.mcNick || "").slice(0, 16) || "unknown";
+    const [result] = await pool.execute(
+      `INSERT INTO orders
+        (submitter_id, submitter_mc_nick, kind, description, refs_json, results_json, status)
+       VALUES
+        (:submitterId, :submitterMcNick, :kind, :description, CAST('[]' AS JSON), CAST('[]' AS JSON), 'pending')`,
+      {
+        submitterId: Number(req.user.id),
+        submitterMcNick: mcNick,
+        kind,
+        description,
+      }
+    );
+    const id = Number(result.insertId);
+    const refs = await saveOrderFiles(id, "refs", refsIn);
+    await pool.execute(
+      `UPDATE orders SET refs_json = :refsJson WHERE id = :id`,
+      { id, refsJson: JSON.stringify(refs) }
+    );
+    const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    return res.json({ ok: true, order: mapOrderRow(rows[0]) });
+  } catch (err) {
+    console.error("orders create:", err);
+    return res.status(500).json({ error: "Не удалось отправить заказ" });
+  }
+});
+
+app.get("/api/orders/mine", authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT * FROM orders WHERE submitter_id = :uid ORDER BY updated_at DESC LIMIT 200`,
+      { uid: req.user.id }
+    );
+    return res.json({ ok: true, orders: rows.map(mapOrderRow) });
+  } catch (err) {
+    console.error("orders mine:", err);
+    return res.status(500).json({ error: "Не удалось загрузить заказы" });
+  }
+});
+
+app.get("/api/orders", authMiddleware, async (req, res) => {
+  try {
+    await refreshUserRole(req);
+    if (req.user?.role !== "founder") {
+      return res.status(403).json({ error: "Только основатель" });
+    }
+    const [rows] = await pool.execute(
+      `SELECT * FROM orders
+       ORDER BY FIELD(status, 'pending', 'approved', 'ready', 'rejected'), updated_at DESC
+       LIMIT 500`
+    );
+    return res.json({ ok: true, orders: rows.map(mapOrderRow) });
+  } catch (err) {
+    console.error("orders list:", err);
+    return res.status(500).json({ error: "Не удалось загрузить заказы" });
+  }
+});
+
+app.get("/api/orders/:id", authMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    await refreshUserRole(req);
+    const order = mapOrderRow(rows[0]);
+    if (req.user.role !== "founder" && Number(order.submitterId) !== Number(req.user.id)) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    return res.json({ ok: true, order });
+  } catch (err) {
+    console.error("orders get:", err);
+    return res.status(500).json({ error: "Не удалось загрузить заказ" });
+  }
+});
+
+app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const status = String(req.body?.status || "").trim();
+    if (!["rejected", "approved", "ready"].includes(status)) {
+      return res.status(400).json({ error: "Некорректный статус" });
+    }
+    const reason = String(req.body?.reason || "").trim().slice(0, 2000);
+    if (status === "rejected" && !reason) {
+      return res.status(400).json({ error: "Укажите причину отклонения" });
+    }
+    const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    const current = String(rows[0].status || "pending");
+    if (status === "ready" && current !== "approved" && current !== "ready") {
+      return res.status(400).json({ error: "Сначала примите заказ" });
+    }
+    await pool.execute(
+      `UPDATE orders
+       SET status = :status,
+           reason = :reason,
+           reviewed_by = :reviewedBy,
+           reviewed_at = CURRENT_TIMESTAMP
+       WHERE id = :id`,
+      {
+        id,
+        status,
+        reason: status === "rejected" ? reason : rows[0].reason || null,
+        reviewedBy: req.user.id,
+      }
+    );
+    const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    return res.json({ ok: true, order: mapOrderRow(next[0]) });
+  } catch (err) {
+    console.error("orders patch:", err);
+    const status = err.status || 500;
+    return res.status(status).json({ error: err.message || "Не удалось обновить заказ" });
+  }
+});
+
+app.post("/api/orders/:id/results", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    const current = String(rows[0].status || "pending");
+    if (current !== "approved" && current !== "ready") {
+      return res.status(400).json({ error: "Сначала примите заказ" });
+    }
+    const filesIn = Array.isArray(req.body?.files) ? req.body.files : [];
+    if (!filesIn.length) {
+      return res.status(400).json({ error: "Прикрепите хотя бы один файл" });
+    }
+    const prev = parseJsonField(rows[0].results_json, []);
+    const added = await saveOrderFiles(id, "results", filesIn);
+    if (!added.length) {
+      return res.status(400).json({ error: "Не удалось сохранить файлы" });
+    }
+    const results = [...prev, ...added].slice(0, 24);
+    await pool.execute(
+      `UPDATE orders
+       SET results_json = :resultsJson,
+           status = 'ready',
+           reviewed_by = :reviewedBy,
+           reviewed_at = CURRENT_TIMESTAMP
+       WHERE id = :id`,
+      {
+        id,
+        resultsJson: JSON.stringify(results),
+        reviewedBy: req.user.id,
+      }
+    );
+    const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    return res.json({ ok: true, order: mapOrderRow(next[0]) });
+  } catch (err) {
+    console.error("orders results:", err);
+    const status = err.status || 500;
+    return res.status(status).json({ error: err.message || "Не удалось прикрепить файлы" });
+  }
+});
+
+app.get("/api/orders/:id/files/:folder/:fileId", authMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const folder = String(req.params.folder || "");
+    const fileId = String(req.params.fileId || "");
+    if (!Number.isFinite(id) || !["refs", "results"].includes(folder) || !fileId) {
+      return res.status(400).json({ error: "Bad request" });
+    }
+    const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    await refreshUserRole(req);
+    const order = mapOrderRow(rows[0]);
+    if (req.user.role !== "founder" && Number(order.submitterId) !== Number(req.user.id)) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    const list = folder === "refs" ? order.refs : order.results;
+    const file = (Array.isArray(list) ? list : []).find((f) => String(f.id) === fileId);
+    if (!file?.path) return res.status(404).json({ error: "Файл не найден" });
+    const abs = path.join(__dirname, String(file.path).replace(/^\//, ""));
+    if (!abs.startsWith(path.join(ORDERS_DIR, String(id))) || !fs.existsSync(abs)) {
+      return res.status(404).json({ error: "Файл не найден" });
+    }
+    res.setHeader("Content-Type", file.mime || "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${String(file.name || "file").replace(/"/g, "")}"`
+    );
+    return res.sendFile(abs);
+  } catch (err) {
+    console.error("orders file:", err);
+    return res.status(500).json({ error: "Не удалось скачать файл" });
   }
 });
 

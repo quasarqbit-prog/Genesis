@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=71" />
+  <link rel="stylesheet" href="styles.css?v=72" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -33,6 +33,7 @@
             Сервер<span class="main-tabs__badge" id="server-tab-badge" hidden>!</span>
           </button>
           <button type="button" class="main-tabs__btn" data-main-tab="patch">Патч-ноут</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="orders">Заказы</button>
         </nav>
 
         <div class="main-tab-panels" id="main-tab-panels">
@@ -178,6 +179,50 @@
               </div>
               <div class="patch-list" id="patch-list"></div>
               <p class="patch-empty__text" id="patch-empty">Патч-ноут пока пуст</p>
+            </div>
+          </div>
+
+          <div class="main-tab-panel" data-main-panel="orders" id="main-panel-orders" hidden>
+            <div class="orders-workspace" id="orders-workspace">
+              <nav class="orders-subtabs" id="orders-subtabs" aria-label="Разделы заказов">
+                <button type="button" class="orders-subtabs__btn is-active" data-orders-tab="create">Заказать</button>
+                <button type="button" class="orders-subtabs__btn" data-orders-tab="list">Анкеты</button>
+              </nav>
+              <div class="orders-create" id="orders-create-panel">
+                <div class="orders-type-grid" id="orders-type-grid">
+                  <button type="button" class="orders-type-card" id="orders-type-skin" data-order-kind="skin">
+                    <span class="orders-type-card__preview">
+                      <canvas class="orders-skin-canvas" id="orders-skin-preview" width="96" height="128" aria-hidden="true"></canvas>
+                    </span>
+                    <span class="orders-type-card__label">Скин</span>
+                  </button>
+                  <button type="button" class="orders-type-card" id="orders-type-model" data-order-kind="model">
+                    <span class="orders-type-card__preview">
+                      <img class="orders-model-preview" id="orders-model-preview" src="assets/model/model/texture.png" alt="" draggable="false" />
+                    </span>
+                    <span class="orders-type-card__label">Модель</span>
+                  </button>
+                </div>
+              </div>
+              <div class="orders-list-panel" id="orders-list-panel" hidden>
+                <div class="orders-grid" id="orders-grid" role="list"></div>
+                <p class="orders-empty" id="orders-empty" hidden>Пока нет заказов</p>
+              </div>
+              <div class="orders-detail" id="orders-detail" hidden>
+                <header class="orders-detail__bar">
+                  <button type="button" class="orders-detail__back" id="orders-detail-back">← Назад</button>
+                  <h2 class="orders-detail__title" id="orders-detail-title"></h2>
+                </header>
+                <div class="orders-detail__body" id="orders-detail-body"></div>
+                <div class="orders-detail__actions" id="orders-detail-actions" hidden>
+                  <button type="button" class="mc-btn mc-btn--ghost" id="orders-reject-btn">Отклонить</button>
+                  <button type="button" class="mc-btn" id="orders-approve-btn">Принять</button>
+                  <label class="mc-btn orders-attach-btn" id="orders-attach-label" hidden>
+                    Прикрепить скины
+                    <input id="orders-attach-input" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" multiple hidden />
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1673,6 +1718,66 @@
     </div>
   </div>
 
+  <div class="auth-modal ui-layer" id="orders-form-modal" hidden>
+    <div class="popup-shell popup-shell--wide">
+      <button type="button" class="popup-close" id="orders-form-modal-close" aria-label="Закрыть">×</button>
+      <div class="auth-modal__panel studio-modal__panel studio-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="orders-form-modal-title">
+        <div class="auth-modal__head">
+          <h2 class="auth-modal__title" id="orders-form-modal-title">Заказ</h2>
+        </div>
+        <form class="studio-modal__form" id="orders-form" novalidate>
+          <div class="field-block">
+            <label class="field-label" for="orders-form-desc">
+              Описание
+              <span class="req">*</span>
+            </label>
+            <textarea class="field-area" id="orders-form-desc" rows="5" required placeholder="Что должно быть на скине / модели…"></textarea>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="orders-form-refs-btn">
+              Референсы
+              <span class="opt">необязательно</span>
+            </label>
+            <div class="orders-refs-row">
+              <button type="button" class="mc-btn mc-btn--compact" id="orders-form-refs-btn">Прикрепить файлы</button>
+              <input id="orders-form-refs-input" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" multiple hidden />
+            </div>
+            <div class="orders-refs-list" id="orders-form-refs-list"></div>
+          </div>
+          <p class="field-error" id="orders-form-error" hidden></p>
+          <div class="studio-modal__actions">
+            <button type="submit" class="mc-btn" id="orders-form-submit">Отправить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="auth-modal ui-layer" id="orders-reject-modal" hidden>
+    <div class="popup-shell">
+      <button type="button" class="popup-close" id="orders-reject-modal-close" aria-label="Закрыть">×</button>
+      <div class="auth-modal__panel" role="dialog" aria-modal="true" aria-labelledby="orders-reject-modal-title">
+        <div class="auth-modal__head">
+          <h2 class="auth-modal__title" id="orders-reject-modal-title">Отклонить заказ</h2>
+        </div>
+        <form class="studio-modal__form" id="orders-reject-form" novalidate>
+          <div class="field-block">
+            <label class="field-label" for="orders-reject-reason">Причина</label>
+            <textarea class="field-area" id="orders-reject-reason" rows="4" required placeholder="Почему отклонено…"></textarea>
+          </div>
+          <div class="studio-modal__actions">
+            <button type="submit" class="mc-btn">Отклонить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="studio-ctx" id="orders-item-menu" hidden>
+    <button type="button" class="studio-ctx__btn" data-orders-act="open">Открыть</button>
+    <button type="button" class="studio-ctx__btn" data-orders-act="download" hidden>Скачать скины</button>
+  </div>
+
   <div class="patch-editor" id="patch-editor" hidden>
     <div class="popup-shell popup-shell--wide">
       <button type="button" class="popup-close" id="patch-editor-close" aria-label="Закрыть">×</button>
@@ -1723,6 +1828,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=71"></script>
+  <script src="script.js?v=72"></script>
 </body>
 </html>
