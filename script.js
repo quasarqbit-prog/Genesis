@@ -3477,11 +3477,32 @@
   ];
 
   const STUDIO_STORAGE_KEY = "genesis_studio_v1";
+  const STUDIO_DEFAULT_COLOR = "#8ec8ff";
+  const STUDIO_COLOR_SWATCHES = [
+    "#8ec8ff",
+    "#c4ff4d",
+    "#fb7185",
+    "#fbbf24",
+    "#a78bfa",
+    "#34d399",
+    "#f472b6",
+    "#e2e8f0",
+  ];
   let studioDoc = { folders: [] };
   let studioOpenFolderId = null;
   let studioSelectedTypeId = null;
   let studioEditingItemId = null;
   let studioRenamingFolderId = null;
+  let studioCtxFolderId = null;
+
+  function normalizeStudioColor(value) {
+    const raw = String(value || "").trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw.toLowerCase();
+    if (/^#[0-9a-fA-F]{3}$/.test(raw)) {
+      return `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`.toLowerCase();
+    }
+    return STUDIO_DEFAULT_COLOR;
+  }
 
   function studioUid(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -3500,6 +3521,7 @@
           ? parsed.folders.map((f) => ({
               id: String(f.id || studioUid("folder")),
               name: String(f.name || "Папка"),
+              color: normalizeStudioColor(f.color),
               createdAt: Number(f.createdAt) || Date.now(),
               items: Array.isArray(f.items)
                 ? f.items.map((it) => ({
@@ -3572,14 +3594,65 @@
     });
   }
 
+  function setStudioFolderColorInput(color) {
+    const input = document.getElementById("studio-folder-color");
+    const value = normalizeStudioColor(color);
+    if (input) input.value = value;
+    document.querySelectorAll("#studio-folder-swatches .studio-color-swatch").forEach((btn) => {
+      btn.classList.toggle("is-selected", normalizeStudioColor(btn.dataset.color) === value);
+    });
+  }
+
+  function renderStudioColorSwatches() {
+    const wrap = document.getElementById("studio-folder-swatches");
+    if (!wrap || wrap.childElementCount) return;
+    STUDIO_COLOR_SWATCHES.forEach((color) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "studio-color-swatch";
+      btn.dataset.color = color;
+      btn.style.setProperty("--swatch", color);
+      btn.title = color;
+      btn.setAttribute("aria-label", `Цвет ${color}`);
+      btn.addEventListener("click", () => setStudioFolderColorInput(color));
+      wrap.appendChild(btn);
+    });
+  }
+
+  function hideStudioFolderMenu() {
+    const menu = document.getElementById("studio-folder-menu");
+    if (!menu) return;
+    menu.hidden = true;
+    studioCtxFolderId = null;
+  }
+
+  function showStudioFolderMenu(folderId, clientX, clientY) {
+    const menu = document.getElementById("studio-folder-menu");
+    if (!menu) return;
+    studioCtxFolderId = folderId;
+    menu.hidden = false;
+    const pad = 8;
+    const rect = menu.getBoundingClientRect();
+    const w = rect.width || 160;
+    const h = rect.height || 120;
+    let left = clientX;
+    let top = clientY;
+    if (left + w > window.innerWidth - pad) left = window.innerWidth - w - pad;
+    if (top + h > window.innerHeight - pad) top = window.innerHeight - h - pad;
+    menu.style.left = `${Math.max(pad, left)}px`;
+    menu.style.top = `${Math.max(pad, top)}px`;
+  }
+
   function openStudioFolderModal() {
     studioRenamingFolderId = null;
+    renderStudioColorSwatches();
     const title = document.getElementById("studio-folder-modal-title");
-    const submit = document.querySelector("#studio-folder-form button[type='submit']");
+    const submit = document.getElementById("studio-folder-submit");
     const input = document.getElementById("studio-folder-name");
     if (title) title.textContent = "Новая папка";
     if (submit) submit.textContent = "Создать";
     if (input) input.value = "";
+    setStudioFolderColorInput(STUDIO_DEFAULT_COLOR);
     openStudioModal("studio-folder-modal");
     requestAnimationFrame(() => input?.focus());
   }
@@ -3588,12 +3661,14 @@
     const folder = getStudioFolder(folderId);
     if (!folder) return;
     studioRenamingFolderId = folderId;
+    renderStudioColorSwatches();
     const title = document.getElementById("studio-folder-modal-title");
-    const submit = document.querySelector("#studio-folder-form button[type='submit']");
+    const submit = document.getElementById("studio-folder-submit");
     const input = document.getElementById("studio-folder-name");
-    if (title) title.textContent = "Переименовать папку";
+    if (title) title.textContent = "Редактировать папку";
     if (submit) submit.textContent = "Сохранить";
     if (input) input.value = folder.name;
+    setStudioFolderColorInput(folder.color || STUDIO_DEFAULT_COLOR);
     openStudioModal("studio-folder-modal");
     requestAnimationFrame(() => {
       input?.focus();
@@ -3646,93 +3721,44 @@
 
       const plus = document.createElement("button");
       plus.type = "button";
-      plus.className = "studio-tile studio-tile--plus";
+      plus.className = "studio-tile studio-tile--plus catalog-card";
       plus.setAttribute("role", "listitem");
       plus.innerHTML = `
-        <span class="studio-tile__plus" aria-hidden="true">+</span>
-        <span class="studio-tile__label">Новая папка</span>
+        <span class="catalog-card__visual" aria-hidden="true">
+          <span class="catalog-card__shadow"></span>
+          <img class="catalog-card__img" src="assets/add.png" alt="" draggable="false" />
+        </span>
+        <span class="catalog-card__label">Новая папка</span>
       `;
       plus.addEventListener("click", () => openStudioFolderModal());
       grid.appendChild(plus);
 
       studioDoc.folders.forEach((f) => {
-        const wrap = document.createElement("div");
-        wrap.className = "studio-tile-wrap";
-        wrap.setAttribute("role", "listitem");
-
+        const color = normalizeStudioColor(f.color);
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "studio-tile studio-tile--folder";
+        btn.className = "studio-tile studio-tile--folder catalog-card";
+        btn.setAttribute("role", "listitem");
+        btn.style.setProperty("--section-accent", color);
         btn.innerHTML = `
-          <span class="studio-tile__label"></span>
-          <span class="studio-tile__folder-mark" aria-hidden="true"></span>
+          <span class="catalog-card__visual" aria-hidden="true">
+            <span class="catalog-card__shadow"></span>
+            <img class="catalog-card__img" src="assets/folder.png" alt="" draggable="false" />
+          </span>
+          <span class="catalog-card__label"></span>
         `;
-        btn.querySelector(".studio-tile__label").textContent = f.name;
+        btn.querySelector(".catalog-card__label").textContent = f.name;
         btn.addEventListener("click", () => {
+          hideStudioFolderMenu();
           studioOpenFolderId = f.id;
           renderStudio();
         });
-
-        const actions = document.createElement("div");
-        actions.className = "studio-tile__actions";
-
-        const edit = document.createElement("button");
-        edit.type = "button";
-        edit.className = "studio-tile__action studio-tile__action--edit";
-        edit.title = "Изменить название";
-        edit.setAttribute("aria-label", `Изменить название «${f.name}»`);
-        edit.innerHTML = `
-          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-            <path fill="currentColor" d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5zM3 12h1.5L12 4.5 10.5 3 3 10.5V12z"/>
-          </svg>
-        `;
-        edit.addEventListener("click", (e) => {
+        btn.addEventListener("contextmenu", (e) => {
           e.preventDefault();
           e.stopPropagation();
-          openStudioFolderRenameModal(f.id);
+          showStudioFolderMenu(f.id, e.clientX, e.clientY);
         });
-
-        const send = document.createElement("button");
-        send.type = "button";
-        send.className = "studio-tile__action studio-tile__action--send";
-        send.title = "Отправить";
-        send.setAttribute("aria-label", `Отправить «${f.name}»`);
-        send.innerHTML = `
-          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-            <path fill="currentColor" d="M1 8l14-6-6 14-2-5-5-2zm3.2-.2L8 9.2l4.8-6.4L4.2 7.8z"/>
-          </svg>
-        `;
-        send.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          // placeholder: send folder later
-        });
-
-        const del = document.createElement("button");
-        del.type = "button";
-        del.className = "studio-tile__action studio-tile__action--trash";
-        del.title = "Удалить папку";
-        del.setAttribute("aria-label", `Удалить папку «${f.name}»`);
-        del.innerHTML = `
-          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-            <path fill="currentColor" d="M6 1h4l1 2h3v2H2V3h3l1-2zm1 5h2v7H7V6zm-3 0h2v7H4V6zm6 0h2v7h-2V6zM3 14h10v1H3v-1z"/>
-          </svg>
-        `;
-        del.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const ok = window.confirm(`Удалить папку «${f.name}» целиком?`);
-          if (!ok) return;
-          loadStudioDoc();
-          studioDoc.folders = studioDoc.folders.filter((x) => x.id !== f.id);
-          if (studioOpenFolderId === f.id) studioOpenFolderId = null;
-          saveStudioDoc();
-          renderStudio();
-        });
-
-        actions.append(edit, send, del);
-        wrap.append(btn, actions);
-        grid.appendChild(wrap);
+        grid.appendChild(btn);
       });
       return;
     }
@@ -3742,11 +3768,14 @@
 
     const createBtn = document.createElement("button");
     createBtn.type = "button";
-    createBtn.className = "studio-tile studio-tile--create";
+    createBtn.className = "studio-tile studio-tile--create catalog-card";
     createBtn.setAttribute("role", "listitem");
     createBtn.innerHTML = `
-      <span class="studio-tile__plus" aria-hidden="true">+</span>
-      <span class="studio-tile__label">Создать анкету контента</span>
+      <span class="catalog-card__visual" aria-hidden="true">
+        <span class="catalog-card__shadow"></span>
+        <img class="catalog-card__img" src="assets/add.png" alt="" draggable="false" />
+      </span>
+      <span class="catalog-card__label">Создать анкету контента</span>
     `;
     createBtn.addEventListener("click", () => openStudioCreateModal());
     grid.appendChild(createBtn);
@@ -3780,11 +3809,15 @@
 
     const folderModal = "studio-folder-modal";
     document.getElementById("studio-folder-modal-close")?.addEventListener("click", () => closeStudioModal(folderModal));
-    document.getElementById("studio-folder-cancel")?.addEventListener("click", () => closeStudioModal(folderModal));
+    document.getElementById("studio-folder-color")?.addEventListener("input", (e) => {
+      setStudioFolderColorInput(e.target.value);
+    });
     document.getElementById("studio-folder-form")?.addEventListener("submit", (e) => {
       e.preventDefault();
       const input = document.getElementById("studio-folder-name");
+      const colorInput = document.getElementById("studio-folder-color");
       const name = String(input?.value || "").trim();
+      const color = normalizeStudioColor(colorInput?.value);
       if (!name) {
         input?.focus();
         return;
@@ -3792,12 +3825,16 @@
       loadStudioDoc();
       if (studioRenamingFolderId) {
         const folder = getStudioFolder(studioRenamingFolderId);
-        if (folder) folder.name = name;
+        if (folder) {
+          folder.name = name;
+          folder.color = color;
+        }
         studioRenamingFolderId = null;
       } else {
         studioDoc.folders.push({
           id: studioUid("folder"),
           name,
+          color,
           createdAt: Date.now(),
           items: [],
         });
@@ -3806,6 +3843,46 @@
       closeStudioModal(folderModal);
       renderStudio();
     });
+
+    document.getElementById("studio-folder-menu")?.addEventListener("click", (e) => {
+      const actBtn = e.target.closest("[data-studio-act]");
+      if (!actBtn) return;
+      const act = actBtn.getAttribute("data-studio-act");
+      const folderId = studioCtxFolderId;
+      hideStudioFolderMenu();
+      if (!folderId) return;
+      loadStudioDoc();
+      const folder = getStudioFolder(folderId);
+      if (!folder) return;
+      if (act === "edit") {
+        openStudioFolderRenameModal(folderId);
+        return;
+      }
+      if (act === "send") {
+        // placeholder: send folder later
+        return;
+      }
+      if (act === "delete") {
+        const ok = window.confirm(`Удалить папку «${folder.name}» целиком?`);
+        if (!ok) return;
+        studioDoc.folders = studioDoc.folders.filter((x) => x.id !== folderId);
+        if (studioOpenFolderId === folderId) studioOpenFolderId = null;
+        saveStudioDoc();
+        renderStudio();
+      }
+    });
+
+    document.addEventListener("pointerdown", (e) => {
+      const menu = document.getElementById("studio-folder-menu");
+      if (!menu || menu.hidden) return;
+      if (menu.contains(e.target)) return;
+      hideStudioFolderMenu();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") hideStudioFolderMenu();
+    });
+    window.addEventListener("resize", hideStudioFolderMenu);
+    window.addEventListener("scroll", hideStudioFolderMenu, true);
 
     const createModal = "studio-create-modal";
     document.getElementById("studio-create-modal-close")?.addEventListener("click", () => closeStudioModal(createModal));

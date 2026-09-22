@@ -931,32 +931,132 @@ h3,
   border-color: color-mix(in srgb, var(--section-accent, var(--accent)) 45%, #2f2248);
 }
 
-.studio-tile--plus {
+.studio-tile--plus,
+.studio-tile--create {
   --section-accent: #c4ff4d;
-  justify-content: center;
-  gap: 8px;
 }
 
 .studio-tile--folder {
-  --section-accent: #8ec8ff;
-  justify-content: flex-start;
-  gap: 12px;
-  padding-top: 12px;
+  /* accent comes from inline --section-accent (folder color) */
 }
 
-.studio-tile--folder .studio-tile__label {
-  margin-top: 0;
-  order: 0;
+.studio-modal__panel--framed {
+  position: relative;
+  overflow: visible;
 }
 
-.studio-tile--folder .studio-tile__folder-mark {
-  margin-top: 4px;
-  margin-bottom: auto;
+.studio-modal__close {
+  appearance: none;
+  position: absolute;
+  top: 0;
+  right: -44px;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--border-hi);
+  background: rgba(20, 12, 36, 0.96);
+  color: var(--text);
+  font-family: var(--font-ded);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
 }
 
-.studio-tile--create {
-  --section-accent: #c4ff4d;
-  justify-content: center;
+.studio-modal__close:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+@media (max-width: 560px) {
+  .studio-modal__close {
+    top: -44px;
+    right: 0;
+  }
+}
+
+.studio-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.studio-color-input {
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  border: 2px solid var(--border-hi);
+  background: rgba(12, 7, 22, 0.85);
+  cursor: pointer;
+}
+
+.studio-color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.studio-color-swatch {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: var(--swatch, #8ec8ff);
+  cursor: pointer;
+}
+
+.studio-color-swatch.is-selected,
+.studio-color-swatch:hover {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.studio-ctx {
+  position: fixed;
+  z-index: 120;
+  min-width: 168px;
+  padding: 4px;
+  background: rgba(16, 9, 28, 0.98);
+  border: 2px solid var(--border-hi);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.studio-ctx[hidden] {
+  display: none !important;
+}
+
+.studio-ctx__btn {
+  appearance: none;
+  margin: 0;
+  padding: 8px 10px;
+  border: 2px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ded);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.studio-ctx__btn:hover {
+  border-color: rgba(107, 90, 138, 0.55);
+  background: rgba(40, 28, 66, 0.85);
+  color: var(--accent);
+}
+
+.studio-ctx__btn--danger:hover {
+  border-color: rgba(251, 113, 133, 0.55);
+  color: #fb7185;
 }
 
 .studio-tile__plus {
@@ -1075,60 +1175,6 @@ h3,
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-.studio-tile-wrap .studio-tile {
-  flex: 1 1 auto;
-  width: 100%;
-  padding-bottom: 36px;
-}
-
-.studio-tile__actions {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 6px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  pointer-events: none;
-}
-
-.studio-tile__action {
-  appearance: none;
-  pointer-events: auto;
-  width: 26px;
-  height: 22px;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 2px solid rgba(142, 200, 255, 0.45);
-  background: rgba(20, 14, 36, 0.92);
-  color: #8ec8ff;
-  cursor: pointer;
-}
-
-.studio-tile__action:hover {
-  border-color: currentColor;
-  filter: brightness(1.15);
-}
-
-.studio-tile__action--edit {
-  border-color: rgba(196, 255, 77, 0.45);
-  color: #c4ff4d;
-}
-
-.studio-tile__action--send {
-  border-color: rgba(142, 200, 255, 0.55);
-  color: #8ec8ff;
-}
-
-.studio-tile__action--trash {
-  border-color: rgba(251, 113, 133, 0.45);
-  color: #fb7185;
 }
 
 .studio-type-card {

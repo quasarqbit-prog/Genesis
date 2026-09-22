@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=50" />
+  <link rel="stylesheet" href="styles.css?v=51" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -1445,22 +1445,34 @@
   </div>
 
   <div class="auth-modal ui-layer" id="studio-folder-modal" hidden>
-    <div class="auth-modal__panel studio-modal__panel" role="dialog" aria-modal="true" aria-labelledby="studio-folder-modal-title">
+    <div class="auth-modal__panel studio-modal__panel studio-modal__panel--framed" role="dialog" aria-modal="true" aria-labelledby="studio-folder-modal-title">
+      <button type="button" class="studio-modal__close" id="studio-folder-modal-close" aria-label="Закрыть">×</button>
       <div class="auth-modal__head">
         <h2 class="auth-modal__title" id="studio-folder-modal-title">Новая папка</h2>
-        <button type="button" class="auth-modal__close" id="studio-folder-modal-close" aria-label="Закрыть">×</button>
       </div>
       <form class="studio-modal__form" id="studio-folder-form" novalidate>
         <div class="field-block">
           <label class="field-label" for="studio-folder-name">Название папки</label>
           <input class="field-input" id="studio-folder-name" type="text" maxlength="48" required autocomplete="off" />
         </div>
+        <div class="field-block">
+          <label class="field-label" for="studio-folder-color">Цвет</label>
+          <div class="studio-color-row">
+            <input class="studio-color-input" id="studio-folder-color" type="color" value="#8ec8ff" />
+            <div class="studio-color-swatches" id="studio-folder-swatches" role="group" aria-label="Быстрый цвет"></div>
+          </div>
+        </div>
         <div class="studio-modal__actions">
-          <button type="button" class="mc-btn mc-btn--ghost" id="studio-folder-cancel">Отмена</button>
-          <button type="submit" class="mc-btn">Создать</button>
+          <button type="submit" class="mc-btn" id="studio-folder-submit">Создать</button>
         </div>
       </form>
     </div>
+  </div>
+
+  <div class="studio-ctx" id="studio-folder-menu" hidden>
+    <button type="button" class="studio-ctx__btn" data-studio-act="edit">Редактировать</button>
+    <button type="button" class="studio-ctx__btn" data-studio-act="send">Отправить</button>
+    <button type="button" class="studio-ctx__btn studio-ctx__btn--danger" data-studio-act="delete">Удалить</button>
   </div>
 
   <div class="auth-modal ui-layer" id="studio-create-modal" hidden>
@@ -1556,6 +1568,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=50"></script>
+  <script src="script.js?v=51"></script>
 </body>
 </html>
