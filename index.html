@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=41" />
+  <link rel="stylesheet" href="styles.css?v=43" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -43,6 +43,17 @@
           </div>
 
           <div class="main-tab-panel main-tab-panel--bare" data-main-panel="compendium" id="main-panel-compendium" hidden>
+            <div class="compendium-stage" id="compendium-stage">
+              <div class="compendium-book" id="compendium-book">
+                <img
+                  class="compendium-book__art"
+                  src="assets/compendium/compendium.png"
+                  alt=""
+                  draggable="false"
+                />
+                <canvas class="compendium-book__canvas" id="compendium-canvas" aria-label="Текст компендиума"></canvas>
+              </div>
+            </div>
           </div>
 
           <div class="main-tab-panel main-tab-panel--scroll" data-main-panel="rules" id="main-panel-rules" hidden>
@@ -1477,6 +1488,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=41"></script>
+  <script src="script.js?v=43"></script>
 </body>
 </html>

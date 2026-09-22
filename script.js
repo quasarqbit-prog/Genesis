@@ -1424,6 +1424,261 @@
     });
   }
 
+  const COMPENDIUM_LINES = [
+    "Компендиума пока не доступен.",
+    "Подождите пока выйдет обновление.",
+  ];
+  const COMPENDIUM_BOOK_W = 281;
+  const COMPENDIUM_BOOK_H = 173;
+  const COMPENDIUM_TEXT_COLOR = "#3f2a1d";
+  const COMPENDIUM_FONT_SCALE = 1;
+
+  let compendiumFontPromise = null;
+  let compendiumGlyphs = null;
+  let compendiumResizeBound = false;
+
+  function loadImageEl(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.decoding = "async";
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error(`Не удалось загрузить ${src}`));
+      img.src = src;
+    });
+  }
+
+  function measureGlyphWidth(img, sx, sy, cellW, cellH) {
+    const canvas = document.createElement("canvas");
+    canvas.width = cellW;
+    canvas.height = cellH;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.clearRect(0, 0, cellW, cellH);
+    ctx.drawImage(img, sx, sy, cellW, cellH, 0, 0, cellW, cellH);
+    const { data } = ctx.getImageData(0, 0, cellW, cellH);
+    let maxX = -1;
+    for (let y = 0; y < cellH; y += 1) {
+      for (let x = 0; x < cellW; x += 1) {
+        if (data[(y * cellW + x) * 4 + 3] > 16) {
+          if (x > maxX) maxX = x;
+        }
+      }
+    }
+    return maxX < 0 ? 0 : maxX + 1;
+  }
+
+  async function ensureCompendiumFont() {
+    if (compendiumGlyphs) return compendiumGlyphs;
+    if (compendiumFontPromise) return compendiumFontPromise;
+    compendiumFontPromise = (async () => {
+      const res = await fetch("assets/compendium/font/providers.json");
+      if (!res.ok) throw new Error("providers.json");
+      const data = await res.json();
+      const needed = new Set();
+      for (const line of COMPENDIUM_LINES) {
+        for (const ch of Array.from(line)) needed.add(ch);
+      }
+      const glyphs = new Map();
+      for (const provider of data.providers || []) {
+        const rows = provider.chars || [];
+        if (!rows.length) continue;
+        // Minecraft bitmap rows are UTF-16 code units (string.length), not code points.
+        const rowLen = Math.max(...rows.map((row) => row.length));
+        if (!rowLen) continue;
+        const img = await loadImageEl(provider.file);
+        const cellW = img.width / rowLen;
+        const cellH = img.height / rows.length;
+        const glyphH = provider.height || 8;
+        const ascent = provider.ascent ?? glyphH;
+        for (let row = 0; row < rows.length; row += 1) {
+          const rowStr = rows[row];
+          for (let col = 0; col < rowStr.length; col += 1) {
+            const code = rowStr.charCodeAt(col);
+            // skip low surrogate; high surrogate pairs are one glyph cell in MC atlases
+            if (code >= 0xdc00 && code <= 0xdfff) continue;
+            let ch;
+            let cells = 1;
+            if (code >= 0xd800 && code <= 0xdbff && col + 1 < rowStr.length) {
+              ch = rowStr.slice(col, col + 2);
+              cells = 2;
+            } else {
+              ch = rowStr.charAt(col);
+            }
+            if (!ch || ch === "\u0000" || glyphs.has(ch)) {
+              col += cells - 1;
+              continue;
+            }
+            if (!needed.has(ch) && ch !== " ") {
+              col += cells - 1;
+              continue;
+            }
+            const sx = Math.round(col * cellW);
+            const sy = Math.round(row * cellH);
+            const cw = Math.round(cellW * cells);
+            const chh = Math.round(cellH);
+            let inkW = 0;
+            try {
+              inkW = measureGlyphWidth(img, sx, sy, cw, chh);
+            } catch (_) {
+              inkW = Math.round(cellW);
+            }
+            if (ch === " ") inkW = Math.max(inkW, 4);
+            glyphs.set(ch, {
+              img,
+              sx,
+              sy,
+              cellW: cw,
+              cellH: chh,
+              width: inkW,
+              height: glyphH,
+              ascent,
+              blank: ch === " " || inkW === 0,
+            });
+            col += cells - 1;
+          }
+        }
+      }
+      if (!glyphs.has(" ")) {
+        glyphs.set(" ", {
+          img: null,
+          sx: 0,
+          sy: 0,
+          cellW: 4,
+          cellH: 8,
+          width: 4,
+          height: 8,
+          ascent: 7,
+          blank: true,
+        });
+      }
+      compendiumGlyphs = glyphs;
+      return glyphs;
+    })().catch((err) => {
+      compendiumFontPromise = null;
+      throw err;
+    });
+    return compendiumFontPromise;
+  }
+
+  function glyphAdvance(g, ch, scale) {
+    if (!g) return 6 * scale;
+    if (ch === " " || g.blank) return g.width * scale;
+    return (g.width + 1) * scale;
+  }
+
+  function measureCompendiumLine(glyphs, line, scale) {
+    let w = 0;
+    for (const ch of Array.from(line)) {
+      w += glyphAdvance(glyphs.get(ch), ch, scale);
+    }
+    return w;
+  }
+
+  function drawCompendiumLine(ctx, glyphs, line, x, baselineY, scale) {
+    let cursor = x;
+    for (const ch of Array.from(line)) {
+      const g = glyphs.get(ch);
+      if (!g || !g.img || g.blank) {
+        cursor += glyphAdvance(g, ch, scale);
+        continue;
+      }
+      const dw = g.cellW * scale;
+      const dh = g.cellH * scale;
+      const dy = baselineY - g.ascent * scale;
+      ctx.drawImage(g.img, g.sx, g.sy, g.cellW, g.cellH, cursor, dy, dw, dh);
+      cursor += glyphAdvance(g, ch, scale);
+    }
+  }
+
+  async function renderCompendiumBook() {
+    const canvas = document.getElementById("compendium-canvas");
+    const book = document.getElementById("compendium-book");
+    const art = book?.querySelector(".compendium-book__art");
+    if (!canvas || !book) return;
+
+    if (!compendiumResizeBound) {
+      compendiumResizeBound = true;
+      window.addEventListener("resize", () => {
+        if (document.getElementById("main-panel-compendium")?.classList.contains("is-active")) {
+          renderCompendiumBook();
+        }
+      });
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(() => {
+          if (document.getElementById("main-panel-compendium")?.classList.contains("is-active")) {
+            renderCompendiumBook();
+          }
+        }).observe(book);
+      }
+    }
+
+    const paint = async () => {
+      let glyphs;
+      try {
+        glyphs = await ensureCompendiumFont();
+      } catch (err) {
+        console.warn("Compendium font:", err);
+        return;
+      }
+
+      const scale = COMPENDIUM_FONT_SCALE;
+      const lineGap = 2 * scale;
+      const lineHeights = COMPENDIUM_LINES.map((line) => {
+        let maxH = 8 * scale;
+        for (const ch of Array.from(line)) {
+          const g = glyphs.get(ch);
+          if (g) maxH = Math.max(maxH, g.height * scale);
+        }
+        return maxH;
+      });
+      const blockH =
+        lineHeights.reduce((a, b) => a + b, 0) + lineGap * (COMPENDIUM_LINES.length - 1);
+      const widths = COMPENDIUM_LINES.map((line) => measureCompendiumLine(glyphs, line, scale));
+
+      const cssW = Math.max(book.clientWidth || art?.clientWidth || COMPENDIUM_BOOK_W, 1);
+      const cssH = Math.max(book.clientHeight || art?.clientHeight || COMPENDIUM_BOOK_H, 1);
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
+      canvas.width = Math.max(1, Math.round(cssW * dpr));
+      canvas.height = Math.max(1, Math.round(cssH * dpr));
+
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.setTransform(canvas.width / COMPENDIUM_BOOK_W, 0, 0, canvas.height / COMPENDIUM_BOOK_H, 0, 0);
+
+      let y = Math.round((COMPENDIUM_BOOK_H - blockH) / 2);
+      for (let i = 0; i < COMPENDIUM_LINES.length; i += 1) {
+        const line = COMPENDIUM_LINES[i];
+        const lh = lineHeights[i];
+        const lw = widths[i];
+        const x = Math.round((COMPENDIUM_BOOK_W - lw) / 2);
+        const pad = 1;
+        const off = document.createElement("canvas");
+        off.width = Math.max(1, Math.ceil(lw + pad * 2));
+        off.height = Math.max(1, Math.ceil(lh + pad * 2));
+        const octx = off.getContext("2d");
+        octx.imageSmoothingEnabled = false;
+        octx.fillStyle = COMPENDIUM_TEXT_COLOR;
+        octx.fillRect(0, 0, off.width, off.height);
+        octx.globalCompositeOperation = "destination-in";
+        drawCompendiumLine(octx, glyphs, line, pad, pad + Math.round(lh * 0.875), scale);
+        ctx.drawImage(off, x - pad, y - pad);
+        y += lh + lineGap;
+      }
+    };
+
+    if (art && !art.complete) {
+      await new Promise((resolve) => {
+        art.addEventListener("load", resolve, { once: true });
+        art.addEventListener("error", resolve, { once: true });
+      });
+    }
+    // layout after image intrinsic size
+    requestAnimationFrame(() => {
+      paint();
+    });
+  }
+
   function setMainTab(tab) {
     const name = String(tab || "studio");
     const shell = document.getElementById("profile-card");
@@ -1436,6 +1691,9 @@
       panel.hidden = !on;
     });
     shell?.classList.toggle("is-bare-main", name === "compendium");
+    if (name === "compendium") {
+      requestAnimationFrame(() => renderCompendiumBook());
+    }
     if (name === "rules") {
       ensureRulesLoaded().then(() => {
         if (!activeRulesSectionId && rulesDoc?.sections?.length) {
