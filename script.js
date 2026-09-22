@@ -2104,6 +2104,16 @@
     body.hidden = collapsed;
 
     if (!collapsed) {
+      if (folderId === "T_en_M") {
+        const ytLink = document.createElement("a");
+        ytLink.className = "sound-group__link";
+        ytLink.href = "https://www.youtube.com/@TenM";
+        ytLink.target = "_blank";
+        ytLink.rel = "noopener noreferrer";
+        ytLink.textContent = "YouTube · @TenM";
+        ytLink.title = "Открыть канал T_en_M";
+        body.appendChild(ytLink);
+      }
       // Tracks first (e.g. amethyst), then subfolders
       getTracksInFolder(folderId).forEach((track) => {
         body.appendChild(makeTrackRow(track, listEl));
@@ -2265,7 +2275,7 @@
       "click",
       (e) => {
         const t = e.target.closest(
-          "button, .mc-btn, .hub-nav__btn, .main-tabs__btn, .catalog-card, .studio-tile, .studio-ctx__btn, .sound-track__play, .sound-track__toggle, .sound-order-btn, .sound-group__toggle, .sound-group__add, a.footer-link"
+          "button, .mc-btn, .hub-nav__btn, .main-tabs__btn, .catalog-card, .studio-tile, .studio-ctx__btn, .sound-track__play, .sound-track__toggle, .sound-order-btn, .sound-group__toggle, .sound-group__add, .sound-master-toggle, .sound-group__link, a.footer-link"
         );
         if (!t) return;
         if (t.closest("#sound-sfx-volume, #sound-music-volume")) return;

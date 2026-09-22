@@ -2278,6 +2278,29 @@ h3,
   padding-left: 8px;
 }
 
+.sound-group__link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8px 8px 6px;
+  padding: 7px 10px;
+  border: 2px solid rgba(255, 80, 80, 0.45);
+  background: rgba(40, 10, 14, 0.85);
+  color: #ff8a8a;
+  font-family: var(--font-ded);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.sound-group__link:hover,
+.sound-group__link:focus-visible {
+  color: #ffd0d0;
+  border-color: rgba(255, 120, 120, 0.7);
+  background: rgba(70, 14, 20, 0.95);
+}
+
 .sound-group__body[hidden] {
   display: none !important;
 }
