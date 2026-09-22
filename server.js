@@ -3121,6 +3121,29 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
   }
 });
 
+app.delete("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(
+      `SELECT id, status FROM studio_submissions WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    const status = String(rows[0].status || "");
+    if (status !== "rejected" && status !== "added") {
+      return res.status(400).json({
+        error: "Удалить можно только отклонённые или добавленные анкеты",
+      });
+    }
+    await pool.execute(`DELETE FROM studio_submissions WHERE id = :id`, { id });
+    return res.json({ ok: true, id });
+  } catch (err) {
+    console.error("studio delete:", err);
+    return res.status(500).json({ error: "Не удалось удалить анкету" });
+  }
+});
+
 app.get("/api/users/:id/published", authMiddleware, async (req, res) => {
   try {
     const userId = Number(req.params.id);

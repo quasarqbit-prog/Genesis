@@ -366,6 +366,9 @@
   let studioReviewList = [];
   let studioOpenReviewId = null;
   let studioEditReadOnly = false;
+  let studioReviewStatusFilter = "all"; // all | pending | rejected | approved | added
+  let studioReviewKindFilter = "all"; // all | folder | race
+  let studioReviewSort = "date-desc";
 
   async function api(path, options = {}) {
     const headers = {
@@ -4899,6 +4902,7 @@
     const rejectBtn = document.getElementById("studio-review-reject");
     const approveBtn = document.getElementById("studio-review-approve");
     const addedBtn = document.getElementById("studio-review-added");
+    const deleteBtn = document.getElementById("studio-review-delete");
     if (!wrap) return;
     if (studioTab !== "review" || !sub) {
       wrap.hidden = true;
@@ -4911,8 +4915,90 @@
     if (addedBtn) {
       addedBtn.hidden = st !== "approved" && st !== "added";
       addedBtn.disabled = st === "added";
-      addedBtn.textContent = st === "added" ? "Добавлено" : "Добавлено";
+      addedBtn.textContent = "Добавлено";
     }
+    if (deleteBtn) {
+      deleteBtn.hidden = st !== "rejected" && st !== "added";
+    }
+  }
+
+  function updateStudioReviewToolbarUi() {
+    const toolbar = document.getElementById("studio-review-toolbar");
+    if (!toolbar) return;
+    const show =
+      studioTab === "review" &&
+      isStudioStaffViewer() &&
+      !studioOpenReviewId;
+    toolbar.hidden = !show;
+    if (!show) return;
+    toolbar.querySelectorAll("[data-studio-status]").forEach((btn) => {
+      btn.classList.toggle(
+        "is-active",
+        btn.getAttribute("data-studio-status") === studioReviewStatusFilter
+      );
+    });
+    toolbar.querySelectorAll("[data-studio-kind]").forEach((btn) => {
+      btn.classList.toggle(
+        "is-active",
+        btn.getAttribute("data-studio-kind") === studioReviewKindFilter
+      );
+    });
+    const sort = document.getElementById("studio-review-sort");
+    if (sort && sort.value !== studioReviewSort) sort.value = studioReviewSort;
+  }
+
+  function isRaceSubmission(s) {
+    return (
+      s?.kind === "race" ||
+      s?.clientFolderId === "race" ||
+      s?.payload?.kind === "race"
+    );
+  }
+
+  function getFilteredSortedReviewList() {
+    const statusRank = { pending: 0, approved: 1, rejected: 2, added: 3 };
+    let list = Array.isArray(studioReviewList) ? [...studioReviewList] : [];
+    if (studioReviewStatusFilter !== "all") {
+      list = list.filter(
+        (s) => String(s.status || "pending") === studioReviewStatusFilter
+      );
+    }
+    if (studioReviewKindFilter === "race") {
+      list = list.filter((s) => isRaceSubmission(s));
+    } else if (studioReviewKindFilter === "folder") {
+      list = list.filter((s) => !isRaceSubmission(s));
+    }
+    const nameOf = (s) => String(s.folderName || "").toLowerCase();
+    const nickOf = (s) => String(s.submitterMcNick || "").toLowerCase();
+    const timeOf = (s) => {
+      const t = Date.parse(s.updatedAt || s.createdAt || 0);
+      return Number.isFinite(t) ? t : 0;
+    };
+    list.sort((a, b) => {
+      switch (studioReviewSort) {
+        case "date-asc":
+          return timeOf(a) - timeOf(b);
+        case "name-asc":
+          return nameOf(a).localeCompare(nameOf(b), "ru", { sensitivity: "base" });
+        case "name-desc":
+          return nameOf(b).localeCompare(nameOf(a), "ru", { sensitivity: "base" });
+        case "nick-asc":
+          return nickOf(a).localeCompare(nickOf(b), "ru", { sensitivity: "base" });
+        case "nick-desc":
+          return nickOf(b).localeCompare(nickOf(a), "ru", { sensitivity: "base" });
+        case "status": {
+          const d =
+            (statusRank[String(a.status || "pending")] ?? 9) -
+            (statusRank[String(b.status || "pending")] ?? 9);
+          if (d) return d;
+          return timeOf(b) - timeOf(a);
+        }
+        case "date-desc":
+        default:
+          return timeOf(b) - timeOf(a);
+      }
+    });
+    return list;
   }
 
   async function syncStudioMineStatuses() {
@@ -5139,6 +5225,7 @@
     const reviewMode = studioTab === "review" && isStudioStaffViewer();
 
     if (reviewMode) {
+      updateStudioReviewToolbarUi();
       const sub = studioOpenReviewId ? getOpenReviewSubmission() : null;
       if (!sub) {
         studioOpenReviewId = null;
@@ -5146,6 +5233,7 @@
         if (title) title.textContent = "";
         updateStudioReviewActionsUi(null);
 
+        const filtered = getFilteredSortedReviewList();
         if (!studioReviewList.length) {
           const empty = document.createElement("p");
           empty.className = "studio-empty";
@@ -5153,9 +5241,16 @@
           grid.appendChild(empty);
           return;
         }
+        if (!filtered.length) {
+          const empty = document.createElement("p");
+          empty.className = "studio-empty";
+          empty.textContent = "Нет анкет по выбранным фильтрам";
+          grid.appendChild(empty);
+          return;
+        }
 
-        studioReviewList.forEach((s) => {
-          const isRace = s.kind === "race" || s.clientFolderId === "race";
+        filtered.forEach((s) => {
+          const isRace = isRaceSubmission(s);
           const color = isRace
             ? "var(--accent)"
             : normalizeStudioColor(s.folderColor);
@@ -5191,11 +5286,9 @@
         return;
       }
 
+      updateStudioReviewToolbarUi();
       if (bar) bar.hidden = false;
-      const isRaceOpen =
-        sub.kind === "race" ||
-        sub.clientFolderId === "race" ||
-        sub.payload?.kind === "race";
+      const isRaceOpen = isRaceSubmission(sub);
       if (title) {
         title.textContent = `${sub.folderName || (isRaceOpen ? "Раса" : "Папка")} · ${sub.submitterMcNick || ""}`.trim();
       }
@@ -5248,6 +5341,7 @@
     }
 
     updateStudioReviewActionsUi(null);
+    updateStudioReviewToolbarUi();
     const folder = studioOpenFolderId ? getStudioFolder(studioOpenFolderId) : null;
 
     if (!folder) {
@@ -5618,6 +5712,47 @@
       } catch (err) {
         showToast(err.message || "Не удалось обновить");
       }
+    });
+    document.getElementById("studio-review-delete")?.addEventListener("click", async () => {
+      if (!studioOpenReviewId) return;
+      const sub = getOpenReviewSubmission();
+      const st = String(sub?.status || "");
+      if (st !== "rejected" && st !== "added") {
+        showToast("Удалить можно только отклонённые или добавленные");
+        return;
+      }
+      const label = sub?.folderName || "анкету";
+      const ok = window.confirm(`Удалить «${label}» из списка анкет?`);
+      if (!ok) return;
+      try {
+        await api(`/api/studio/submissions/${studioOpenReviewId}`, { method: "DELETE" });
+        studioReviewList = studioReviewList.filter(
+          (s) => Number(s.id) !== Number(studioOpenReviewId)
+        );
+        studioOpenReviewId = null;
+        showToast("Удалено");
+        renderStudio();
+      } catch (err) {
+        showToast(err.message || "Не удалось удалить");
+      }
+    });
+
+    document.getElementById("studio-review-toolbar")?.addEventListener("click", (e) => {
+      const statusBtn = e.target.closest("[data-studio-status]");
+      if (statusBtn) {
+        studioReviewStatusFilter = statusBtn.getAttribute("data-studio-status") || "all";
+        renderStudio();
+        return;
+      }
+      const kindBtn = e.target.closest("[data-studio-kind]");
+      if (kindBtn) {
+        studioReviewKindFilter = kindBtn.getAttribute("data-studio-kind") || "all";
+        renderStudio();
+      }
+    });
+    document.getElementById("studio-review-sort")?.addEventListener("change", (e) => {
+      studioReviewSort = String(e.target.value || "date-desc");
+      renderStudio();
     });
   }
 

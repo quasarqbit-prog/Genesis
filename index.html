@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=68" />
+  <link rel="stylesheet" href="styles.css?v=69" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -42,6 +42,34 @@
                 <button type="button" class="studio-subtabs__btn is-active" data-studio-tab="create">Создание</button>
                 <button type="button" class="studio-subtabs__btn" data-studio-tab="review">Анкеты</button>
               </nav>
+              <div class="studio-review-toolbar" id="studio-review-toolbar" hidden>
+                <div class="studio-review-filters" role="group" aria-label="Статус">
+                  <button type="button" class="studio-filter-btn is-active" data-studio-status="all">Все</button>
+                  <button type="button" class="studio-filter-btn" data-studio-status="pending">На рассмотрении</button>
+                  <button type="button" class="studio-filter-btn" data-studio-status="rejected">Отклонены</button>
+                  <button type="button" class="studio-filter-btn" data-studio-status="approved">Одобрены</button>
+                  <button type="button" class="studio-filter-btn" data-studio-status="added">Добавлены</button>
+                </div>
+                <div class="studio-review-toolbar__row">
+                  <div class="studio-kind-switch" role="group" aria-label="Тип анкет">
+                    <button type="button" class="studio-kind-switch__btn is-active" data-studio-kind="all">Все</button>
+                    <button type="button" class="studio-kind-switch__btn" data-studio-kind="folder">Контент</button>
+                    <button type="button" class="studio-kind-switch__btn" data-studio-kind="race">Расы</button>
+                  </div>
+                  <label class="studio-sort-label" for="studio-review-sort">
+                    Сортировка
+                    <select class="studio-sort-select" id="studio-review-sort">
+                      <option value="date-desc">Сначала новые</option>
+                      <option value="date-asc">Сначала старые</option>
+                      <option value="name-asc">Название А→Я</option>
+                      <option value="name-desc">Название Я→А</option>
+                      <option value="nick-asc">Ник А→Я</option>
+                      <option value="nick-desc">Ник Я→А</option>
+                      <option value="status">По статусу</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
               <header class="studio-bar" id="studio-bar" hidden>
                 <button type="button" class="studio-bar__back" id="studio-back">← Назад</button>
                 <h2 class="studio-bar__title" id="studio-folder-title"></h2>
@@ -51,6 +79,7 @@
                 <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-reject">Отклонить</button>
                 <button type="button" class="mc-btn" id="studio-review-approve">Одобрить</button>
                 <button type="button" class="mc-btn" id="studio-review-added" hidden>Добавлено</button>
+                <button type="button" class="mc-btn mc-btn--ghost studio-review-delete" id="studio-review-delete" hidden>Удалить</button>
               </div>
             </div>
           </div>
@@ -1694,6 +1723,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=68"></script>
+  <script src="script.js?v=69"></script>
 </body>
 </html>

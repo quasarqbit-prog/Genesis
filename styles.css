@@ -898,6 +898,118 @@ h3,
   display: none !important;
 }
 
+.studio-review-delete {
+  margin-left: auto;
+  color: #ff8a8a !important;
+  border-color: rgba(255, 120, 120, 0.45) !important;
+}
+
+.studio-review-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 2px solid rgba(107, 90, 138, 0.35);
+  background: rgba(8, 4, 16, 0.28);
+}
+
+.studio-review-toolbar[hidden] {
+  display: none !important;
+}
+
+.studio-review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.studio-filter-btn,
+.studio-kind-switch__btn {
+  appearance: none;
+  margin: 0;
+  padding: 6px 10px;
+  border: 2px solid rgba(107, 90, 138, 0.5);
+  background: rgba(20, 12, 36, 0.75);
+  color: var(--muted);
+  font-family: var(--font-ded);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.studio-filter-btn:hover,
+.studio-kind-switch__btn:hover {
+  color: var(--text);
+  border-color: rgba(196, 255, 77, 0.35);
+}
+
+.studio-filter-btn.is-active,
+.studio-kind-switch__btn.is-active {
+  color: var(--accent);
+  border-color: rgba(196, 255, 77, 0.55);
+  background: rgba(28, 18, 48, 0.95);
+}
+
+.studio-review-toolbar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.studio-kind-switch {
+  display: inline-flex;
+  gap: 0;
+  border: 2px solid rgba(107, 90, 138, 0.5);
+  background: rgba(12, 7, 22, 0.65);
+}
+
+.studio-kind-switch__btn {
+  border: 0;
+  border-right: 2px solid rgba(107, 90, 138, 0.35);
+  background: transparent;
+}
+
+.studio-kind-switch__btn:last-child {
+  border-right: 0;
+}
+
+.studio-kind-switch__btn.is-active {
+  background: rgba(196, 255, 77, 0.1);
+}
+
+.studio-sort-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-ded);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.studio-sort-select {
+  appearance: none;
+  margin: 0;
+  padding: 6px 10px;
+  border: 2px solid rgba(107, 90, 138, 0.5);
+  background: rgba(20, 12, 36, 0.85);
+  color: var(--text);
+  font-family: var(--font-ded);
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+}
+
+.studio-sort-select:focus {
+  outline: none;
+  border-color: rgba(196, 255, 77, 0.45);
+}
+
 .studio-empty {
   margin: 24px 8px;
   font-family: var(--font-ded);
