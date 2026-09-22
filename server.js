@@ -2302,7 +2302,7 @@ app.put("/api/users/:id/profile", authMiddleware, async (req, res) => {
 
     await pool.execute(
       `UPDATE profiles
-       SET form_json = CAST(:formJson AS JSON),
+       SET form_json = :formJson,
            race_name = :raceName,
            registered = :registered
        WHERE user_id = :userId`,
@@ -2592,7 +2592,7 @@ app.put("/api/user/profile", authMiddleware, async (req, res) => {
       .slice(0, 64);
 
     const fields = [
-      "form_json = CAST(:formJson AS JSON)",
+      "form_json = :formJson",
       "mc_nick = :mcNick",
       "race_name = :raceName",
     ];
@@ -2617,8 +2617,8 @@ app.put("/api/user/profile", authMiddleware, async (req, res) => {
       await pool.execute(
         `UPDATE game_stats
          SET score = COALESCE(:score, score),
-             inventory_json = COALESCE(CAST(:inventory AS JSON), inventory_json),
-             meta_json = COALESCE(CAST(:meta AS JSON), meta_json)
+             inventory_json = COALESCE(:inventory, inventory_json),
+             meta_json = COALESCE(:meta, meta_json)
          WHERE user_id = :userId`,
         {
           userId: req.user.id,
