@@ -1422,7 +1422,475 @@
       view.classList.toggle("is-active", match);
       view.hidden = !match;
     });
+    if (name === "sound") renderSoundSettingsUi();
   }
+
+  /* ---------- Sound / music ---------- */
+  const SOUND_PREFS_KEY = "genesis_sound_prefs_v1";
+  const SOUND_CLICK_SRC = "assets/sound/click.ogg";
+  const SOUND_NOTIFY_SRC = "assets/sound/massage.ogg";
+  const SOUND_INDEX_SRC = "assets/sound/music-index.json";
+  const SOUND_CUSTOM_GROUP = "Своя музыка";
+
+  let soundPrefs = {
+    sfxVolume: 0.5,
+    musicVolume: 0.2,
+    orderMode: "forward",
+    enabled: {},
+    order: [],
+  };
+  let soundCatalog = { groups: [] };
+  let soundTracksById = new Map();
+  let soundCustomMeta = []; // { id, title, group }
+  let soundReady = false;
+  let soundMusicAudio = null;
+  let soundPreviewAudio = null;
+  let soundPreviewId = null;
+  let soundPlaylistCursor = -1;
+  let soundShuffleBag = [];
+  let soundUnlockBound = false;
+  let soundDragId = null;
+
+  function loadSoundPrefs() {
+    try {
+      const raw = localStorage.getItem(SOUND_PREFS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.sfxVolume === "number") soundPrefs.sfxVolume = clamp01(parsed.sfxVolume);
+      if (typeof parsed.musicVolume === "number") soundPrefs.musicVolume = clamp01(parsed.musicVolume);
+      if (["forward", "reverse", "shuffle"].includes(parsed.orderMode)) {
+        soundPrefs.orderMode = parsed.orderMode;
+      }
+      if (parsed.enabled && typeof parsed.enabled === "object") soundPrefs.enabled = parsed.enabled;
+      if (Array.isArray(parsed.order)) soundPrefs.order = parsed.order.map(String);
+      if (Array.isArray(parsed.customMeta)) soundCustomMeta = parsed.customMeta;
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function saveSoundPrefs() {
+    try {
+      localStorage.setItem(
+        SOUND_PREFS_KEY,
+        JSON.stringify({
+          ...soundPrefs,
+          customMeta: soundCustomMeta.map((t) => ({
+            id: t.id,
+            title: t.title,
+            group: t.group || SOUND_CUSTOM_GROUP,
+          })),
+        })
+      );
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function clamp01(n) {
+    const x = Number(n);
+    if (!Number.isFinite(x)) return 0;
+    return Math.max(0, Math.min(1, x));
+  }
+
+  function openSoundDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open("genesis_sound_blobs_v1", 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains("tracks")) db.createObjectStore("tracks");
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function idbPutTrack(id, blob) {
+    const db = await openSoundDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("tracks", "readwrite");
+      tx.objectStore("tracks").put(blob, id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function idbGetTrack(id) {
+    const db = await openSoundDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("tracks", "readonly");
+      const req = tx.objectStore("tracks").get(id);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function playSfx(src) {
+    const vol = soundPrefs.sfxVolume;
+    if (vol <= 0.001) return;
+    try {
+      const a = new Audio(src);
+      a.volume = vol;
+      a.play().catch(() => {});
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function playClickSound() {
+    playSfx(SOUND_CLICK_SRC);
+  }
+
+  function playNotifySound() {
+    playSfx(SOUND_NOTIFY_SRC);
+  }
+
+  function bindSoundUnlock() {
+    if (soundUnlockBound) return;
+    soundUnlockBound = true;
+    const unlock = () => {
+      ensureMusicPlaying();
+      document.removeEventListener("pointerdown", unlock, true);
+      document.removeEventListener("keydown", unlock, true);
+    };
+    document.addEventListener("pointerdown", unlock, true);
+    document.addEventListener("keydown", unlock, true);
+  }
+
+  function rebuildTrackMap() {
+    soundTracksById = new Map();
+    for (const group of soundCatalog.groups || []) {
+      for (const track of group.tracks || []) {
+        soundTracksById.set(track.id, { ...track, group: group.label || group.id, custom: false });
+      }
+    }
+    for (const track of soundCustomMeta) {
+      soundTracksById.set(track.id, {
+        id: track.id,
+        title: track.title,
+        group: SOUND_CUSTOM_GROUP,
+        src: null,
+        custom: true,
+        sub: "",
+      });
+    }
+  }
+
+  function syncSoundOrderWithCatalog() {
+    const known = [...soundTracksById.keys()];
+    const knownSet = new Set(known);
+    const nextOrder = soundPrefs.order.filter((id) => knownSet.has(id));
+    for (const id of known) {
+      if (!nextOrder.includes(id)) nextOrder.push(id);
+      if (soundPrefs.enabled[id] == null) soundPrefs.enabled[id] = true;
+    }
+    for (const id of Object.keys(soundPrefs.enabled)) {
+      if (!knownSet.has(id)) delete soundPrefs.enabled[id];
+    }
+    soundPrefs.order = nextOrder;
+  }
+
+  async function resolveTrackSrc(track) {
+    if (!track) return null;
+    if (!track.custom) return track.src;
+    const blob = await idbGetTrack(track.id);
+    if (!blob) return null;
+    return URL.createObjectURL(blob);
+  }
+
+  function getEnabledOrderedIds() {
+    const base = soundPrefs.order.filter((id) => soundPrefs.enabled[id]);
+    if (soundPrefs.orderMode === "reverse") return [...base].reverse();
+    if (soundPrefs.orderMode === "shuffle") {
+      if (!soundShuffleBag.length || soundShuffleBag.length !== base.length) {
+        soundShuffleBag = [...base];
+        for (let i = soundShuffleBag.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [soundShuffleBag[i], soundShuffleBag[j]] = [soundShuffleBag[j], soundShuffleBag[i]];
+        }
+      }
+      return soundShuffleBag;
+    }
+    return base;
+  }
+
+  async function playMusicById(id, { preview = false } = {}) {
+    const track = soundTracksById.get(id);
+    if (!track) return;
+    const src = await resolveTrackSrc(track);
+    if (!src) return;
+
+    if (preview) {
+      stopMusicPreview();
+      soundPreviewAudio = new Audio(src);
+      soundPreviewAudio.volume = soundPrefs.musicVolume;
+      soundPreviewId = id;
+      soundPreviewAudio.onended = () => {
+        soundPreviewId = null;
+        renderSoundSettingsUi();
+      };
+      soundPreviewAudio.play().catch(() => {});
+      if (soundMusicAudio && !soundMusicAudio.paused) soundMusicAudio.pause();
+      renderSoundSettingsUi();
+      return;
+    }
+
+    stopMusicPreview();
+    if (!soundMusicAudio) {
+      soundMusicAudio = new Audio();
+      soundMusicAudio.addEventListener("ended", () => playNextMusicTrack());
+    }
+    soundMusicAudio.volume = soundPrefs.musicVolume;
+    if (soundMusicAudio.dataset.trackId === id && !soundMusicAudio.paused) return;
+    soundMusicAudio.src = src;
+    soundMusicAudio.dataset.trackId = id;
+    soundMusicAudio.play().catch(() => {});
+  }
+
+  function stopMusicPreview() {
+    if (soundPreviewAudio) {
+      soundPreviewAudio.pause();
+      soundPreviewAudio = null;
+    }
+    soundPreviewId = null;
+  }
+
+  function playNextMusicTrack() {
+    const list = getEnabledOrderedIds();
+    if (!list.length) return;
+    soundPlaylistCursor = (soundPlaylistCursor + 1) % list.length;
+    playMusicById(list[soundPlaylistCursor]);
+  }
+
+  function ensureMusicPlaying() {
+    if (soundPrefs.musicVolume <= 0.001) return;
+    const list = getEnabledOrderedIds();
+    if (!list.length) return;
+    if (soundMusicAudio && !soundMusicAudio.paused) return;
+    if (soundPlaylistCursor < 0 || soundPlaylistCursor >= list.length) soundPlaylistCursor = 0;
+    playMusicById(list[soundPlaylistCursor]);
+  }
+
+  function applyMusicVolume() {
+    if (soundMusicAudio) soundMusicAudio.volume = soundPrefs.musicVolume;
+    if (soundPreviewAudio) soundPreviewAudio.volume = soundPrefs.musicVolume;
+    if (soundPrefs.musicVolume <= 0.001) {
+      soundMusicAudio?.pause();
+      stopMusicPreview();
+    } else {
+      ensureMusicPlaying();
+    }
+  }
+
+  function renderSoundSettingsUi() {
+    const sfxRange = document.getElementById("sound-sfx-volume");
+    const musicRange = document.getElementById("sound-music-volume");
+    const sfxVal = document.getElementById("sound-sfx-volume-val");
+    const musicVal = document.getElementById("sound-music-volume-val");
+    if (sfxRange) sfxRange.value = String(Math.round(soundPrefs.sfxVolume * 100));
+    if (musicRange) musicRange.value = String(Math.round(soundPrefs.musicVolume * 100));
+    if (sfxVal) sfxVal.textContent = `${Math.round(soundPrefs.sfxVolume * 100)}%`;
+    if (musicVal) musicVal.textContent = `${Math.round(soundPrefs.musicVolume * 100)}%`;
+
+    document.querySelectorAll("[data-sound-order]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-sound-order") === soundPrefs.orderMode);
+    });
+
+    const listEl = document.getElementById("sound-music-list");
+    if (!listEl || !soundReady) return;
+    listEl.innerHTML = "";
+
+    const byGroup = new Map();
+    for (const id of soundPrefs.order) {
+      const track = soundTracksById.get(id);
+      if (!track) continue;
+      const g = track.group || "Прочее";
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(track);
+    }
+
+    for (const [groupName, tracks] of byGroup) {
+      const group = document.createElement("section");
+      group.className = "sound-group";
+      const title = document.createElement("h3");
+      title.className = "sound-group__title";
+      title.textContent = groupName;
+      group.appendChild(title);
+
+      tracks.forEach((track) => {
+        const row = document.createElement("div");
+        row.className = "sound-track";
+        row.draggable = true;
+        row.dataset.trackId = track.id;
+
+        const playBtn = document.createElement("button");
+        playBtn.type = "button";
+        playBtn.className = "sound-track__play";
+        if (soundPreviewId === track.id) playBtn.classList.add("is-active");
+        playBtn.textContent = soundPreviewId === track.id ? "■" : "▶";
+        playBtn.title = "Прослушать";
+        playBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (soundPreviewId === track.id) {
+            stopMusicPreview();
+            ensureMusicPlaying();
+            renderSoundSettingsUi();
+            return;
+          }
+          playMusicById(track.id, { preview: true });
+        });
+
+        const name = document.createElement("div");
+        name.className = "sound-track__name";
+        name.textContent = track.title || track.id;
+        if (track.sub) {
+          const sub = document.createElement("span");
+          sub.className = "sound-track__sub";
+          sub.textContent = track.sub;
+          name.appendChild(sub);
+        }
+
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "sound-track__toggle";
+        const on = Boolean(soundPrefs.enabled[track.id]);
+        toggle.classList.toggle("is-on", on);
+        toggle.textContent = on ? "×" : "";
+        toggle.title = on ? "Выключить" : "Включить";
+        toggle.addEventListener("click", (e) => {
+          e.stopPropagation();
+          soundPrefs.enabled[track.id] = !soundPrefs.enabled[track.id];
+          soundShuffleBag = [];
+          saveSoundPrefs();
+          if (!soundPrefs.enabled[track.id] && soundMusicAudio?.dataset.trackId === track.id) {
+            playNextMusicTrack();
+          } else {
+            ensureMusicPlaying();
+          }
+          renderSoundSettingsUi();
+        });
+
+        row.addEventListener("dragstart", (e) => {
+          soundDragId = track.id;
+          row.classList.add("is-dragging");
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", track.id);
+        });
+        row.addEventListener("dragend", () => {
+          soundDragId = null;
+          row.classList.remove("is-dragging");
+          listEl.querySelectorAll(".sound-track.is-drag-over").forEach((el) => el.classList.remove("is-drag-over"));
+        });
+        row.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          row.classList.add("is-drag-over");
+        });
+        row.addEventListener("dragleave", () => row.classList.remove("is-drag-over"));
+        row.addEventListener("drop", (e) => {
+          e.preventDefault();
+          row.classList.remove("is-drag-over");
+          const fromId = soundDragId || e.dataTransfer.getData("text/plain");
+          const toId = track.id;
+          if (!fromId || fromId === toId) return;
+          const order = [...soundPrefs.order];
+          const from = order.indexOf(fromId);
+          const to = order.indexOf(toId);
+          if (from < 0 || to < 0) return;
+          order.splice(from, 1);
+          order.splice(to, 0, fromId);
+          soundPrefs.order = order;
+          soundShuffleBag = [];
+          saveSoundPrefs();
+          renderSoundSettingsUi();
+        });
+
+        row.append(playBtn, name, toggle);
+        group.appendChild(row);
+      });
+
+      listEl.appendChild(group);
+    }
+  }
+
+  async function initSoundSystem() {
+    loadSoundPrefs();
+    try {
+      const res = await fetch(SOUND_INDEX_SRC);
+      if (res.ok) soundCatalog = await res.json();
+    } catch (_) {
+      soundCatalog = { groups: [] };
+    }
+    // restore custom entries into catalog display group
+    rebuildTrackMap();
+    syncSoundOrderWithCatalog();
+    saveSoundPrefs();
+    soundReady = true;
+    renderSoundSettingsUi();
+    bindSoundUnlock();
+
+    document.getElementById("sound-sfx-volume")?.addEventListener("input", (e) => {
+      soundPrefs.sfxVolume = clamp01(Number(e.target.value) / 100);
+      document.getElementById("sound-sfx-volume-val").textContent = `${e.target.value}%`;
+      saveSoundPrefs();
+    });
+    document.getElementById("sound-music-volume")?.addEventListener("input", (e) => {
+      soundPrefs.musicVolume = clamp01(Number(e.target.value) / 100);
+      document.getElementById("sound-music-volume-val").textContent = `${e.target.value}%`;
+      saveSoundPrefs();
+      applyMusicVolume();
+    });
+    document.querySelectorAll("[data-sound-order]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        soundPrefs.orderMode = btn.getAttribute("data-sound-order");
+        soundShuffleBag = [];
+        soundPlaylistCursor = -1;
+        saveSoundPrefs();
+        renderSoundSettingsUi();
+        ensureMusicPlaying();
+      });
+    });
+    document.getElementById("sound-upload-btn")?.addEventListener("click", () => {
+      document.getElementById("sound-upload-input")?.click();
+    });
+    document.getElementById("sound-upload-input")?.addEventListener("change", async (e) => {
+      const files = [...(e.target.files || [])];
+      e.target.value = "";
+      for (const file of files) {
+        if (!file.type.startsWith("audio/") && !/\.(ogg|mp3|wav|m4a|flac)$/i.test(file.name)) continue;
+        const id = `custom_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+        await idbPutTrack(id, file);
+        soundCustomMeta.push({
+          id,
+          title: file.name.replace(/\.[^.]+$/, ""),
+          group: SOUND_CUSTOM_GROUP,
+        });
+        soundPrefs.enabled[id] = true;
+        soundPrefs.order.unshift(id);
+      }
+      rebuildTrackMap();
+      syncSoundOrderWithCatalog();
+      saveSoundPrefs();
+      renderSoundSettingsUi();
+      showToast("Музыка добавлена");
+    });
+
+    // UI click SFX (buttons / interactive controls)
+    document.addEventListener(
+      "click",
+      (e) => {
+        const t = e.target.closest(
+          "button, .mc-btn, .hub-nav__btn, .main-tabs__btn, .catalog-card, .studio-tile, .studio-ctx__btn, .sound-track__play, .sound-track__toggle, .sound-order-btn, a.footer-link"
+        );
+        if (!t) return;
+        if (t.closest("#sound-sfx-volume, #sound-music-volume")) return;
+        playClickSound();
+      },
+      true
+    );
+  }
+
+  initSoundSystem();
 
   const COMPENDIUM_LINES = [
     "Компендиума пока не доступен.",
@@ -4544,6 +5012,11 @@
       toast.classList.remove("is-show");
       window.setTimeout(() => { toast.hidden = true; }, 220);
     }, 2200);
+    try {
+      playNotifySound();
+    } catch (_) {
+      /* sound may init later */
+    }
   }
 
   async function copyServerIp() {

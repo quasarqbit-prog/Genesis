@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=54" />
+  <link rel="stylesheet" href="styles.css?v=55" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -176,6 +176,7 @@
           <button type="button" class="hub-nav__btn hub-nav__btn--close" id="settings-close-tab">Закрыть</button>
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
           <button type="button" class="hub-nav__btn" data-hub-tab="race">Раса</button>
+          <button type="button" class="hub-nav__btn" data-hub-tab="sound">Звук</button>
         </nav>
 
         <div class="hub-body">
@@ -365,6 +366,42 @@
               <p class="field-error" id="hub-race-error" hidden></p>
               <button type="submit" class="mc-btn mc-btn--compact hub-save-btn" id="hub-race-save-btn">СОХРАНИТЬ</button>
             </form>
+          </section>
+
+          <section class="hub-view" id="hub-view-sound" data-hub-view="sound" hidden>
+            <div class="sound-settings" id="sound-settings">
+              <div class="sound-block">
+                <label class="field-label" for="sound-sfx-volume">Громкость эффектов</label>
+                <div class="sound-volume-row">
+                  <input class="sound-range" id="sound-sfx-volume" type="range" min="0" max="100" step="1" value="50" />
+                  <span class="sound-volume-val" id="sound-sfx-volume-val">50%</span>
+                </div>
+              </div>
+
+              <div class="sound-block">
+                <label class="field-label" for="sound-music-volume">Громкость музыки</label>
+                <div class="sound-volume-row">
+                  <input class="sound-range" id="sound-music-volume" type="range" min="0" max="100" step="1" value="20" />
+                  <span class="sound-volume-val" id="sound-music-volume-val">20%</span>
+                </div>
+              </div>
+
+              <div class="hub-sep" aria-hidden="true"></div>
+
+              <div class="sound-block sound-block--music">
+                <p class="sound-block__title">Фоновая музыка</p>
+                <button type="button" class="mc-btn mc-btn--compact sound-upload-btn" id="sound-upload-btn">Загрузить свою музыку</button>
+                <input id="sound-upload-input" type="file" accept="audio/*,.ogg,.mp3,.wav,.m4a" multiple hidden />
+
+                <div class="sound-music-list" id="sound-music-list"></div>
+
+                <div class="sound-order-row" role="group" aria-label="Порядок воспроизведения">
+                  <button type="button" class="sound-order-btn is-active" data-sound-order="forward" title="Сверху вниз">↓</button>
+                  <button type="button" class="sound-order-btn" data-sound-order="reverse" title="Снизу вверх">↑</button>
+                  <button type="button" class="sound-order-btn" data-sound-order="shuffle" title="Случайный порядок">⟳</button>
+                </div>
+              </div>
+            </div>
           </section>
         </div>
       </div>
@@ -1579,6 +1616,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=54"></script>
+  <script src="script.js?v=55"></script>
 </body>
 </html>

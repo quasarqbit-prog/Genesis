@@ -7,3 +7,6 @@ data/
 tmp/
 
 *.exe
+
+# Large music library (keep on server via sync); index + SFX are tracked
+assets/sound/music/
