@@ -33,6 +33,7 @@ const DATA_DIR = path.join(__dirname, "data");
 const RULES_FILE = path.join(DATA_DIR, "rules.json");
 const RULES_DEFAULT_FILE = path.join(__dirname, "rules-default.json");
 const SERVER_INFO_FILE = path.join(DATA_DIR, "server.json");
+const PATCHES_FILE = path.join(DATA_DIR, "patches.json");
 
 const app = express();
 const server = http.createServer(app);
@@ -2710,6 +2711,159 @@ app.post("/api/rules/reset", authMiddleware, async (req, res) => {
     const status = err.status || 500;
     return res.status(status).json({
       error: err.message || "Не удалось сбросить правила",
+    });
+  }
+});
+
+function normalizePatchesDoc(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const list = Array.isArray(src.patches) ? src.patches : Array.isArray(raw) ? raw : [];
+  const patches = list
+    .map((p, idx) => ({
+      id: String(p?.id || `p-${Date.now()}-${idx}`).slice(0, 64),
+      title: String(p?.title || "Патч").trim().slice(0, 120),
+      version: String(p?.version || "").trim().slice(0, 32),
+      body: String(p?.body || "").trim().slice(0, 20000),
+      createdAt: p?.createdAt ? String(p.createdAt) : new Date().toISOString(),
+      updatedAt: p?.updatedAt ? String(p.updatedAt) : null,
+    }))
+    .sort((a, b) => {
+      const ta = new Date(a.createdAt).getTime() || 0;
+      const tb = new Date(b.createdAt).getTime() || 0;
+      return tb - ta;
+    });
+  return { patches };
+}
+
+function readPatchesDoc() {
+  ensureUploadDirs();
+  if (!fs.existsSync(PATCHES_FILE)) {
+    const doc = { patches: [] };
+    fs.writeFileSync(PATCHES_FILE, JSON.stringify(doc, null, 2), "utf8");
+    return doc;
+  }
+  try {
+    return normalizePatchesDoc(JSON.parse(fs.readFileSync(PATCHES_FILE, "utf8")));
+  } catch (err) {
+    console.warn("patches.json corrupt, reseeding:", err.message);
+    const doc = { patches: [] };
+    fs.writeFileSync(PATCHES_FILE, JSON.stringify(doc, null, 2), "utf8");
+    return doc;
+  }
+}
+
+function writePatchesDoc(doc) {
+  ensureUploadDirs();
+  const normalized = normalizePatchesDoc(doc);
+  fs.writeFileSync(PATCHES_FILE, JSON.stringify(normalized, null, 2), "utf8");
+  return normalized;
+}
+
+app.get("/api/patches", (_req, res) => {
+  try {
+    return res.json({ ok: true, ...readPatchesDoc() });
+  } catch (err) {
+    console.error("patches get:", err);
+    return res.status(500).json({ error: "Не удалось загрузить патч-ноут" });
+  }
+});
+
+app.put("/api/patches", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const saved = writePatchesDoc({ patches: req.body?.patches || [] });
+    io.emit("patches:updated", saved);
+    return res.json({ ok: true, ...saved });
+  } catch (err) {
+    console.error("patches put:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось сохранить патч-ноут",
+    });
+  }
+});
+
+app.post("/api/patches", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const doc = readPatchesDoc();
+    const now = new Date().toISOString();
+    const patch = {
+      id: `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      title: String(req.body?.title || "").trim().slice(0, 120) || "Патч",
+      version: String(req.body?.version || "").trim().slice(0, 32),
+      body: String(req.body?.body || "").trim().slice(0, 20000),
+      createdAt: now,
+      updatedAt: now,
+    };
+    doc.patches.unshift(patch);
+    const saved = writePatchesDoc(doc);
+    io.emit("patches:updated", saved);
+    return res.json({ ok: true, patch, ...saved });
+  } catch (err) {
+    console.error("patches post:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось создать патч",
+    });
+  }
+});
+
+app.patch("/api/patches/:id", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const id = String(req.params.id || "");
+    const doc = readPatchesDoc();
+    const idx = doc.patches.findIndex((p) => p.id === id);
+    if (idx < 0) {
+      return res.status(404).json({ error: "Патч не найден" });
+    }
+    const prev = doc.patches[idx];
+    doc.patches[idx] = {
+      ...prev,
+      title:
+        req.body?.title !== undefined
+          ? String(req.body.title || "").trim().slice(0, 120) || prev.title
+          : prev.title,
+      version:
+        req.body?.version !== undefined
+          ? String(req.body.version || "").trim().slice(0, 32)
+          : prev.version,
+      body:
+        req.body?.body !== undefined
+          ? String(req.body.body || "").trim().slice(0, 20000)
+          : prev.body,
+      updatedAt: new Date().toISOString(),
+    };
+    const saved = writePatchesDoc(doc);
+    io.emit("patches:updated", saved);
+    return res.json({ ok: true, patch: doc.patches.find((p) => p.id === id), ...saved });
+  } catch (err) {
+    console.error("patches patch:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось обновить патч",
+    });
+  }
+});
+
+app.delete("/api/patches/:id", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const id = String(req.params.id || "");
+    const doc = readPatchesDoc();
+    const next = doc.patches.filter((p) => p.id !== id);
+    if (next.length === doc.patches.length) {
+      return res.status(404).json({ error: "Патч не найден" });
+    }
+    const saved = writePatchesDoc({ patches: next });
+    io.emit("patches:updated", saved);
+    return res.json({ ok: true, ...saved });
+  } catch (err) {
+    console.error("patches delete:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось удалить патч",
     });
   }
 });

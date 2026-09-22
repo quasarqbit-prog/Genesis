@@ -342,6 +342,11 @@
   let activeRulesSectionId = null;
   let rulesModalMode = null;
   let rulesModalMeta = null;
+  let patchesList = [];
+  let patchesLoaded = false;
+  let patchesLoadPromise = null;
+  let patchEditMode = false;
+  let patchEditorId = null;
   try {
     if (authToken) {
       const cachedUser = JSON.parse(localStorage.getItem(AUTH_USER_KEY) || "null");
@@ -610,6 +615,13 @@
               : prevHash,
         };
         renderServerTab();
+      }
+    });
+    socket.on("patches:updated", (payload) => {
+      if (payload?.patches) {
+        patchesList = payload.patches;
+        patchesLoaded = true;
+        renderPatchesUi();
       }
     });
     socket.on("connect_error", () => {
@@ -1437,6 +1449,9 @@
       const panel = document.getElementById("main-panel-server");
       if (panel) panel.scrollTop = 0;
       ensureServerInfoLoaded().then(() => renderServerTab());
+    }
+    if (name === "patch") {
+      ensurePatchesLoaded().then(() => renderPatchesUi());
     }
   }
 
@@ -4952,6 +4967,277 @@
     }
   });
 
+  function canEditPatches() {
+    return String(authUser?.role || "") === "founder";
+  }
+
+  function renderMarkdownLite(raw) {
+    let text = escapeHtml(String(raw || ""));
+    text = text.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+    text = text.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+    text = text.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+    text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    text = text.replace(/(^|[^*])\*(?!\s)(.+?)\*(?!\*)/g, "$1<em>$2</em>");
+    text = text.replace(/`([^`]+)`/g, "<code>$1</code>");
+    text = text.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+    text = text.replace(/^(?:- |\* )(.+)$/gm, "<li>$1</li>");
+    text = text.replace(/(?:<li>[\s\S]*?<\/li>\s*)+/g, (block) => `<ul>${block}</ul>`);
+    text = text
+      .split(/\n{2,}/)
+      .map((chunk) => {
+        const trimmed = chunk.trim();
+        if (!trimmed) return "";
+        if (/^<(h[1-3]|ul|li)/.test(trimmed)) return trimmed;
+        return `<p>${trimmed.replace(/\n/g, "<br>")}</p>`;
+      })
+      .join("");
+    return text || "<p></p>";
+  }
+
+  async function ensurePatchesLoaded(force = false) {
+    if (patchesLoaded && !force) return patchesList;
+    if (patchesLoadPromise && !force) return patchesLoadPromise;
+    patchesLoadPromise = (async () => {
+      try {
+        const data = await api("/api/patches");
+        patchesList = Array.isArray(data.patches) ? data.patches : [];
+        patchesLoaded = true;
+        return patchesList;
+      } catch (err) {
+        showToast(err.message || "Не удалось загрузить патч-ноут");
+        patchesList = patchesList || [];
+        return patchesList;
+      } finally {
+        patchesLoadPromise = null;
+      }
+    })();
+    return patchesLoadPromise;
+  }
+
+  function renderPatchesUi() {
+    const list = document.getElementById("patch-list");
+    const empty = document.getElementById("patch-empty");
+    const founderBar = document.getElementById("patch-founder-bar");
+    const notes = document.getElementById("patch-notes");
+    const editBtn = document.getElementById("patch-edit-mode-btn");
+    const founder = canEditPatches();
+    if (founderBar) founderBar.hidden = !founder;
+    if (notes) notes.classList.toggle("is-editing", Boolean(founder && patchEditMode));
+    if (editBtn) {
+      editBtn.textContent = patchEditMode ? "Готово" : "Редактировать";
+      editBtn.classList.toggle("is-active", patchEditMode);
+    }
+    if (!list) return;
+    const patches = Array.isArray(patchesList) ? patchesList : [];
+    if (empty) empty.hidden = patches.length > 0;
+    list.innerHTML = patches
+      .map((patch) => {
+        const open = document
+          .getElementById(`patch-item-${patch.id}`)
+          ?.classList.contains("is-open");
+        return `<article class="patch-item${open ? " is-open" : ""}" id="patch-item-${escapeHtml(
+          patch.id
+        )}" data-patch-id="${escapeHtml(patch.id)}">
+          <button type="button" class="patch-item__head" data-patch-toggle="${escapeHtml(patch.id)}">
+            <span class="patch-item__title">${escapeHtml(patch.title || "Патч")}</span>
+            <span class="patch-item__version">${escapeHtml(patch.version || "")}</span>
+            <span class="patch-item__tri" aria-hidden="true"></span>
+          </button>
+          <div class="patch-item__body">
+            <div class="patch-item__content">${renderMarkdownLite(patch.body)}</div>
+            <div class="patch-item__edit-row">
+              <button type="button" class="rules-action-btn" data-patch-edit="${escapeHtml(
+                patch.id
+              )}">Изменить</button>
+              <button type="button" class="rules-action-btn rules-action-btn--danger" data-patch-del="${escapeHtml(
+                patch.id
+              )}">Удалить</button>
+            </div>
+          </div>
+        </article>`;
+      })
+      .join("");
+  }
+
+  function openPatchEditor(patch = null) {
+    if (!canEditPatches()) return;
+    patchEditorId = patch?.id || null;
+    const editor = document.getElementById("patch-editor");
+    const title = document.getElementById("patch-editor-title");
+    const delBtn = document.getElementById("patch-editor-delete");
+    const titleInput = document.getElementById("patch-field-title");
+    const versionInput = document.getElementById("patch-field-version");
+    const bodyInput = document.getElementById("patch-field-body");
+    if (title) title.textContent = patch ? "Редактировать патч" : "Новый патч";
+    if (delBtn) delBtn.hidden = !patch;
+    if (titleInput) titleInput.value = patch?.title || "";
+    if (versionInput) versionInput.value = patch?.version || "";
+    if (bodyInput) bodyInput.value = patch?.body || "";
+    if (editor) editor.hidden = false;
+  }
+
+  function closePatchEditor() {
+    const editor = document.getElementById("patch-editor");
+    if (editor) editor.hidden = true;
+    patchEditorId = null;
+  }
+
+  function applyMdToSelection(kind) {
+    const ta = document.getElementById("patch-field-body");
+    if (!ta) return;
+    const start = ta.selectionStart ?? 0;
+    const end = ta.selectionEnd ?? 0;
+    const value = ta.value;
+    const selected = value.slice(start, end);
+    let before = "";
+    let after = "";
+    let insert = selected;
+    if (kind === "bold") {
+      before = "**";
+      after = "**";
+      if (!selected) insert = "текст";
+    } else if (kind === "italic") {
+      before = "*";
+      after = "*";
+      if (!selected) insert = "текст";
+    } else if (kind === "h2") {
+      before = "## ";
+      after = "";
+      if (!selected) insert = "Заголовок";
+      if (start > 0 && value[start - 1] !== "\n") before = "\n## ";
+    } else if (kind === "ul") {
+      const lines = (selected || "пункт").split(/\r?\n/);
+      insert = lines.map((l) => `- ${l.replace(/^-\s*/, "")}`).join("\n");
+      before = start > 0 && value[start - 1] !== "\n" ? "\n" : "";
+      after = "";
+    } else if (kind === "code") {
+      before = "`";
+      after = "`";
+      if (!selected) insert = "code";
+    } else if (kind === "link") {
+      const label = selected || "ссылка";
+      insert = `[${label}](https://)`;
+      before = "";
+      after = "";
+    } else {
+      return;
+    }
+    const next = value.slice(0, start) + before + insert + after + value.slice(end);
+    ta.value = next;
+    const selStart = start + before.length;
+    const selEnd = selStart + insert.length;
+    ta.focus();
+    ta.setSelectionRange(selStart, selEnd);
+  }
+
+  document.getElementById("patch-create-btn")?.addEventListener("click", () => {
+    openPatchEditor(null);
+  });
+
+  document.getElementById("patch-edit-mode-btn")?.addEventListener("click", () => {
+    if (!canEditPatches()) return;
+    patchEditMode = !patchEditMode;
+    renderPatchesUi();
+  });
+
+  document.getElementById("patch-list")?.addEventListener("click", async (e) => {
+    const toggle = e.target.closest("[data-patch-toggle]");
+    if (toggle) {
+      const id = toggle.getAttribute("data-patch-toggle");
+      const item = document.getElementById(`patch-item-${id}`);
+      if (item) item.classList.toggle("is-open");
+      return;
+    }
+    const editBtn = e.target.closest("[data-patch-edit]");
+    if (editBtn) {
+      const id = editBtn.getAttribute("data-patch-edit");
+      const patch = patchesList.find((p) => p.id === id);
+      if (patch) openPatchEditor(patch);
+      return;
+    }
+    const delBtn = e.target.closest("[data-patch-del]");
+    if (delBtn) {
+      if (!canEditPatches()) return;
+      const id = delBtn.getAttribute("data-patch-del");
+      const patch = patchesList.find((p) => p.id === id);
+      if (!patch) return;
+      if (!window.confirm(`Удалить патч «${patch.title}»?`)) return;
+      try {
+        const data = await api(`/api/patches/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        patchesList = Array.isArray(data.patches) ? data.patches : [];
+        renderPatchesUi();
+        showToast("Патч удалён");
+      } catch (err) {
+        showToast(err.message || "Не удалось удалить");
+      }
+    }
+  });
+
+  document.getElementById("patch-md-toolbar")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-md]");
+    if (!btn) return;
+    applyMdToSelection(btn.getAttribute("data-md"));
+  });
+
+  document.getElementById("patch-editor-close")?.addEventListener("click", closePatchEditor);
+  document.getElementById("patch-editor-cancel")?.addEventListener("click", closePatchEditor);
+  document.getElementById("patch-editor")?.addEventListener("click", (e) => {
+    if (e.target.id === "patch-editor") closePatchEditor();
+  });
+
+  document.getElementById("patch-editor-delete")?.addEventListener("click", async () => {
+    if (!canEditPatches() || !patchEditorId) return;
+    if (!window.confirm("Удалить этот патч?")) return;
+    try {
+      const data = await api(`/api/patches/${encodeURIComponent(patchEditorId)}`, {
+        method: "DELETE",
+      });
+      patchesList = Array.isArray(data.patches) ? data.patches : [];
+      closePatchEditor();
+      renderPatchesUi();
+      showToast("Патч удалён");
+    } catch (err) {
+      showToast(err.message || "Не удалось удалить");
+    }
+  });
+
+  document.getElementById("patch-editor-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!canEditPatches()) return;
+    const title = String(document.getElementById("patch-field-title")?.value || "").trim();
+    const version = String(document.getElementById("patch-field-version")?.value || "").trim();
+    const body = String(document.getElementById("patch-field-body")?.value || "").trim();
+    if (!title) {
+      showToast("Укажи название патча");
+      return;
+    }
+    try {
+      let data;
+      if (patchEditorId) {
+        data = await api(`/api/patches/${encodeURIComponent(patchEditorId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ title, version, body }),
+        });
+      } else {
+        data = await api("/api/patches", {
+          method: "POST",
+          body: JSON.stringify({ title, version, body }),
+        });
+      }
+      patchesList = Array.isArray(data.patches) ? data.patches : [];
+      closePatchEditor();
+      renderPatchesUi();
+      showToast("Патч сохранён");
+    } catch (err) {
+      showToast(err.message || "Не удалось сохранить патч");
+    }
+  });
+
   function canEditRules() {
     return String(authUser?.role || "") === "founder";
   }
@@ -5321,6 +5607,7 @@
     updateRegisterChrome();
     applyAuthUi();
     ensureRulesLoaded();
+    ensurePatchesLoaded().then(() => renderPatchesUi());
     if (authToken) {
       ensureServerInfoLoaded().then(() => renderServerTab());
     }

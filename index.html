@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=40" />
+  <link rel="stylesheet" href="styles.css?v=41" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -117,8 +117,13 @@
           </div>
 
           <div class="main-tab-panel main-tab-panel--scroll" data-main-panel="patch" id="main-panel-patch" hidden>
-            <div class="patch-empty" id="patch-notes">
-              <p class="patch-empty__text">Патч-ноут пока пуст</p>
+            <div class="patch-notes" id="patch-notes">
+              <div class="patch-notes__founder" id="patch-founder-bar" hidden>
+                <button type="button" class="mc-btn mc-btn--compact" id="patch-create-btn">Создать патч</button>
+                <button type="button" class="mc-btn mc-btn--ghost mc-btn--compact" id="patch-edit-mode-btn">Редактировать</button>
+              </div>
+              <div class="patch-list" id="patch-list"></div>
+              <p class="patch-empty__text" id="patch-empty">Патч-ноут пока пуст</p>
             </div>
           </div>
         </div>
@@ -1423,6 +1428,43 @@
     </div>
   </div>
 
+  <div class="patch-editor" id="patch-editor" hidden>
+    <div class="patch-editor__panel" role="dialog" aria-modal="true" aria-labelledby="patch-editor-title">
+      <div class="patch-editor__head">
+        <h2 class="patch-editor__title" id="patch-editor-title">Новый патч</h2>
+        <button type="button" class="auth-modal__close" id="patch-editor-close" aria-label="Закрыть">×</button>
+      </div>
+      <form class="patch-editor__form" id="patch-editor-form" novalidate>
+        <div class="field-block">
+          <label class="field-label" for="patch-field-title">Название</label>
+          <input class="field-input" id="patch-field-title" type="text" maxlength="120" required />
+        </div>
+        <div class="field-block">
+          <label class="field-label" for="patch-field-version">Версия</label>
+          <input class="field-input" id="patch-field-version" type="text" maxlength="32" placeholder="0.12.0" />
+        </div>
+        <div class="field-block patch-editor__body-block">
+          <label class="field-label" for="patch-field-body">Текст патча</label>
+          <div class="patch-md-toolbar" id="patch-md-toolbar" role="toolbar" aria-label="Форматирование">
+            <button type="button" class="patch-md-btn" data-md="bold" title="Жирный">B</button>
+            <button type="button" class="patch-md-btn" data-md="italic" title="Курсив"><em>I</em></button>
+            <button type="button" class="patch-md-btn" data-md="h2" title="Заголовок">H</button>
+            <button type="button" class="patch-md-btn" data-md="ul" title="Список">•≡</button>
+            <button type="button" class="patch-md-btn" data-md="code" title="Код">&lt;/&gt;</button>
+            <button type="button" class="patch-md-btn" data-md="link" title="Ссылка">🔗</button>
+          </div>
+          <textarea class="field-area patch-editor__textarea" id="patch-field-body" rows="12" placeholder="Текст патча в Markdown…"></textarea>
+        </div>
+        <div class="patch-editor__actions">
+          <button type="button" class="mc-btn mc-btn--ghost" id="patch-editor-delete" hidden>Удалить</button>
+          <span class="patch-editor__spacer"></span>
+          <button type="button" class="mc-btn mc-btn--ghost" id="patch-editor-cancel">Отмена</button>
+          <button type="submit" class="mc-btn">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="toast" id="toast" hidden>IP скопирован</div>
 
   <footer class="footer" id="app-footer" hidden>
@@ -1435,6 +1477,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=40"></script>
+  <script src="script.js?v=41"></script>
 </body>
 </html>
