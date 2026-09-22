@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=23" />
+  <link rel="stylesheet" href="styles.css?v=25" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -47,7 +47,7 @@
 
         <div class="presence-divider" aria-hidden="true"></div>
 
-        <div class="presence-rail">
+        <div class="presence-rail" id="presence-rail">
           <div class="presence-staff" id="presence-staff"></div>
           <div class="presence-divider presence-divider--soft" id="presence-staff-divider" hidden aria-hidden="true"></div>
           <div class="presence-others" id="presence-others"></div>
@@ -332,19 +332,19 @@
           </div>
         </div>
       </aside>
-
-      <div class="presence-mini" id="presence-mini-card" hidden>
-        <div class="presence-mini__avatar is-offline" id="presence-mini-avatar">
-          <img alt="" hidden />
-          <span class="presence-mini__fallback">?</span>
-        </div>
-        <div class="presence-mini__text">
-          <div class="presence-mini__nick" id="presence-mini-nick">—</div>
-          <div class="presence-mini__id" id="presence-mini-id">id —</div>
-        </div>
-      </div>
     </div>
   </header>
+
+  <div class="presence-mini" id="presence-mini-card" hidden>
+    <div class="presence-mini__avatar is-offline" id="presence-mini-avatar">
+      <img alt="" hidden />
+      <span class="presence-mini__fallback">?</span>
+    </div>
+    <div class="presence-mini__text">
+      <div class="presence-mini__nick" id="presence-mini-nick">—</div>
+      <div class="presence-mini__id" id="presence-mini-id">id —</div>
+    </div>
+  </div>
 
   <div class="auth-gate ui-layer is-open" id="auth-gate">
     <div class="auth-gate__panel">
@@ -1330,6 +1330,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=23"></script>
+  <script src="script.js?v=25"></script>
 </body>
 </html>

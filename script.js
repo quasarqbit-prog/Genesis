@@ -701,11 +701,51 @@
     if (mcNick && mcNick !== fullNick) tipParts.push(`игра: ${mcNick}`);
     tipParts.push(`id ${id}`);
     const tip = escapeHtml(tipParts.join(" · "));
-    return `<article class="presence-user ${cls}" data-user-id="${id}">
+    const avatarAttr = escapeHtml(String(user.avatarUrl || "").split("?")[0]);
+    return `<article class="presence-user ${cls}" data-user-id="${id}" data-nick="${nick}" data-mc-nick="${escapeHtml(mcNick)}" data-avatar="${avatarAttr}" data-status="${cls}">
       <div class="presence-user__nick">${nick}</div>
       <button type="button" class="presence-avatar" aria-label="${tip}">${avatarHtml}</button>
       <div class="presence-user__tg">${tg || "—"}</div>
     </article>`;
+  }
+
+  function wirePresenceUserCard(card) {
+    if (!card || card.dataset.presenceWired === "1") return;
+    card.dataset.presenceWired = "1";
+
+    card.addEventListener("mousemove", (e) => {
+      if (!isDesktopLayout()) {
+        hidePresenceMini();
+        return;
+      }
+      const user = userFromPresenceCard(card);
+      if (!user) {
+        hidePresenceMini();
+        return;
+      }
+      showPresenceMini(user, e.clientX, e.clientY);
+    });
+
+    card.addEventListener("mouseenter", (e) => {
+      if (!isDesktopLayout()) return;
+      const user = userFromPresenceCard(card);
+      if (!user) return;
+      showPresenceMini(user, e.clientX, e.clientY);
+    });
+
+    card.addEventListener("mouseleave", () => {
+      hidePresenceMini();
+    });
+
+    card.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!isDesktopLayout()) return;
+      const user = userFromPresenceCard(card);
+      if (!user) return;
+      hidePresenceMini();
+      setUserProfileDrawerOpen(true, user);
+    });
   }
 
   function renderPlayersDirectory() {
@@ -729,6 +769,8 @@
     }
     staffHost.querySelectorAll("img[data-avatar-base]").forEach(wirePresenceAvatarImg);
     othersHost.querySelectorAll("img[data-avatar-base]").forEach(wirePresenceAvatarImg);
+    staffHost.querySelectorAll(".presence-user").forEach(wirePresenceUserCard);
+    othersHost.querySelectorAll(".presence-user").forEach(wirePresenceUserCard);
   }
 
   function findDirectoryUser(id) {
@@ -768,6 +810,21 @@
     }
   }
 
+  function userFromPresenceCard(card) {
+    if (!card) return null;
+    const id = Number(card.getAttribute("data-user-id"));
+    const fromDir = findDirectoryUser(id);
+    if (fromDir) return fromDir;
+    if (!Number.isFinite(id)) return null;
+    return {
+      id,
+      siteNick: card.getAttribute("data-nick") || "",
+      mcNick: card.getAttribute("data-mc-nick") || "",
+      avatarUrl: card.getAttribute("data-avatar") || "",
+      banned: card.getAttribute("data-status") === "is-banned",
+    };
+  }
+
   function hidePresenceMini() {
     const mini = document.getElementById("presence-mini-card");
     if (mini) mini.hidden = true;
@@ -775,7 +832,7 @@
 
   function showPresenceMini(user, clientX, clientY) {
     const mini = document.getElementById("presence-mini-card");
-    if (!mini || !user || !isDesktopLayout()) return;
+    if (!mini || !user) return;
     const nick = String(user.siteNick || user.mcNick || "—").trim() || "—";
     const id = Number(user.id);
     const status = presenceClass(user);
@@ -789,9 +846,8 @@
     if (nickEl) nickEl.textContent = nick;
     if (idEl) idEl.textContent = `id ${id}`;
     mini.hidden = false;
-    // сначала ставим рядом с курсором, потом уточняем размер
-    mini.style.left = `${Math.max(8, clientX - 12)}px`;
-    mini.style.top = `${Math.max(8, clientY - 12)}px`;
+    mini.style.left = "0px";
+    mini.style.top = "0px";
     const rect = mini.getBoundingClientRect();
     const pad = 14;
     let left = clientX - rect.width - pad;
@@ -844,25 +900,29 @@
 
   function bindPresenceTips() {
     const strip = document.querySelector(".presence-strip");
-    const rail = document.getElementById("presence-rail");
-    if (!rail || rail.dataset.tipBound === "1") return;
-    rail.dataset.tipBound = "1";
+    const rail =
+      document.getElementById("presence-rail") ||
+      strip?.querySelector?.(".presence-rail");
+    if (!strip || !rail || strip.dataset.presenceBound === "1") return;
+    strip.dataset.presenceBound = "1";
 
-    const cardFromEvent = (e) => {
-      const card = e.target.closest(".presence-user");
+    const resolveCard = (target) => {
+      const card = target?.closest?.(".presence-user");
       if (!card || !rail.contains(card)) return null;
       return card;
     };
 
-    rail.addEventListener("pointermove", (e) => {
-      if (!isDesktopLayout()) return;
-      const card = cardFromEvent(e);
+    strip.addEventListener("mousemove", (e) => {
+      if (!isDesktopLayout()) {
+        hidePresenceMini();
+        return;
+      }
+      const card = resolveCard(e.target);
       if (!card) {
         hidePresenceMini();
         return;
       }
-      const id = Number(card.getAttribute("data-user-id"));
-      const user = findDirectoryUser(id);
+      const user = userFromPresenceCard(card);
       if (!user) {
         hidePresenceMini();
         return;
@@ -870,32 +930,20 @@
       showPresenceMini(user, e.clientX, e.clientY);
     });
 
-    rail.addEventListener("pointerleave", () => {
+    strip.addEventListener("mouseleave", () => {
       hidePresenceMini();
     });
 
-    rail.addEventListener("click", (e) => {
-      const card = cardFromEvent(e);
+    strip.addEventListener("click", (e) => {
+      const card = resolveCard(e.target);
       if (!card) return;
       e.preventDefault();
       e.stopPropagation();
-      const id = Number(card.getAttribute("data-user-id"));
-      const user = findDirectoryUser(id);
-      if (!user) return;
-      if (isDesktopLayout()) {
-        hidePresenceMini();
-        setUserProfileDrawerOpen(true, user);
-      }
+      const user = userFromPresenceCard(card);
+      if (!user || !isDesktopLayout()) return;
+      hidePresenceMini();
+      setUserProfileDrawerOpen(true, user);
     });
-
-    // на всякий случай: клики по strip не глотаем
-    strip?.addEventListener(
-      "pointerdown",
-      (e) => {
-        if (e.target.closest(".presence-user")) e.stopPropagation();
-      },
-      true
-    );
   }
 
   bindPresenceTips();
