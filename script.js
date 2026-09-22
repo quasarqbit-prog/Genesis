@@ -1431,8 +1431,15 @@
   const COMPENDIUM_BOOK_W = 281;
   const COMPENDIUM_BOOK_H = 173;
   const COMPENDIUM_TEXT_COLOR = "#3f2a1d";
+  // Glyphs stay 1px-crisp; UPS>1 makes them smaller relative to the book art.
+  const COMPENDIUM_UPSCALE = 2;
   const COMPENDIUM_FONT_SCALE = 1;
   const COMPENDIUM_BOOK_SRC = "assets/compendium/compendium.png";
+  // Content boxes inside each page (native book pixels, away from rings).
+  const COMPENDIUM_PAGES = [
+    { x: 20, y: 26, w: 108, h: 120 },
+    { x: 152, y: 26, w: 108, h: 120 },
+  ];
 
   let compendiumFontPromise = null;
   let compendiumGlyphs = null;
@@ -1636,8 +1643,18 @@
         return;
       }
 
+      const ups = COMPENDIUM_UPSCALE;
       const scale = COMPENDIUM_FONT_SCALE;
-      const lineGap = 3 * scale;
+      const lineGap = 4 * scale;
+      const page = COMPENDIUM_PAGES[0];
+
+      canvas.width = COMPENDIUM_BOOK_W * ups;
+      canvas.height = COMPENDIUM_BOOK_H * ups;
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
       const lineHeights = COMPENDIUM_LINES.map((line) => {
         let maxH = 8 * scale;
         for (const ch of Array.from(line)) {
@@ -1648,31 +1665,16 @@
       });
       const blockH =
         lineHeights.reduce((a, b) => a + b, 0) + lineGap * (COMPENDIUM_LINES.length - 1);
-      const widths = COMPENDIUM_LINES.map((line) => measureCompendiumLine(glyphs, line, scale));
 
-      // Native book pixels on canvas; CSS scales the element over the art.
-      canvas.width = COMPENDIUM_BOOK_W;
-      canvas.height = COMPENDIUM_BOOK_H;
-      const ctx = canvas.getContext("2d");
-      ctx.imageSmoothingEnabled = false;
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      let y = Math.round((COMPENDIUM_BOOK_H - blockH) / 2);
+      let y = Math.round(page.y * ups + Math.max(0, (page.h * ups - blockH) / 2));
       for (let i = 0; i < COMPENDIUM_LINES.length; i += 1) {
-        const lw = widths[i];
+        const line = COMPENDIUM_LINES[i];
         const lh = lineHeights[i];
-        const x = Math.round((COMPENDIUM_BOOK_W - lw) / 2);
-        const baseline = y + Math.round(lh * 0.9);
-        drawCompendiumLine(
-          ctx,
-          glyphs,
-          COMPENDIUM_LINES[i],
-          x,
-          baseline,
-          scale,
-          COMPENDIUM_TEXT_COLOR
-        );
+        const lw = measureCompendiumLine(glyphs, line, scale);
+        const maxW = page.w * ups;
+        const x = Math.round(page.x * ups + Math.max(0, (maxW - lw) / 2));
+        const baseline = y + Math.round(lh * 0.85);
+        drawCompendiumLine(ctx, glyphs, line, x, baseline, scale, COMPENDIUM_TEXT_COLOR);
         y += lh + lineGap;
       }
     } catch (err) {
