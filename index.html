@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=62" />
+  <link rel="stylesheet" href="styles.css?v=63" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -914,6 +914,24 @@
           ></textarea>
         </div>
 
+        <div class="field-block race-blocks-field">
+          <div class="field-label">
+            Дополнительные блоки
+            <span class="opt">необязательно</span>
+            <span class="field-tip" tabindex="0" data-tip="Можно добавить текст (Markdown), рецепт крафта или загрузку файла.">?</span>
+          </div>
+          <div class="race-blocks" id="race-blocks-list"></div>
+          <div class="race-blocks-add">
+            <button type="button" class="mc-btn mc-btn--compact mc-btn--ghost" id="race-block-add-btn">+ Добавить блок</button>
+            <div class="race-blocks-menu" id="race-block-type-menu" hidden role="menu">
+              <button type="button" class="race-blocks-menu__btn" data-race-block-type="text" role="menuitem">Текст</button>
+              <button type="button" class="race-blocks-menu__btn" data-race-block-type="craft" role="menuitem">Рецепт крафта</button>
+              <button type="button" class="race-blocks-menu__btn" data-race-block-type="file" role="menuitem">Загрузка контента</button>
+            </div>
+          </div>
+          <input id="race-block-file-input" type="file" hidden />
+        </div>
+
         <div class="field-block">
           <div class="field-label">
             Скины
@@ -1385,7 +1403,8 @@
           <div class="craft-mode-tabs" id="craft-mode-tabs" role="tablist">
             <button type="button" class="craft-tab is-active" data-craft="none" role="tab">Нет</button>
             <button type="button" class="craft-tab" data-craft="smelt" role="tab">Плавка</button>
-            <button type="button" class="craft-tab" data-craft="craft" role="tab">Крафт</button>
+            <button type="button" class="craft-tab" data-craft="2x2" role="tab">2×2</button>
+            <button type="button" class="craft-tab" data-craft="3x3" role="tab">3×3</button>
           </div>
 
           <!-- Smelt -->
@@ -1396,8 +1415,8 @@
 
           <!-- Craft grid -->
           <div class="craft-panel" id="craft-grid-panel" hidden>
-            <div class="craft-grid" id="craft-grid">
-              <!-- 9 cells rendered by JS -->
+            <div class="craft-grid craft-grid--3" id="craft-grid">
+              <!-- cells rendered by JS -->
             </div>
             <div class="craft-legend" id="craft-legend">
               <!-- legend rows rendered by JS -->
@@ -1627,6 +1646,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=62"></script>
+  <script src="script.js?v=63"></script>
 </body>
 </html>

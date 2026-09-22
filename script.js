@@ -326,6 +326,10 @@
   const itemTextures = [];
   const itemAudio = [];
   const structureSchematics = [];
+  /** @type {Array<object>} */
+  let raceBlocks = [];
+  /** @type {Map<string, {name:string,ext:string,bytes:Uint8Array,size:number}>} */
+  const raceBlockFiles = new Map();
   const COMMAND_RE = /^[A-Za-z0-9_\/]+$/;
   let skinIdSeq = 1;
   let contentContext = { mode: "new", prefix: "NEW*", type: "item" };
@@ -4910,6 +4914,7 @@
       const el = document.getElementById(id);
       form[id] = el ? el.value : "";
     });
+    form.blocks = serializeRaceBlocksMeta();
     return form;
   }
 
@@ -4937,6 +4942,41 @@
       if (!el || form[id] == null) return;
       el.value = form[id];
     });
+    if (Array.isArray(form.blocks)) {
+      raceBlocks = form.blocks
+        .map((b) => {
+          if (!b || typeof b !== "object") return null;
+          if (b.type === "text") {
+            return { id: String(b.id || createRaceBlock("text").id), type: "text", body: String(b.body || "") };
+          }
+          if (b.type === "craft") {
+            return {
+              id: String(b.id || createRaceBlock("craft").id),
+              type: "craft",
+              mode: normalizeCraftMode(b.mode || "3x3") === "none" ? "3x3" : normalizeCraftMode(b.mode || "3x3"),
+              cells: Array.isArray(b.cells) ? b.cells.map((c) => String(c || "")) : Array(9).fill(""),
+              legend: b.legend && typeof b.legend === "object" ? { ...b.legend } : {},
+              smeltItem: String(b.smeltItem || ""),
+            };
+          }
+          if (b.type === "file") {
+            return {
+              id: String(b.id || createRaceBlock("file").id),
+              type: "file",
+              fileName: String(b.fileName || ""),
+              ext: String(b.ext || ""),
+              size: Number(b.size) || 0,
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+      // Drop file blobs that weren't restored (only metadata survives storage)
+      for (const id of [...raceBlockFiles.keys()]) {
+        if (!raceBlocks.some((b) => b.id === id && b.type === "file")) raceBlockFiles.delete(id);
+      }
+      renderRaceBlocks();
+    }
     document.querySelectorAll(".field-area").forEach((area) => autosizeArea(area));
   }
 
@@ -5306,9 +5346,26 @@
       ["Особые механики", val("mechanics")],
     ];
 
-    const anketa = sections
-      .map(([label, text]) => `${label}:\n${text || "—"}`)
-      .join("\n\n---\n\n");
+    const anketaParts = [
+      sections
+        .map(([label, text]) => `${label}:\n${text || "—"}`)
+        .join("\n\n---\n\n"),
+    ];
+
+    raceBlocks.forEach((block, i) => {
+      const n = i + 1;
+      if (block.type === "text") {
+        anketaParts.push(`Доп. блок (текст #${n}):\n${(block.body || "").trim() || "—"}`);
+      } else if (block.type === "craft") {
+        anketaParts.push(`Доп. блок (рецепт #${n}):\n${raceCraftToText(block)}`);
+      } else if (block.type === "file") {
+        anketaParts.push(
+          `Доп. блок (файл #${n}):\n${block.fileName || "файл не выбран"}`
+        );
+      }
+    });
+
+    const anketa = anketaParts.join("\n\n---\n\n");
 
     const files = [
       { name: "анкета.txt", bytes: encodeUtf8(anketa) },
@@ -5322,6 +5379,19 @@
     raceAudio.forEach((a, i) => {
       const num = String(i + 1).padStart(2, "0");
       files.push({ name: `audio/audio_${num}.${a.ext}`, bytes: a.bytes });
+    });
+
+    let fileIdx = 0;
+    raceBlocks.forEach((block) => {
+      if (block.type !== "file") return;
+      const stored = raceBlockFiles.get(block.id);
+      if (!stored?.bytes) return;
+      fileIdx += 1;
+      const num = String(fileIdx).padStart(2, "0");
+      const safeName = String(stored.name || `file_${num}.${stored.ext || "bin"}`)
+        .replace(/[\\/:*?"<>|]+/g, "_")
+        .slice(0, 80);
+      files.push({ name: `blocks/${num}_${safeName}`, bytes: stored.bytes });
     });
 
     return files;
@@ -5841,6 +5911,371 @@
     hideSpinner("race-audio-spinner");
   });
 
+  /* ---------- Race custom blocks ---------- */
+  const RACE_BLOCK_FILE_MAX = 8 * 1024 * 1024;
+  let raceBlockIdSeq = 1;
+  let raceBlockFileTargetId = null;
+
+  function createRaceBlock(type) {
+    const id = `rb_${Date.now().toString(36)}_${raceBlockIdSeq++}`;
+    if (type === "text") return { id, type: "text", body: "" };
+    if (type === "craft") {
+      return {
+        id,
+        type: "craft",
+        mode: "3x3",
+        cells: Array(9).fill(""),
+        legend: {},
+        smeltItem: "",
+      };
+    }
+    return { id, type: "file", fileName: "", ext: "", size: 0 };
+  }
+
+  function serializeRaceBlocksMeta() {
+    return raceBlocks.map((b) => {
+      if (b.type === "text") return { id: b.id, type: "text", body: b.body || "" };
+      if (b.type === "craft") {
+        return {
+          id: b.id,
+          type: "craft",
+          mode: b.mode || "3x3",
+          cells: Array.isArray(b.cells) ? [...b.cells] : [],
+          legend: { ...(b.legend || {}) },
+          smeltItem: b.smeltItem || "",
+        };
+      }
+      return {
+        id: b.id,
+        type: "file",
+        fileName: b.fileName || "",
+        ext: b.ext || "",
+        size: b.size || 0,
+      };
+    });
+  }
+
+  function raceCraftToText(block) {
+    const mode = normalizeCraftMode(block.mode || "3x3");
+    if (mode === "smelt") return `Плавка: ${(block.smeltItem || "").trim() || "—"}`;
+    const size = mode === "2x2" ? 2 : 3;
+    const cells = Array.isArray(block.cells) ? block.cells : [];
+    const rows = [];
+    for (let r = 0; r < size; r += 1) {
+      rows.push(
+        Array.from({ length: size }, (_, c) => cells[r * size + c] || "0").join("|")
+      );
+    }
+    const legend = Object.entries(block.legend || {})
+      .filter(([sym]) => cells.includes(sym))
+      .map(([sym, name]) => `${sym} — ${name || "—"}`);
+    return [`Крафт ${size}×${size}:`, ...rows, ``, `Легенда:`, ...legend].join("\n");
+  }
+
+  function formatBytes(n) {
+    if (!Number.isFinite(n) || n < 0) return "0 Б";
+    if (n < 1024) return `${n} Б`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} КБ`;
+    return `${(n / (1024 * 1024)).toFixed(1)} МБ`;
+  }
+
+  function syncRaceCraftLegend(block, legendEl) {
+    if (!legendEl) return;
+    if (!block.legend || typeof block.legend !== "object") block.legend = {};
+    const cells = Array.isArray(block.cells) ? block.cells : [];
+    const seen = new Set(cells.filter(Boolean));
+    Object.keys(block.legend).forEach((sym) => {
+      if (!seen.has(sym)) delete block.legend[sym];
+    });
+    legendEl.innerHTML = "";
+    seen.forEach((sym) => {
+      const row = document.createElement("div");
+      row.className = "craft-legend-row";
+      const symBox = document.createElement("div");
+      symBox.className = "craft-legend-sym";
+      symBox.textContent = sym;
+      const nameInp = document.createElement("input");
+      nameInp.type = "text";
+      nameInp.className = "field-input craft-legend-input";
+      nameInp.placeholder = `Название предмета для «${sym}»`;
+      nameInp.maxLength = 64;
+      nameInp.value = block.legend[sym] || "";
+      nameInp.addEventListener("input", () => {
+        block.legend[sym] = nameInp.value;
+      });
+      row.append(symBox, nameInp);
+      legendEl.appendChild(row);
+    });
+  }
+
+  function renderRaceBlockCraft(block, bodyEl) {
+    const mode = normalizeCraftMode(block.mode || "3x3");
+    block.mode = mode === "none" ? "3x3" : mode;
+
+    const tabs = document.createElement("div");
+    tabs.className = "craft-mode-tabs race-block-craft-tabs";
+    tabs.setAttribute("role", "tablist");
+    [
+      ["smelt", "Плавка"],
+      ["2x2", "2×2"],
+      ["3x3", "3×3"],
+    ].forEach(([m, label]) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `craft-tab${block.mode === m ? " is-active" : ""}`;
+      btn.dataset.craft = m;
+      btn.textContent = label;
+      btn.addEventListener("click", () => {
+        const prev = block.mode;
+        block.mode = m;
+        if (m === "2x2" || m === "3x3") {
+          const count = m === "2x2" ? 4 : 9;
+          const next = Array(count).fill("");
+          const prevCells = Array.isArray(block.cells) ? block.cells : [];
+          for (let i = 0; i < Math.min(count, prevCells.length); i += 1) next[i] = prevCells[i] || "";
+          block.cells = next;
+        }
+        if (prev !== m) renderRaceBlocks();
+      });
+      tabs.appendChild(btn);
+    });
+    bodyEl.appendChild(tabs);
+
+    if (block.mode === "smelt") {
+      const label = document.createElement("label");
+      label.className = "craft-sub-label";
+      label.textContent = "Название предмета для плавки";
+      const inp = document.createElement("input");
+      inp.className = "field-input";
+      inp.type = "text";
+      inp.maxLength = 64;
+      inp.placeholder = "Например: железная руда";
+      inp.value = block.smeltItem || "";
+      inp.addEventListener("input", () => {
+        block.smeltItem = inp.value;
+      });
+      bodyEl.append(label, inp);
+      return;
+    }
+
+    const size = block.mode === "2x2" ? 2 : 3;
+    const count = size * size;
+    if (!Array.isArray(block.cells) || block.cells.length !== count) {
+      const next = Array(count).fill("");
+      const prev = Array.isArray(block.cells) ? block.cells : [];
+      for (let i = 0; i < Math.min(count, prev.length); i += 1) next[i] = prev[i] || "";
+      block.cells = next;
+    }
+    if (!block.legend || typeof block.legend !== "object") block.legend = {};
+
+    const grid = document.createElement("div");
+    grid.className = `craft-grid craft-grid--${size}`;
+    const legend = document.createElement("div");
+    legend.className = "craft-legend";
+
+    block.cells.forEach((val, idx) => {
+      const cell = document.createElement("div");
+      cell.className = "craft-cell";
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.maxLength = 1;
+      inp.value = val || "";
+      inp.addEventListener("input", () => {
+        const ch = inp.value.slice(-1).toUpperCase();
+        inp.value = ch;
+        block.cells[idx] = ch;
+        syncRaceCraftLegend(block, legend);
+      });
+      cell.appendChild(inp);
+      grid.appendChild(cell);
+    });
+    bodyEl.appendChild(grid);
+    syncRaceCraftLegend(block, legend);
+    bodyEl.appendChild(legend);
+  }
+
+  function renderRaceBlocks() {
+    const list = document.getElementById("race-blocks-list");
+    if (!list) return;
+    list.innerHTML = "";
+
+    raceBlocks.forEach((block, index) => {
+      const card = document.createElement("section");
+      card.className = "race-block";
+      card.dataset.blockId = block.id;
+
+      const head = document.createElement("div");
+      head.className = "race-block__head";
+      const title = document.createElement("h3");
+      title.className = "race-block__title";
+      title.textContent =
+        block.type === "text"
+          ? `Текст #${index + 1}`
+          : block.type === "craft"
+            ? `Рецепт #${index + 1}`
+            : `Файл #${index + 1}`;
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "race-block__del";
+      del.textContent = "×";
+      del.title = "Удалить блок";
+      del.addEventListener("click", () => {
+        raceBlockFiles.delete(block.id);
+        raceBlocks = raceBlocks.filter((b) => b.id !== block.id);
+        renderRaceBlocks();
+        saveFormToStorage();
+      });
+      head.append(title, del);
+      card.appendChild(head);
+
+      const body = document.createElement("div");
+      body.className = "race-block__body";
+
+      if (block.type === "text") {
+        const toolbar = document.createElement("div");
+        toolbar.className = "patch-md-toolbar";
+        toolbar.setAttribute("role", "toolbar");
+        [
+          ["bold", "B", "Жирный"],
+          ["italic", "I", "Курсив"],
+          ["h2", "H", "Заголовок"],
+          ["ul", "•≡", "Список"],
+          ["code", "</>", "Код"],
+          ["link", "URL", "Ссылка"],
+        ].forEach(([kind, label, tip]) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "patch-md-btn";
+          btn.dataset.md = kind;
+          btn.title = tip;
+          btn.textContent = label;
+          if (kind === "italic") btn.innerHTML = "<em>I</em>";
+          toolbar.appendChild(btn);
+        });
+        const ta = document.createElement("textarea");
+        ta.className = "field-area race-block__textarea";
+        ta.rows = 5;
+        ta.placeholder = "Текст блока в Markdown…";
+        ta.value = block.body || "";
+        ta.addEventListener("input", () => {
+          block.body = ta.value;
+          autosizeArea(ta);
+        });
+        toolbar.addEventListener("click", (e) => {
+          const btn = e.target.closest("[data-md]");
+          if (!btn) return;
+          applyMdToSelection(btn.getAttribute("data-md"), ta);
+          block.body = ta.value;
+          autosizeArea(ta);
+        });
+        body.append(toolbar, ta);
+        requestAnimationFrame(() => autosizeArea(ta));
+      } else if (block.type === "craft") {
+        renderRaceBlockCraft(block, body);
+        } else {
+        const hint = document.createElement("p");
+        hint.className = "field-hint";
+        hint.textContent = `Текстура, звук, модель, схематика или любой файл · до ${formatBytes(RACE_BLOCK_FILE_MAX)}`;
+        const fileRow = document.createElement("div");
+        fileRow.className = "race-block__file-row";
+        if (block.fileName) {
+          const name = document.createElement("div");
+          name.className = "race-block__file-name";
+          const hasBytes = raceBlockFiles.has(block.id);
+          name.textContent = hasBytes
+            ? `${block.fileName} · ${formatBytes(block.size || 0)}`
+            : `${block.fileName} · нужно выбрать файл снова`;
+          if (!hasBytes) name.classList.add("is-missing");
+          const clear = document.createElement("button");
+          clear.type = "button";
+          clear.className = "mc-btn mc-btn--compact mc-btn--ghost";
+          clear.textContent = hasBytes ? "Убрать" : "Выбрать";
+          clear.addEventListener("click", () => {
+            if (hasBytes) {
+              raceBlockFiles.delete(block.id);
+              block.fileName = "";
+              block.ext = "";
+              block.size = 0;
+              renderRaceBlocks();
+              saveFormToStorage();
+            } else {
+              raceBlockFileTargetId = block.id;
+              document.getElementById("race-block-file-input")?.click();
+            }
+          });
+          fileRow.append(name, clear);
+        } else {
+          const pick = document.createElement("button");
+          pick.type = "button";
+          pick.className = "mc-btn mc-btn--compact";
+          pick.textContent = "Выбрать файл";
+          pick.addEventListener("click", () => {
+            raceBlockFileTargetId = block.id;
+            document.getElementById("race-block-file-input")?.click();
+          });
+          fileRow.appendChild(pick);
+        }
+        body.append(hint, fileRow);
+      }
+
+      card.appendChild(body);
+      list.appendChild(card);
+    });
+  }
+
+  function addRaceBlock(type) {
+    raceBlocks.push(createRaceBlock(type));
+    renderRaceBlocks();
+    saveFormToStorage();
+  }
+
+  document.getElementById("race-block-add-btn")?.addEventListener("click", () => {
+    const menu = document.getElementById("race-block-type-menu");
+    if (!menu) return;
+    menu.hidden = !menu.hidden;
+  });
+
+  document.getElementById("race-block-type-menu")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-race-block-type]");
+    if (!btn) return;
+    addRaceBlock(btn.getAttribute("data-race-block-type"));
+    document.getElementById("race-block-type-menu").hidden = true;
+  });
+
+  document.addEventListener("click", (e) => {
+    const menu = document.getElementById("race-block-type-menu");
+    const addBtn = document.getElementById("race-block-add-btn");
+    if (!menu || menu.hidden) return;
+    if (menu.contains(e.target) || addBtn?.contains(e.target)) return;
+    menu.hidden = true;
+  });
+
+  document.getElementById("race-block-file-input")?.addEventListener("change", async (e) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = "";
+    const block = raceBlocks.find((b) => b.id === raceBlockFileTargetId);
+    raceBlockFileTargetId = null;
+    if (!file || !block || block.type !== "file") return;
+    if (file.size > RACE_BLOCK_FILE_MAX) {
+      showToast(`Файл слишком большой (до ${formatBytes(RACE_BLOCK_FILE_MAX)})`);
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    raceBlockFiles.set(block.id, {
+      name: file.name,
+      ext: extFromName(file.name),
+      bytes,
+      size: file.size,
+    });
+    block.fileName = file.name;
+    block.ext = extFromName(file.name);
+    block.size = file.size;
+    renderRaceBlocks();
+    saveFormToStorage();
+    showToast("Файл добавлен");
+  });
+
   /* ---------- Content form (item) ---------- */
   const contentForm = document.getElementById("content-form");
   const contentSubmit = document.getElementById("content-submit");
@@ -5964,16 +6399,41 @@
     hideSpinner("schematic-spinner");
   });
 
-  /* ── Craft block ──────────────────────────────── */
-  let craftMode = "none"; // "none" | "smelt" | "craft"
-  // craftCells[0..8] — символ в ячейке (1 char or "")
-  const craftCells = Array(9).fill("");
-  // craftSymMap: Map<symbol, name>
+  /* ── Craft block (content form) ───────────────── */
+  let craftMode = "none"; // "none" | "smelt" | "2x2" | "3x3"
+  let craftCells = Array(9).fill("");
   const craftSymMap = new Map();
+
+  function craftGridSize(mode = craftMode) {
+    return mode === "2x2" ? 2 : 3;
+  }
+
+  function craftCellCount(mode = craftMode) {
+    const n = craftGridSize(mode);
+    return n * n;
+  }
+
+  function isCraftGridMode(mode = craftMode) {
+    return mode === "2x2" || mode === "3x3" || mode === "craft";
+  }
+
+  function normalizeCraftMode(mode) {
+    if (mode === "craft") return "3x3";
+    if (["none", "smelt", "2x2", "3x3"].includes(mode)) return mode;
+    return "none";
+  }
 
   function buildCraftGrid() {
     const grid = document.getElementById("craft-grid");
     if (!grid) return;
+    const size = craftGridSize();
+    const count = size * size;
+    if (craftCells.length !== count) {
+      const next = Array(count).fill("");
+      for (let i = 0; i < Math.min(count, craftCells.length); i += 1) next[i] = craftCells[i] || "";
+      craftCells = next;
+    }
+    grid.className = `craft-grid craft-grid--${size}`;
     grid.innerHTML = "";
     craftCells.forEach((val, idx) => {
       const cell = document.createElement("div");
@@ -5981,7 +6441,7 @@
       const inp = document.createElement("input");
       inp.type = "text";
       inp.maxLength = 1;
-      inp.value = craftCells[idx];
+      inp.value = craftCells[idx] || "";
       inp.setAttribute("aria-label", `Ячейка ${idx + 1}`);
       inp.addEventListener("input", () => {
         const ch = inp.value.slice(-1).toUpperCase();
@@ -5998,11 +6458,11 @@
     const legend = document.getElementById("craft-legend");
     if (!legend) return;
 
-    // collect unique non-empty symbols
     const seen = new Set();
-    craftCells.forEach((c) => { if (c) seen.add(c); });
+    craftCells.forEach((c) => {
+      if (c) seen.add(c);
+    });
 
-    // remove legend rows for symbols no longer present
     for (const sym of [...craftSymMap.keys()]) {
       if (!seen.has(sym)) craftSymMap.delete(sym);
     }
@@ -6034,34 +6494,35 @@
   }
 
   function setCraftMode(mode) {
-    craftMode = mode;
-    document.querySelectorAll(".craft-tab").forEach((btn) => {
-      btn.classList.toggle("is-active", btn.dataset.craft === mode);
+    craftMode = normalizeCraftMode(mode);
+    document.querySelectorAll("#craft-mode-tabs .craft-tab").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.craft === craftMode);
     });
     const smelt = document.getElementById("craft-smelt");
     const gridPanel = document.getElementById("craft-grid-panel");
-    if (smelt) smelt.hidden = mode !== "smelt";
-    if (gridPanel) gridPanel.hidden = mode !== "craft";
+    if (smelt) smelt.hidden = craftMode !== "smelt";
+    if (gridPanel) gridPanel.hidden = !isCraftGridMode(craftMode);
+    if (isCraftGridMode(craftMode)) buildCraftGrid();
   }
 
   function resetCraft() {
-    craftCells.fill("");
     craftSymMap.clear();
     craftMode = "none";
+    craftCells = Array(9).fill("");
     setCraftMode("none");
-    buildCraftGrid();
     updateCraftLegend();
     const smeltInput = document.getElementById("smelt-item");
     if (smeltInput) smeltInput.value = "";
   }
 
-  // Wire tab buttons
   document.getElementById("craft-mode-tabs")?.addEventListener("click", (e) => {
     const tab = e.target.closest(".craft-tab");
     if (!tab) return;
-    const mode = tab.dataset.craft;
-    setCraftMode(mode);
-    if (mode === "craft") buildCraftGrid();
+    setCraftMode(tab.dataset.craft);
+    if (isCraftGridMode(craftMode)) {
+      buildCraftGrid();
+      updateCraftLegend();
+    }
   });
 
   buildCraftGrid();
@@ -6072,22 +6533,21 @@
       const item = document.getElementById("smelt-item")?.value.trim() || "—";
       return `Плавка: ${item}`;
     }
-    // craft grid
+    const size = craftGridSize();
     const rows = [];
-    for (let r = 0; r < 3; r++) {
-      const row = craftCells.slice(r * 3, r * 3 + 3)
+    for (let r = 0; r < size; r += 1) {
+      const row = craftCells
+        .slice(r * size, r * size + size)
         .map((c) => c || "0")
         .join("|");
       rows.push(row);
     }
     const grid = rows.join("\n");
-
     const legend = [];
     craftSymMap.forEach((name, sym) => {
       legend.push(`${sym} — ${name || "—"}`);
     });
-
-    return [`Крафт:`, grid, ``, `Легенда:`, ...legend].join("\n");
+    return [`Крафт ${size}×${size}:`, grid, ``, `Легенда:`, ...legend].join("\n");
   }
 
   /* ─────────────────────────────────────────────── */
@@ -6169,7 +6629,7 @@
     }
 
     if (showCraft) {
-      setCraftMode(craftRequired ? "craft" : "none");
+      setCraftMode(craftRequired ? "3x3" : "none");
       if (craftRequired) buildCraftGrid();
     }
   }
@@ -6795,8 +7255,8 @@
     patchEditorId = null;
   }
 
-  function applyMdToSelection(kind) {
-    const ta = document.getElementById("patch-field-body");
+  function applyMdToSelection(kind, textarea) {
+    const ta = textarea || document.getElementById("patch-field-body");
     if (!ta) return;
     const start = ta.selectionStart ?? 0;
     const end = ta.selectionEnd ?? 0;
@@ -6841,6 +7301,7 @@
     const selEnd = selStart + insert.length;
     ta.focus();
     ta.setSelectionRange(selStart, selEnd);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   document.getElementById("patch-create-btn")?.addEventListener("click", () => {
