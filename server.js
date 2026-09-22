@@ -3302,6 +3302,8 @@ app.get("/api/orders/assets", (_req, res) => {
     return res.json({
       ok: true,
       skins,
+      skinModel: "/assets/model/skin/model.obj",
+      costumeModel: "/assets/model/model/model.obj",
       modelTexture: "/assets/model/model/texture.png",
     });
   } catch (err) {

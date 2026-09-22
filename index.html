@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=72" />
+  <link rel="stylesheet" href="styles.css?v=73" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -198,7 +198,7 @@
                   </button>
                   <button type="button" class="orders-type-card" id="orders-type-model" data-order-kind="model">
                     <span class="orders-type-card__preview">
-                      <img class="orders-model-preview" id="orders-model-preview" src="assets/model/model/texture.png" alt="" draggable="false" />
+                      <canvas class="orders-model-canvas" id="orders-model-preview" width="96" height="128" aria-hidden="true"></canvas>
                     </span>
                     <span class="orders-type-card__label">Модель</span>
                   </button>
@@ -1828,6 +1828,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=72"></script>
+  <script src="script.js?v=73"></script>
 </body>
 </html>

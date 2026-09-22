@@ -1577,17 +1577,12 @@ h3,
   image-rendering: pixelated;
 }
 
-.orders-skin-canvas {
+.orders-skin-canvas,
+.orders-model-canvas {
   width: 96px;
   height: 128px;
-  image-rendering: pixelated;
-}
-
-.orders-model-preview {
-  width: 88px;
-  height: 88px;
-  object-fit: contain;
-  image-rendering: pixelated;
+  display: block;
+  image-rendering: auto;
 }
 
 .orders-type-card__label {

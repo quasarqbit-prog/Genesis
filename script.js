@@ -5776,7 +5776,14 @@
   /** @type {{ name: string, dataUrl: string }[]} */
   let ordersFormRefs = [];
   let ordersSkinUrls = [];
+  let ordersAssets = {
+    skins: [],
+    skinModel: "/assets/model/skin/model.obj",
+    costumeModel: "/assets/model/model/model.obj",
+    modelTexture: "/assets/model/model/texture.png",
+  };
   let ordersSkinLoaded = false;
+  let ordersPreviewMod = null;
 
   function isOrdersFounder() {
     return Boolean(authToken && isFounderViewer());
@@ -5812,60 +5819,23 @@
     host.appendChild(star);
   }
 
-  function drawMcSkinFront(canvas, img) {
-    if (!canvas || !img) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const w = canvas.width;
-    const h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-    ctx.imageSmoothingEnabled = false;
-    const unit = Math.floor(Math.min(w / 16, h / 32));
-    if (unit < 1) return;
-    const ox = Math.floor((w - 16 * unit) / 2);
-    const oy = Math.floor((h - 32 * unit) / 2);
-    const isSlim = false;
-    const draw = (sx, sy, sw, sh, dx, dy, dw, dh) => {
-      ctx.drawImage(img, sx, sy, sw, sh, ox + dx * unit, oy + dy * unit, (dw || sw) * unit, (dh || sh) * unit);
-    };
-    // Head + hat
-    draw(8, 8, 8, 8, 4, 0, 8, 8);
-    draw(40, 8, 8, 8, 4, 0, 8, 8);
-    // Body + jacket
-    draw(20, 20, 8, 12, 4, 8, 8, 12);
-    draw(20, 36, 8, 12, 4, 8, 8, 12);
-    // Right arm (viewer left)
-    draw(44, 20, 4, 12, 0, 8, 4, 12);
-    draw(44, 36, 4, 12, 0, 8, 4, 12);
-    // Left arm
-    if (img.height >= 64) {
-      draw(36, 52, 4, 12, 12, 8, 4, 12);
-      draw(52, 52, 4, 12, 12, 8, 4, 12);
-    } else {
-      draw(44, 20, 4, 12, 12, 8, 4, 12);
-    }
-    // Right leg
-    draw(4, 20, 4, 12, 4, 20, 4, 12);
-    draw(4, 36, 4, 12, 4, 20, 4, 12);
-    // Left leg
-    if (img.height >= 64) {
-      draw(20, 52, 4, 12, 8, 20, 4, 12);
-      draw(4, 52, 4, 12, 8, 20, 4, 12);
-    } else {
-      draw(4, 20, 4, 12, 8, 20, 4, 12);
-    }
-    void isSlim;
+  async function ensureOrdersPreviewMod() {
+    if (ordersPreviewMod) return ordersPreviewMod;
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=73`);
+    return ordersPreviewMod;
   }
 
   async function ensureOrdersSkinAssets() {
-    if (ordersSkinLoaded) return ordersSkinUrls;
+    if (ordersSkinLoaded) return ordersAssets;
     try {
       const data = await api("/api/orders/assets");
       ordersSkinUrls = Array.isArray(data?.skins) ? data.skins : [];
-      const modelImg = document.getElementById("orders-model-preview");
-      if (modelImg && data?.modelTexture) {
-        modelImg.src = data.modelTexture;
-      }
+      ordersAssets = {
+        skins: ordersSkinUrls,
+        skinModel: data?.skinModel || "/assets/model/skin/model.obj",
+        costumeModel: data?.costumeModel || "/assets/model/model/model.obj",
+        modelTexture: data?.modelTexture || "/assets/model/model/texture.png",
+      };
     } catch {
       ordersSkinUrls = [
         "/assets/model/skin/slime-S.png",
@@ -5874,9 +5844,10 @@
         "/assets/model/skin/DOC-liver-S.png",
         "/assets/model/skin/slime_two-S.png",
       ];
+      ordersAssets.skins = ordersSkinUrls;
     }
     ordersSkinLoaded = true;
-    return ordersSkinUrls;
+    return ordersAssets;
   }
 
   function pickRandomOrderSkin() {
@@ -5885,34 +5856,34 @@
     return list[Math.floor(Math.random() * list.length)];
   }
 
-  function loadOrdersSkinPreview() {
-    const canvas = document.getElementById("orders-skin-preview");
-    if (!canvas) return;
-    const url = pickRandomOrderSkin();
-    if (!url) {
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.fillStyle = "#1a1228";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-      return;
+  async function loadOrdersPreviews() {
+    const assets = await ensureOrdersSkinAssets();
+    const mod = await ensureOrdersPreviewMod();
+    const skinCanvas = document.getElementById("orders-skin-preview");
+    const modelCanvas = document.getElementById("orders-model-preview");
+    const skinUrl = pickRandomOrderSkin();
+    const tasks = [];
+    if (skinCanvas && skinUrl) {
+      tasks.push(
+        mod.mountOrdersPreview(skinCanvas, {
+          objUrl: assets.skinModel,
+          textureUrl: skinUrl,
+        }).catch((err) => console.warn("orders skin preview", err))
+      );
     }
-    const img = new Image();
-    img.decoding = "async";
-    img.onload = () => drawMcSkinFront(canvas, img);
-    img.onerror = () => {
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.fillStyle = "#2a1840";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-    };
-    img.src = url;
+    if (modelCanvas) {
+      tasks.push(
+        mod.mountOrdersPreview(modelCanvas, {
+          objUrl: assets.costumeModel,
+          textureUrl: assets.modelTexture,
+        }).catch((err) => console.warn("orders model preview", err))
+      );
+    }
+    await Promise.all(tasks);
   }
 
   async function onOrdersTabShown() {
-    await ensureOrdersSkinAssets();
-    loadOrdersSkinPreview();
+    await loadOrdersPreviews();
     if (ordersTab === "list") {
       await loadOrdersList();
       renderOrdersUi();
@@ -6306,7 +6277,7 @@
           await loadOrdersList();
         }
       } else {
-        loadOrdersSkinPreview();
+        loadOrdersPreviews();
       }
       renderOrdersUi();
     });
