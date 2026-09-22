@@ -939,6 +939,19 @@ h3,
 
 .studio-tile--folder {
   --section-accent: #8ec8ff;
+  justify-content: flex-start;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.studio-tile--folder .studio-tile__label {
+  margin-top: 0;
+  order: 0;
+}
+
+.studio-tile--folder .studio-tile__folder-mark {
+  margin-top: 4px;
+  margin-bottom: auto;
 }
 
 .studio-tile--create {
@@ -1067,32 +1080,55 @@ h3,
 .studio-tile-wrap .studio-tile {
   flex: 1 1 auto;
   width: 100%;
-  padding-bottom: 28px;
+  padding-bottom: 36px;
 }
 
-.studio-tile__trash {
-  appearance: none;
+.studio-tile__actions {
   position: absolute;
-  left: 50%;
-  bottom: 8px;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  bottom: 6px;
   z-index: 2;
-  width: 28px;
-  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.studio-tile__action {
+  appearance: none;
+  pointer-events: auto;
+  width: 26px;
+  height: 22px;
   margin: 0;
   padding: 0;
   display: grid;
   place-items: center;
-  border: 2px solid rgba(251, 113, 133, 0.45);
-  background: rgba(36, 14, 24, 0.92);
-  color: #fb7185;
+  border: 2px solid rgba(142, 200, 255, 0.45);
+  background: rgba(20, 14, 36, 0.92);
+  color: #8ec8ff;
   cursor: pointer;
 }
 
-.studio-tile__trash:hover {
-  border-color: #fb7185;
-  color: #fecdd3;
-  background: rgba(60, 18, 28, 0.96);
+.studio-tile__action:hover {
+  border-color: currentColor;
+  filter: brightness(1.15);
+}
+
+.studio-tile__action--edit {
+  border-color: rgba(196, 255, 77, 0.45);
+  color: #c4ff4d;
+}
+
+.studio-tile__action--send {
+  border-color: rgba(142, 200, 255, 0.55);
+  color: #8ec8ff;
+}
+
+.studio-tile__action--trash {
+  border-color: rgba(251, 113, 133, 0.45);
+  color: #fb7185;
 }
 
 .studio-type-card {

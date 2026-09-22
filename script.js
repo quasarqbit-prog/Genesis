@@ -3481,6 +3481,7 @@
   let studioOpenFolderId = null;
   let studioSelectedTypeId = null;
   let studioEditingItemId = null;
+  let studioRenamingFolderId = null;
 
   function studioUid(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -3572,10 +3573,32 @@
   }
 
   function openStudioFolderModal() {
+    studioRenamingFolderId = null;
+    const title = document.getElementById("studio-folder-modal-title");
+    const submit = document.querySelector("#studio-folder-form button[type='submit']");
     const input = document.getElementById("studio-folder-name");
+    if (title) title.textContent = "Новая папка";
+    if (submit) submit.textContent = "Создать";
     if (input) input.value = "";
     openStudioModal("studio-folder-modal");
     requestAnimationFrame(() => input?.focus());
+  }
+
+  function openStudioFolderRenameModal(folderId) {
+    const folder = getStudioFolder(folderId);
+    if (!folder) return;
+    studioRenamingFolderId = folderId;
+    const title = document.getElementById("studio-folder-modal-title");
+    const submit = document.querySelector("#studio-folder-form button[type='submit']");
+    const input = document.getElementById("studio-folder-name");
+    if (title) title.textContent = "Переименовать папку";
+    if (submit) submit.textContent = "Сохранить";
+    if (input) input.value = folder.name;
+    openStudioModal("studio-folder-modal");
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.select();
+    });
   }
 
   function openStudioCreateModal() {
@@ -3641,8 +3664,8 @@
         btn.type = "button";
         btn.className = "studio-tile studio-tile--folder";
         btn.innerHTML = `
-          <span class="studio-tile__folder-mark" aria-hidden="true"></span>
           <span class="studio-tile__label"></span>
+          <span class="studio-tile__folder-mark" aria-hidden="true"></span>
         `;
         btn.querySelector(".studio-tile__label").textContent = f.name;
         btn.addEventListener("click", () => {
@@ -3650,13 +3673,48 @@
           renderStudio();
         });
 
+        const actions = document.createElement("div");
+        actions.className = "studio-tile__actions";
+
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "studio-tile__action studio-tile__action--edit";
+        edit.title = "Изменить название";
+        edit.setAttribute("aria-label", `Изменить название «${f.name}»`);
+        edit.innerHTML = `
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path fill="currentColor" d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5zM3 12h1.5L12 4.5 10.5 3 3 10.5V12z"/>
+          </svg>
+        `;
+        edit.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openStudioFolderRenameModal(f.id);
+        });
+
+        const send = document.createElement("button");
+        send.type = "button";
+        send.className = "studio-tile__action studio-tile__action--send";
+        send.title = "Отправить";
+        send.setAttribute("aria-label", `Отправить «${f.name}»`);
+        send.innerHTML = `
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+            <path fill="currentColor" d="M1 8l14-6-6 14-2-5-5-2zm3.2-.2L8 9.2l4.8-6.4L4.2 7.8z"/>
+          </svg>
+        `;
+        send.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          // placeholder: send folder later
+        });
+
         const del = document.createElement("button");
         del.type = "button";
-        del.className = "studio-tile__trash";
+        del.className = "studio-tile__action studio-tile__action--trash";
         del.title = "Удалить папку";
         del.setAttribute("aria-label", `Удалить папку «${f.name}»`);
         del.innerHTML = `
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
             <path fill="currentColor" d="M6 1h4l1 2h3v2H2V3h3l1-2zm1 5h2v7H7V6zm-3 0h2v7H4V6zm6 0h2v7h-2V6zM3 14h10v1H3v-1z"/>
           </svg>
         `;
@@ -3672,7 +3730,8 @@
           renderStudio();
         });
 
-        wrap.append(btn, del);
+        actions.append(edit, send, del);
+        wrap.append(btn, actions);
         grid.appendChild(wrap);
       });
       return;
@@ -3731,12 +3790,18 @@
         return;
       }
       loadStudioDoc();
-      studioDoc.folders.push({
-        id: studioUid("folder"),
-        name,
-        createdAt: Date.now(),
-        items: [],
-      });
+      if (studioRenamingFolderId) {
+        const folder = getStudioFolder(studioRenamingFolderId);
+        if (folder) folder.name = name;
+        studioRenamingFolderId = null;
+      } else {
+        studioDoc.folders.push({
+          id: studioUid("folder"),
+          name,
+          createdAt: Date.now(),
+          items: [],
+        });
+      }
       saveStudioDoc();
       closeStudioModal(folderModal);
       renderStudio();
