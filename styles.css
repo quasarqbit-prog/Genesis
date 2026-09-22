@@ -1216,6 +1216,11 @@ h3,
   gap: 14px;
 }
 
+.hub-race-form[hidden],
+.user-profile-race-edit[hidden] {
+  display: none !important;
+}
+
 .hub-race-form .field-label,
 .hub-race-form .field-hint,
 .hub-race-form .field-error {

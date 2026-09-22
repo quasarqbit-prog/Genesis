@@ -885,16 +885,30 @@
 
   function setUserProfileEditMode(on) {
     const allowed = Boolean(on) && canFounderEditUser(profileViewUser);
+    const canEdit = canFounderEditUser(profileViewUser);
     const view = document.getElementById("user-profile-race");
     const edit = document.getElementById("user-profile-race-edit");
     const avatar = document.getElementById("user-profile-avatar");
     const menu = document.getElementById("user-profile-avatar-menu");
-    if (edit) edit.hidden = !allowed;
+    if (edit) {
+      edit.hidden = !allowed;
+      edit.setAttribute("aria-hidden", allowed ? "false" : "true");
+      if (!canEdit) {
+        edit.querySelectorAll("input, textarea, button").forEach((el) => {
+          el.disabled = true;
+        });
+      } else {
+        edit.querySelectorAll("input, textarea, button").forEach((el) => {
+          el.disabled = false;
+        });
+      }
+    }
     if (view) view.hidden = allowed || !view.innerHTML.trim();
     if (avatar) {
-      avatar.classList.toggle("is-editable", canFounderEditUser(profileViewUser));
+      avatar.classList.toggle("is-editable", canEdit);
+      avatar.tabIndex = canEdit ? 0 : -1;
     }
-    if (menu && !allowed) menu.hidden = true;
+    if (menu) menu.hidden = !allowed;
   }
 
   const AUTH_MC_NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
@@ -1079,14 +1093,16 @@
         raceEl.innerHTML = html;
         raceEl.hidden = !html;
       }
-      fillFounderRaceEdit(user);
+      if (canFounderEditUser(user)) fillFounderRaceEdit(user);
       setUserProfileEditMode(false);
       const avatarBtn = document.getElementById("user-profile-avatar");
       if (avatarBtn) {
-        avatarBtn.classList.toggle("is-editable", canFounderEditUser(user));
+        const canEdit = canFounderEditUser(user);
+        avatarBtn.classList.toggle("is-editable", canEdit);
+        avatarBtn.tabIndex = canEdit ? 0 : -1;
         avatarBtn.setAttribute(
           "aria-label",
-          canFounderEditUser(user) ? "Редактировать профиль" : "Аватар"
+          canEdit ? "Редактировать профиль" : "Аватар"
         );
       }
       setSettingsDrawerOpen(false);
