@@ -1471,7 +1471,7 @@ app.post("/api/auth/telegram", async (req, res) => {
     }
 
     // Нет аккаунта — только данные Telegram для завершения регистрации
-    if (!userId) {
+    if (userId == null) {
       return res.json({
         registered: false,
         telegramAuth: verifyPayload,
