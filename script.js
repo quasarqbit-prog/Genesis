@@ -1431,9 +1431,9 @@
   const COMPENDIUM_BOOK_W = 281;
   const COMPENDIUM_BOOK_H = 173;
   const COMPENDIUM_TEXT_COLOR = "#3f2a1d";
-  // Glyphs stay 1px-crisp; UPS>1 makes them smaller relative to the book art.
-  const COMPENDIUM_UPSCALE = 2;
-  const COMPENDIUM_FONT_SCALE = 1;
+  // Glyphs stay pixel-crisp; size relative to book ≈ FONT_SCALE / UPSCALE.
+  const COMPENDIUM_UPSCALE = 3;
+  const COMPENDIUM_FONT_SCALE = 2;
   const COMPENDIUM_BOOK_SRC = "assets/compendium/compendium.png";
   // Content boxes inside each page (native book pixels, away from rings).
   const COMPENDIUM_PAGES = [
