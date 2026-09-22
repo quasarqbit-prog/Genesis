@@ -3550,7 +3550,10 @@
       btn.dataset.typeId = type.id;
       btn.classList.toggle("is-selected", studioSelectedTypeId === type.id);
       btn.innerHTML = `
-        <img class="studio-type-card__img" src="${type.icon}" alt="" draggable="false" />
+        <span class="catalog-card__visual" aria-hidden="true">
+          <span class="catalog-card__shadow"></span>
+          <img class="catalog-card__img studio-type-card__img" src="${type.icon}" alt="" draggable="false" />
+        </span>
         <span class="studio-type-card__label">${type.label}</span>
       `;
       btn.addEventListener("click", () => {
@@ -3630,10 +3633,13 @@
       grid.appendChild(plus);
 
       studioDoc.folders.forEach((f) => {
+        const wrap = document.createElement("div");
+        wrap.className = "studio-tile-wrap";
+        wrap.setAttribute("role", "listitem");
+
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "studio-tile studio-tile--folder";
-        btn.setAttribute("role", "listitem");
         btn.innerHTML = `
           <span class="studio-tile__folder-mark" aria-hidden="true"></span>
           <span class="studio-tile__label"></span>
@@ -3643,7 +3649,31 @@
           studioOpenFolderId = f.id;
           renderStudio();
         });
-        grid.appendChild(btn);
+
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "studio-tile__trash";
+        del.title = "Удалить папку";
+        del.setAttribute("aria-label", `Удалить папку «${f.name}»`);
+        del.innerHTML = `
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path fill="currentColor" d="M6 1h4l1 2h3v2H2V3h3l1-2zm1 5h2v7H7V6zm-3 0h2v7H4V6zm6 0h2v7h-2V6zM3 14h10v1H3v-1z"/>
+          </svg>
+        `;
+        del.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const ok = window.confirm(`Удалить папку «${f.name}» целиком?`);
+          if (!ok) return;
+          loadStudioDoc();
+          studioDoc.folders = studioDoc.folders.filter((x) => x.id !== f.id);
+          if (studioOpenFolderId === f.id) studioOpenFolderId = null;
+          saveStudioDoc();
+          renderStudio();
+        });
+
+        wrap.append(btn, del);
+        grid.appendChild(wrap);
       });
       return;
     }
@@ -3666,15 +3696,18 @@
       const type = getCatalogType(item.typeId);
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "studio-tile";
+      btn.className = "studio-tile catalog-card";
       btn.setAttribute("role", "listitem");
       btn.style.setProperty("--section-accent", "var(--accent)");
       const icon = type?.icon || "assets/icons/item.png";
       btn.innerHTML = `
-        <img class="studio-tile__icon" src="${icon}" alt="" draggable="false" />
-        <span class="studio-tile__label"></span>
+        <span class="catalog-card__visual" aria-hidden="true">
+          <span class="catalog-card__shadow"></span>
+          <img class="catalog-card__img" src="${icon}" alt="" draggable="false" />
+        </span>
+        <span class="catalog-card__label"></span>
       `;
-      btn.querySelector(".studio-tile__label").textContent = item.name;
+      btn.querySelector(".catalog-card__label").textContent = item.name;
       btn.addEventListener("click", () => openStudioEditModal(item));
       grid.appendChild(btn);
     });
