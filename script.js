@@ -1432,10 +1432,13 @@
   const COMPENDIUM_BOOK_H = 173;
   const COMPENDIUM_TEXT_COLOR = "#3f2a1d";
   const COMPENDIUM_FONT_SCALE = 1;
+  const COMPENDIUM_BOOK_SRC = "assets/compendium/compendium.png";
 
   let compendiumFontPromise = null;
   let compendiumGlyphs = null;
+  let compendiumBookImg = null;
   let compendiumResizeBound = false;
+  let compendiumPaintToken = 0;
 
   function loadImageEl(src) {
     return new Promise((resolve, reject) => {
@@ -1458,9 +1461,7 @@
     let maxX = -1;
     for (let y = 0; y < cellH; y += 1) {
       for (let x = 0; x < cellW; x += 1) {
-        if (data[(y * cellW + x) * 4 + 3] > 16) {
-          if (x > maxX) maxX = x;
-        }
+        if (data[(y * cellW + x) * 4 + 3] > 16 && x > maxX) maxX = x;
       }
     }
     return maxX < 0 ? 0 : maxX + 1;
@@ -1479,10 +1480,8 @@
       }
       const glyphs = new Map();
       for (const provider of data.providers || []) {
-        const rows = provider.chars || [];
-        if (!rows.length) continue;
-        // Glyph grid is one cell per Unicode code point (not UTF-16 code unit).
-        const parsedRows = rows.map((row) => Array.from(row));
+        const parsedRows = (provider.chars || []).map((row) => Array.from(row));
+        if (!parsedRows.length) continue;
         const rowLen = Math.max(...parsedRows.map((chars) => chars.length));
         if (!rowLen) continue;
         const img = await loadImageEl(provider.file);
@@ -1498,13 +1497,13 @@
             if (!needed.has(ch) && ch !== " ") continue;
             const sx = Math.round(col * cellW);
             const sy = Math.round(row * cellH);
-            const cw = Math.round(cellW);
-            const chh = Math.round(cellH);
+            const cw = Math.max(1, Math.round(cellW));
+            const chh = Math.max(1, Math.round(cellH));
             let inkW = 0;
             try {
               inkW = measureGlyphWidth(img, sx, sy, cw, chh);
             } catch (_) {
-              inkW = Math.max(1, Math.round(cellW) - 1);
+              inkW = Math.max(1, cw - 1);
             }
             if (ch === " ") inkW = Math.max(inkW, 4);
             glyphs.set(ch, {
@@ -1557,7 +1556,23 @@
     return w;
   }
 
-  function drawCompendiumLine(ctx, glyphs, line, x, baselineY, scale) {
+  function drawColoredGlyph(ctx, g, x, y, scale, color) {
+    const dw = Math.max(1, Math.round(g.cellW * scale));
+    const dh = Math.max(1, Math.round(g.cellH * scale));
+    const off = document.createElement("canvas");
+    off.width = dw;
+    off.height = dh;
+    const octx = off.getContext("2d");
+    octx.imageSmoothingEnabled = false;
+    octx.clearRect(0, 0, dw, dh);
+    octx.drawImage(g.img, g.sx, g.sy, g.cellW, g.cellH, 0, 0, dw, dh);
+    octx.globalCompositeOperation = "source-in";
+    octx.fillStyle = color;
+    octx.fillRect(0, 0, dw, dh);
+    ctx.drawImage(off, x, y);
+  }
+
+  function drawCompendiumLine(ctx, glyphs, line, x, baselineY, scale, color) {
     let cursor = x;
     for (const ch of Array.from(line)) {
       const g = glyphs.get(ch);
@@ -1565,47 +1580,64 @@
         cursor += glyphAdvance(g, ch, scale);
         continue;
       }
-      const dw = g.cellW * scale;
-      const dh = g.cellH * scale;
       const dy = baselineY - g.ascent * scale;
-      ctx.drawImage(g.img, g.sx, g.sy, g.cellW, g.cellH, cursor, dy, dw, dh);
+      drawColoredGlyph(ctx, g, cursor, dy, scale, color);
       cursor += glyphAdvance(g, ch, scale);
     }
+  }
+
+  async function ensureCompendiumBookImg() {
+    if (compendiumBookImg?.complete) return compendiumBookImg;
+    const art = document.getElementById("compendium-art");
+    if (art?.complete && art.naturalWidth) {
+      compendiumBookImg = art;
+      return art;
+    }
+    compendiumBookImg = await loadImageEl(COMPENDIUM_BOOK_SRC);
+    return compendiumBookImg;
   }
 
   async function renderCompendiumBook() {
     const canvas = document.getElementById("compendium-canvas");
     const book = document.getElementById("compendium-book");
-    const art = book?.querySelector(".compendium-book__art");
+    const art = document.getElementById("compendium-art");
     if (!canvas || !book) return;
 
     if (!compendiumResizeBound) {
       compendiumResizeBound = true;
-      window.addEventListener("resize", () => {
+      const rerender = () => {
         if (document.getElementById("main-panel-compendium")?.classList.contains("is-active")) {
           renderCompendiumBook();
         }
-      });
+      };
+      window.addEventListener("resize", rerender);
       if (typeof ResizeObserver !== "undefined") {
-        new ResizeObserver(() => {
-          if (document.getElementById("main-panel-compendium")?.classList.contains("is-active")) {
-            renderCompendiumBook();
-          }
-        }).observe(book);
+        new ResizeObserver(rerender).observe(book);
       }
     }
 
-    const paint = async () => {
-      let glyphs;
-      try {
-        glyphs = await ensureCompendiumFont();
-      } catch (err) {
-        console.warn("Compendium font:", err);
+    const token = ++compendiumPaintToken;
+
+    try {
+      const [glyphs, bookImg] = await Promise.all([
+        ensureCompendiumFont(),
+        ensureCompendiumBookImg(),
+      ]);
+      if (token !== compendiumPaintToken) return;
+
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      if (token !== compendiumPaintToken) return;
+
+      const cssW = Math.max(book.clientWidth || art?.clientWidth || 1, 1);
+      const cssH = Math.max(book.clientHeight || art?.clientHeight || 1, 1);
+      if (cssW < 2 || cssH < 2) {
+        // layout not ready yet
+        requestAnimationFrame(() => renderCompendiumBook());
         return;
       }
 
       const scale = COMPENDIUM_FONT_SCALE;
-      const lineGap = 2 * scale;
+      const lineGap = 3 * scale;
       const lineHeights = COMPENDIUM_LINES.map((line) => {
         let maxH = 8 * scale;
         for (const ch of Array.from(line)) {
@@ -1618,49 +1650,47 @@
         lineHeights.reduce((a, b) => a + b, 0) + lineGap * (COMPENDIUM_LINES.length - 1);
       const widths = COMPENDIUM_LINES.map((line) => measureCompendiumLine(glyphs, line, scale));
 
-      const cssW = Math.max(book.clientWidth || art?.clientWidth || COMPENDIUM_BOOK_W, 1);
-      const cssH = Math.max(book.clientHeight || art?.clientHeight || COMPENDIUM_BOOK_H, 1);
-      const dpr = Math.min(window.devicePixelRatio || 1, 3);
-      canvas.width = Math.max(1, Math.round(cssW * dpr));
-      canvas.height = Math.max(1, Math.round(cssH * dpr));
-
+      // Native book pixels on canvas; CSS scales the element over the art.
+      canvas.width = COMPENDIUM_BOOK_W;
+      canvas.height = COMPENDIUM_BOOK_H;
       const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.imageSmoothingEnabled = false;
-      ctx.setTransform(canvas.width / COMPENDIUM_BOOK_W, 0, 0, canvas.height / COMPENDIUM_BOOK_H, 0, 0);
 
       let y = Math.round((COMPENDIUM_BOOK_H - blockH) / 2);
       for (let i = 0; i < COMPENDIUM_LINES.length; i += 1) {
-        const line = COMPENDIUM_LINES[i];
-        const lh = lineHeights[i];
         const lw = widths[i];
+        const lh = lineHeights[i];
         const x = Math.round((COMPENDIUM_BOOK_W - lw) / 2);
-        const pad = 1;
-        const off = document.createElement("canvas");
-        off.width = Math.max(1, Math.ceil(lw + pad * 2));
-        off.height = Math.max(1, Math.ceil(lh + pad * 2));
-        const octx = off.getContext("2d");
-        octx.imageSmoothingEnabled = false;
-        octx.fillStyle = COMPENDIUM_TEXT_COLOR;
-        octx.fillRect(0, 0, off.width, off.height);
-        octx.globalCompositeOperation = "destination-in";
-        drawCompendiumLine(octx, glyphs, line, pad, pad + Math.round(lh * 0.875), scale);
-        ctx.drawImage(off, x - pad, y - pad);
+        const baseline = y + Math.round(lh * 0.9);
+        drawCompendiumLine(
+          ctx,
+          glyphs,
+          COMPENDIUM_LINES[i],
+          x,
+          baseline,
+          scale,
+          COMPENDIUM_TEXT_COLOR
+        );
         y += lh + lineGap;
       }
-    };
-
-    if (art && !art.complete) {
-      await new Promise((resolve) => {
-        art.addEventListener("load", resolve, { once: true });
-        art.addEventListener("error", resolve, { once: true });
-      });
+    } catch (err) {
+      console.warn("Compendium render:", err);
+      // Last-resort visible fallback so the tab is never blank of message.
+      const canvas2 = document.getElementById("compendium-canvas");
+      if (!canvas2) return;
+      canvas2.width = COMPENDIUM_BOOK_W;
+      canvas2.height = COMPENDIUM_BOOK_H;
+      const ctx = canvas2.getContext("2d");
+      ctx.fillStyle = "#c6ad8a";
+      ctx.fillRect(0, 0, canvas2.width, canvas2.height);
+      ctx.fillStyle = COMPENDIUM_TEXT_COLOR;
+      ctx.font = "8px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(COMPENDIUM_LINES[0], COMPENDIUM_BOOK_W / 2, 80);
+      ctx.fillText(COMPENDIUM_LINES[1], COMPENDIUM_BOOK_W / 2, 94);
     }
-    // layout after image intrinsic size
-    requestAnimationFrame(() => {
-      paint();
-    });
   }
 
   function setMainTab(tab) {

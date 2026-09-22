@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Compendium preview</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #140c22; display: grid; place-items: center; }
+    .book { position: relative; width: min(92vw, 720px); line-height: 0; }
+    .book img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+    .book canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; z-index: 2; }
+    #log { position: fixed; left: 8px; top: 8px; color: #9fef7a; font: 12px monospace; white-space: pre-wrap; max-width: 48vw; }
+  </style>
+</head>
+<body>
+  <div class="book" id="book">
+    <img id="art" src="assets/compendium/compendium.png" alt="" />
+    <canvas id="canvas"></canvas>
+  </div>
+  <pre id="log"></pre>
+  <script>
+    const LINES = [
+      "Компендиума пока не доступен.",
+      "Подождите пока выйдет обновление.",
+    ];
+    const W = 281, H = 173, COLOR = "#3f2a1d";
+    const log = (m) => { document.getElementById("log").textContent += m + "\\n"; };
+
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error(src));
+        img.src = src;
+      });
+    }
+
+    function measure(img, sx, sy, cw, ch) {
+      const c = document.createElement("canvas");
+      c.width = cw; c.height = ch;
+      const ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(img, sx, sy, cw, ch, 0, 0, cw, ch);
+      const { data } = ctx.getImageData(0, 0, cw, ch);
+      let maxX = -1;
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+        if (data[(y * cw + x) * 4 + 3] > 16 && x > maxX) maxX = x;
+      }
+      return maxX < 0 ? 0 : maxX + 1;
+    }
+
+    (async () => {
+      try {
+        const needed = new Set();
+        for (const line of LINES) for (const ch of Array.from(line)) needed.add(ch);
+        const data = await (await fetch("assets/compendium/font/providers.json")).json();
+        const glyphs = new Map();
+        for (const provider of data.providers) {
+          const rows = provider.chars.map((r) => Array.from(r));
+          const rowLen = Math.max(...rows.map((r) => r.length));
+          const img = await loadImage(provider.file);
+          const cellW = img.width / rowLen;
+          const cellH = img.height / rows.length;
+          log(`${provider.file}: cell ${cellW}x${cellH}`);
+          for (let row = 0; row < rows.length; row++) {
+            for (let col = 0; col < rows[row].length; col++) {
+              const ch = rows[row][col];
+              if (!ch || ch === "\\u0000" || glyphs.has(ch)) continue;
+              if (!needed.has(ch) && ch !== " ") continue;
+              const sx = Math.round(col * cellW);
+              const sy = Math.round(row * cellH);
+              const cw = Math.round(cellW);
+              const chh = Math.round(cellH);
+              const inkW = measure(img, sx, sy, cw, chh);
+              glyphs.set(ch, {
+                img, sx, sy, cellW: cw, cellH: chh,
+                width: ch === " " ? Math.max(inkW, 4) : inkW,
+                ascent: provider.ascent ?? provider.height ?? 8,
+                blank: ch === " " || inkW === 0,
+              });
+            }
+          }
+        }
+        const missing = [...needed].filter((ch) => ch !== " " && (!glyphs.get(ch) || glyphs.get(ch).blank));
+        log("glyphs " + glyphs.size + " missing " + JSON.stringify(missing));
+
+        const canvas = document.getElementById("canvas");
+        canvas.width = W; canvas.height = H;
+        const ctx = canvas.getContext("2d");
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, W, H);
+
+        function adv(g, ch) { return !g ? 6 : (ch === " " || g.blank ? g.width : g.width + 1); }
+        function lineW(line) {
+          let w = 0; for (const ch of Array.from(line)) w += adv(glyphs.get(ch), ch); return w;
+        }
+        function drawLine(line, x, baseline) {
+          let cur = x;
+          for (const ch of Array.from(line)) {
+            const g = glyphs.get(ch);
+            if (!g || !g.img || g.blank) { cur += adv(g, ch); continue; }
+            const off = document.createElement("canvas");
+            off.width = g.cellW; off.height = g.cellH;
+            const o = off.getContext("2d");
+            o.drawImage(g.img, g.sx, g.sy, g.cellW, g.cellH, 0, 0, g.cellW, g.cellH);
+            o.globalCompositeOperation = "source-in";
+            o.fillStyle = COLOR;
+            o.fillRect(0, 0, off.width, off.height);
+            ctx.drawImage(off, cur, baseline - g.ascent);
+            cur += adv(g, ch);
+          }
+        }
+
+        let y = Math.round((H - (8 + 3 + 8)) / 2);
+        for (const line of LINES) {
+          const lw = lineW(line);
+          drawLine(line, Math.round((W - lw) / 2), y + 7);
+          y += 11;
+        }
+        log("painted ok");
+      } catch (e) {
+        log("ERR " + e);
+      }
+    })();
+  </script>
+</body>
+</html>

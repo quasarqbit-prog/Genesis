@@ -507,6 +507,7 @@ h3,
   pointer-events: none;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+  z-index: 2;
 }
 
 .app-shell.is-bare-main {
