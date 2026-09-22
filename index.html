@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=29" />
+  <link rel="stylesheet" href="styles.css?v=30" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -59,6 +59,7 @@
         <nav class="hub-nav" aria-label="Разделы">
           <button type="button" class="hub-nav__btn hub-nav__btn--close" id="settings-close-tab">Закрыть</button>
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
+          <button type="button" class="hub-nav__btn" data-hub-tab="race">Раса</button>
         </nav>
 
         <div class="hub-body">
@@ -154,6 +155,93 @@
 
             <button type="button" class="mc-btn" id="auth-logout-btn">ВЫЙТИ ИЗ АККАУНТА</button>
             <button type="button" class="mc-btn mc-btn--compact hub-save-btn" id="hub-save-btn">СОХРАНИТЬ</button>
+          </section>
+
+          <section class="hub-view" id="hub-view-race" data-hub-view="race" hidden>
+            <form class="hub-form hub-race-form" id="hub-race-form" novalidate>
+              <div class="field-block">
+                <label class="field-label" for="hub-race-name">
+                  Название расы
+                  <span class="req">*</span>
+                </label>
+                <input
+                  class="field-input"
+                  id="hub-race-name"
+                  type="text"
+                  maxlength="48"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </div>
+
+              <div class="field-block">
+                <label class="field-label" for="hub-race-origin">
+                  Происхождение расы
+                  <span class="req">*</span>
+                </label>
+                <textarea
+                  class="field-area"
+                  id="hub-race-origin"
+                  rows="5"
+                  placeholder="Распишите как появилась ваша раса, не выходя за рамки логики и лора Minecraft."
+                ></textarea>
+              </div>
+
+              <div class="field-block">
+                <label class="field-label" for="hub-race-abilities">
+                  Способности расы
+                  <span class="req">*</span>
+                </label>
+                <textarea
+                  class="field-area"
+                  id="hub-race-abilities"
+                  rows="5"
+                  placeholder="Распишите какие есть способности у вашей расы."
+                ></textarea>
+              </div>
+
+              <div class="field-block">
+                <label class="field-label" for="hub-race-traits">
+                  Особенности расы
+                  <span class="opt">необязательно</span>
+                </label>
+                <textarea
+                  class="field-area"
+                  id="hub-race-traits"
+                  rows="5"
+                  placeholder="Распишите какие есть побочные эффекты у этой расы. (отрицательные эффекты, фоновые фишки)"
+                ></textarea>
+              </div>
+
+              <div class="field-block">
+                <label class="field-label" for="hub-race-useful">
+                  Чем ваша раса полезна для других
+                  <span class="req">*</span>
+                </label>
+                <textarea
+                  class="field-area"
+                  id="hub-race-useful"
+                  rows="5"
+                  placeholder="Распишите чем ваша раса может помочь другим игрокам в быту."
+                ></textarea>
+              </div>
+
+              <div class="field-block">
+                <label class="field-label" for="hub-race-mechanics">
+                  Особые механики которые привносит раса в мир
+                  <span class="opt">необязательно</span>
+                </label>
+                <textarea
+                  class="field-area"
+                  id="hub-race-mechanics"
+                  rows="5"
+                  placeholder="Распишите что нового в игровой мир добавит приход вашей расы. (новые предметы, биомы, структуры, механики)"
+                ></textarea>
+              </div>
+
+              <p class="field-error" id="hub-race-error" hidden></p>
+              <button type="submit" class="mc-btn mc-btn--compact hub-save-btn" id="hub-race-save-btn">СОХРАНИТЬ</button>
+            </form>
           </section>
         </div>
       </div>
@@ -1340,6 +1428,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=29"></script>
+  <script src="script.js?v=30"></script>
 </body>
 </html>

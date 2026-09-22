@@ -507,6 +507,7 @@
       };
       writeLocalStorageFallback(profileCache);
       updateAuthChrome();
+      fillHubRaceFields();
       await loadPlayersDirectory();
       return profileCache;
     } catch (err) {
@@ -1067,6 +1068,7 @@
       if (hubMcNick) {
         hubMcNick.value = displayNick;
       }
+      fillHubRaceFields();
     }
 
     if (profileFrame) {
@@ -1927,6 +1929,72 @@
     }
   });
 
+  const HUB_RACE_FIELDS = [
+    ["hub-race-name", "raceName"],
+    ["hub-race-origin", "origin"],
+    ["hub-race-abilities", "abilities"],
+    ["hub-race-traits", "traits"],
+    ["hub-race-useful", "useful"],
+    ["hub-race-mechanics", "mechanics"],
+  ];
+
+  function fillHubRaceFields() {
+    const form =
+      profileCache?.form && typeof profileCache.form === "object"
+        ? profileCache.form
+        : {};
+    HUB_RACE_FIELDS.forEach(([elId, key]) => {
+      const el = document.getElementById(elId);
+      if (el) el.value = String(form[key] || "");
+    });
+    setHubFieldError("hub-race-error", "");
+  }
+
+  function readHubRaceForm() {
+    const form = {};
+    HUB_RACE_FIELDS.forEach(([elId, key]) => {
+      form[key] = String(document.getElementById(elId)?.value || "")
+        .replace(/\r\n/g, "\n")
+        .trim();
+    });
+    form.nick = String(authUser?.mcNick || profileCache?.form?.nick || "").trim();
+    return form;
+  }
+
+  document.getElementById("hub-race-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    setHubFieldError("hub-race-error", "");
+    const form = readHubRaceForm();
+    const required = ["raceName", "origin", "abilities", "useful"];
+    const missing = required.find((key) => !form[key]);
+    if (missing) {
+      setHubFieldError("hub-race-error", "Заполни обязательные поля расы");
+      return;
+    }
+    const saveBtn = document.getElementById("hub-race-save-btn");
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      await api("/api/user/profile", {
+        method: "PUT",
+        body: JSON.stringify({
+          form,
+          registered: true,
+        }),
+      });
+      profileCache = {
+        ...profileCache,
+        registered: true,
+        form: { ...(profileCache.form || {}), ...form },
+      };
+      writeLocalStorageFallback(profileCache);
+      showToast("Раса сохранена");
+    } catch (err) {
+      setHubFieldError("hub-race-error", err.message || "Не удалось сохранить");
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  });
+
   /* ---------- Staff panel (controller + console) ---------- */
   const PANEL_HISTORY_KEY = "genesis_panel_console_history";
   const PANEL_SITE_COMMANDS = [
@@ -1957,6 +2025,12 @@
       usage: "password_show [ник]",
       hint: "Показать пароли (только админ)",
       adminOnly: true,
+    },
+    {
+      name: "clear",
+      usage: "clear",
+      hint: "Очистить историю консоли",
+      localOnly: true,
     },
   ];
   let consoleSuggestIndex = -1;
@@ -2132,6 +2206,13 @@
   async function runPanelCommand(line, opts = {}) {
     const text = String(line || "").trim();
     if (!text) return null;
+    const head = String(text.split(/\s+/)[0] || "").toLowerCase();
+    if (head === "clear") {
+      writeConsoleHistory([]);
+      renderConsoleHistory();
+      if (opts.toast !== false) showToast("История очищена");
+      return { ok: true, message: "cleared" };
+    }
     if (opts.log !== false) pushConsoleHistory("cmd", `> ${text}`);
     try {
       const data = await api("/api/panel/command", {

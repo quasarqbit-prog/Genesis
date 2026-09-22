@@ -1209,6 +1209,33 @@ h3,
   min-width: 220px;
 }
 
+.hub-race-form {
+  text-align: left;
+  gap: 14px;
+}
+
+.hub-race-form .field-label,
+.hub-race-form .field-hint,
+.hub-race-form .field-error {
+  text-align: left;
+}
+
+.hub-race-form .field-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.hub-race-form .field-area {
+  width: 100%;
+  min-height: 110px;
+}
+
+.hub-race-form .hub-save-btn {
+  align-self: center;
+}
+
 .hub-sep {
   width: 100%;
   height: 3px;
