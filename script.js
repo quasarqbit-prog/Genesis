@@ -3494,6 +3494,7 @@
   let studioEditingItemId = null;
   let studioRenamingFolderId = null;
   let studioCtxFolderId = null;
+  let studioCtxItemId = null;
 
   function normalizeStudioColor(value) {
     const raw = String(value || "").trim();
@@ -3621,15 +3622,23 @@
 
   function hideStudioFolderMenu() {
     const menu = document.getElementById("studio-folder-menu");
-    if (!menu) return;
-    menu.hidden = true;
+    if (menu) menu.hidden = true;
     studioCtxFolderId = null;
   }
 
-  function showStudioFolderMenu(folderId, clientX, clientY) {
-    const menu = document.getElementById("studio-folder-menu");
+  function hideStudioItemMenu() {
+    const menu = document.getElementById("studio-item-menu");
+    if (menu) menu.hidden = true;
+    studioCtxItemId = null;
+  }
+
+  function hideStudioMenus() {
+    hideStudioFolderMenu();
+    hideStudioItemMenu();
+  }
+
+  function placeStudioMenu(menu, clientX, clientY) {
     if (!menu) return;
-    studioCtxFolderId = folderId;
     menu.hidden = false;
     const pad = 8;
     const rect = menu.getBoundingClientRect();
@@ -3641,6 +3650,18 @@
     if (top + h > window.innerHeight - pad) top = window.innerHeight - h - pad;
     menu.style.left = `${Math.max(pad, left)}px`;
     menu.style.top = `${Math.max(pad, top)}px`;
+  }
+
+  function showStudioFolderMenu(folderId, clientX, clientY) {
+    hideStudioItemMenu();
+    studioCtxFolderId = folderId;
+    placeStudioMenu(document.getElementById("studio-folder-menu"), clientX, clientY);
+  }
+
+  function showStudioItemMenu(itemId, clientX, clientY) {
+    hideStudioFolderMenu();
+    studioCtxItemId = itemId;
+    placeStudioMenu(document.getElementById("studio-item-menu"), clientX, clientY);
   }
 
   function openStudioFolderModal() {
@@ -3749,7 +3770,7 @@
         `;
         btn.querySelector(".catalog-card__label").textContent = f.name;
         btn.addEventListener("click", () => {
-          hideStudioFolderMenu();
+          hideStudioMenus();
           studioOpenFolderId = f.id;
           renderStudio();
         });
@@ -3796,7 +3817,15 @@
         <span class="catalog-card__label"></span>
       `;
       btn.querySelector(".catalog-card__label").textContent = item.name;
-      btn.addEventListener("click", () => openStudioEditModal(item));
+      btn.addEventListener("click", () => {
+        hideStudioMenus();
+        openStudioEditModal(item);
+      });
+      btn.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showStudioItemMenu(item.id, e.clientX, e.clientY);
+      });
       grid.appendChild(btn);
     });
   }
@@ -3849,7 +3878,7 @@
       if (!actBtn) return;
       const act = actBtn.getAttribute("data-studio-act");
       const folderId = studioCtxFolderId;
-      hideStudioFolderMenu();
+      hideStudioMenus();
       if (!folderId) return;
       loadStudioDoc();
       const folder = getStudioFolder(folderId);
@@ -3872,21 +3901,45 @@
       }
     });
 
+    document.getElementById("studio-item-menu")?.addEventListener("click", (e) => {
+      const actBtn = e.target.closest("[data-studio-item-act]");
+      if (!actBtn) return;
+      const act = actBtn.getAttribute("data-studio-item-act");
+      const itemId = studioCtxItemId;
+      hideStudioMenus();
+      if (!itemId) return;
+      loadStudioDoc();
+      const folder = getStudioFolder(studioOpenFolderId);
+      const item = folder?.items.find((it) => it.id === itemId);
+      if (!folder || !item) return;
+      if (act === "edit") {
+        openStudioEditModal(item);
+        return;
+      }
+      if (act === "delete") {
+        const ok = window.confirm(`Удалить анкету «${item.name}»?`);
+        if (!ok) return;
+        folder.items = folder.items.filter((it) => it.id !== itemId);
+        saveStudioDoc();
+        renderStudio();
+      }
+    });
+
     document.addEventListener("pointerdown", (e) => {
-      const menu = document.getElementById("studio-folder-menu");
-      if (!menu || menu.hidden) return;
-      if (menu.contains(e.target)) return;
-      hideStudioFolderMenu();
+      const folderMenu = document.getElementById("studio-folder-menu");
+      const itemMenu = document.getElementById("studio-item-menu");
+      if (folderMenu && !folderMenu.hidden && folderMenu.contains(e.target)) return;
+      if (itemMenu && !itemMenu.hidden && itemMenu.contains(e.target)) return;
+      hideStudioMenus();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") hideStudioFolderMenu();
+      if (e.key === "Escape") hideStudioMenus();
     });
-    window.addEventListener("resize", hideStudioFolderMenu);
-    window.addEventListener("scroll", hideStudioFolderMenu, true);
+    window.addEventListener("resize", hideStudioMenus);
+    window.addEventListener("scroll", hideStudioMenus, true);
 
     const createModal = "studio-create-modal";
     document.getElementById("studio-create-modal-close")?.addEventListener("click", () => closeStudioModal(createModal));
-    document.getElementById("studio-create-cancel")?.addEventListener("click", () => closeStudioModal(createModal));
     document.getElementById("studio-create-form")?.addEventListener("submit", (e) => {
       e.preventDefault();
       const nameInput = document.getElementById("studio-create-name");
@@ -3919,16 +3972,6 @@
 
     const editModal = "studio-edit-modal";
     document.getElementById("studio-edit-modal-close")?.addEventListener("click", () => closeStudioModal(editModal));
-    document.getElementById("studio-edit-cancel")?.addEventListener("click", () => closeStudioModal(editModal));
-    document.getElementById("studio-edit-delete")?.addEventListener("click", () => {
-      const folder = getStudioFolder(studioOpenFolderId);
-      if (!folder || !studioEditingItemId) return;
-      folder.items = folder.items.filter((it) => it.id !== studioEditingItemId);
-      saveStudioDoc();
-      studioEditingItemId = null;
-      closeStudioModal(editModal);
-      renderStudio();
-    });
     document.getElementById("studio-edit-form")?.addEventListener("submit", (e) => {
       e.preventDefault();
       const folder = getStudioFolder(studioOpenFolderId);
@@ -5933,7 +5976,6 @@
   });
 
   document.getElementById("patch-editor-close")?.addEventListener("click", closePatchEditor);
-  document.getElementById("patch-editor-cancel")?.addEventListener("click", closePatchEditor);
   document.getElementById("patch-editor")?.addEventListener("click", (e) => {
     if (e.target.id === "patch-editor") closePatchEditor();
   });
@@ -6272,7 +6314,6 @@
   });
 
   document.getElementById("rules-modal-close")?.addEventListener("click", closeRulesModal);
-  document.getElementById("rules-modal-cancel")?.addEventListener("click", closeRulesModal);
   document.getElementById("rules-modal")?.addEventListener("click", (e) => {
     if (e.target.id === "rules-modal") closeRulesModal();
   });

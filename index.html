@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=53" />
+  <link rel="stylesheet" href="styles.css?v=54" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -652,77 +652,79 @@
   </div>
 
   <div class="auth-modal ui-layer" id="auth-modal" hidden>
-    <div class="auth-modal__panel" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
-      <div class="auth-modal__head">
-        <div class="auth-tabs" role="tablist">
-          <button type="button" class="auth-tab is-active" data-auth-tab="login">Вход</button>
-          <button type="button" class="auth-tab" data-auth-tab="register">Регистрация</button>
+    <div class="popup-shell">
+      <button type="button" class="popup-close" id="auth-modal-close" aria-label="Закрыть">×</button>
+      <div class="auth-modal__panel" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+        <div class="auth-modal__head">
+          <div class="auth-tabs" role="tablist">
+            <button type="button" class="auth-tab is-active" data-auth-tab="login">Вход</button>
+            <button type="button" class="auth-tab" data-auth-tab="register">Регистрация</button>
+          </div>
         </div>
-        <button type="button" class="auth-modal__close" id="auth-modal-close" aria-label="Закрыть">×</button>
+
+        <div class="auth-form-stack" id="auth-form-stack">
+        <form class="auth-form is-active" id="auth-login-form" novalidate>
+          <label class="field-label" for="auth-login-user">Ник Minecraft</label>
+          <input class="field-input" id="auth-login-user" type="text" maxlength="16" autocomplete="username" spellcheck="false" required />
+          <p class="field-error" id="auth-login-user-error" hidden></p>
+
+          <label class="field-label" for="auth-login-pass">Пароль</label>
+          <div class="pass-row">
+            <input class="field-input" id="auth-login-pass" type="password" maxlength="72" autocomplete="current-password" required />
+            <button type="button" class="pass-toggle" data-toggle-pass="auth-login-pass" aria-label="Показать пароль">*</button>
+          </div>
+          <p class="field-error" id="auth-login-pass-error" hidden></p>
+
+          <button type="submit" class="mc-btn">ВОЙТИ</button>
+          <div class="tg-login-block tg-login-block--modal">
+            <p class="tg-login-block__label">или через Telegram</p>
+            <div class="tg-widget-host" id="tg-widget-login"></div>
+          </div>
+        </form>
+
+        <form class="auth-form" id="auth-register-form" novalidate>
+          <div class="field-label">Telegram <span class="req">*</span></div>
+          <p class="field-hint">Привяжите Telegram через кнопку ниже</p>
+          <div class="tg-login-block tg-login-block--modal" id="reg-tg-block">
+            <div class="tg-widget-host" id="tg-widget-register"></div>
+          </div>
+          <p class="reg-tg-status" id="reg-tg-status" hidden></p>
+          <p class="field-error" id="auth-reg-telegram-error" hidden></p>
+
+          <label class="field-label" for="auth-reg-nick">Ник внутри игры Minecraft <span class="req">*</span></label>
+          <input class="field-input" id="auth-reg-nick" type="text" maxlength="16" autocomplete="off" spellcheck="false" required />
+          <p class="field-hint">3–16 символов · латиница, цифры и _</p>
+          <p class="field-error" id="auth-reg-nick-error" hidden></p>
+
+          <div class="field-label">Аккаунт <span class="req">*</span></div>
+          <div class="choice-grid choice-grid--2" role="radiogroup" aria-label="Тип аккаунта">
+            <label class="choice-chip"><input type="radio" name="accountType" value="pirate" checked /><span>Пиратский</span></label>
+            <label class="choice-chip"><input type="radio" name="accountType" value="licensed" /><span>Лицензионный</span></label>
+          </div>
+          <p class="field-error" id="auth-reg-account-error" hidden></p>
+
+          <label class="field-label" for="auth-reg-pass">Пароль <span class="req">*</span></label>
+          <div class="pass-row">
+            <input class="field-input" id="auth-reg-pass" type="password" maxlength="72" autocomplete="new-password" required />
+            <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass" aria-label="Показать пароль">*</button>
+          </div>
+          <p class="field-hint">Этот пароль будет использоваться в Minecraft при входе.</p>
+          <p class="field-error" id="auth-reg-pass-error" hidden></p>
+
+          <label class="field-label" for="auth-reg-pass2">Повтор пароля <span class="req">*</span></label>
+          <div class="pass-row">
+            <input class="field-input" id="auth-reg-pass2" type="password" maxlength="72" autocomplete="new-password" required />
+            <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass2" aria-label="Показать пароль">*</button>
+          </div>
+          <p class="field-hint">Для подтверждения</p>
+          <p class="field-error" id="auth-reg-pass2-error" hidden></p>
+
+          <button type="submit" class="mc-btn">ЗАРЕГИСТРИРОВАТЬСЯ</button>
+        </form>
+        </div>
+
+        <p class="form-status" id="auth-status" hidden></p>
       </div>
-
-      <div class="auth-form-stack" id="auth-form-stack">
-      <form class="auth-form is-active" id="auth-login-form" novalidate>
-        <label class="field-label" for="auth-login-user">Ник Minecraft</label>
-        <input class="field-input" id="auth-login-user" type="text" maxlength="16" autocomplete="username" spellcheck="false" required />
-        <p class="field-error" id="auth-login-user-error" hidden></p>
-
-        <label class="field-label" for="auth-login-pass">Пароль</label>
-        <div class="pass-row">
-          <input class="field-input" id="auth-login-pass" type="password" maxlength="72" autocomplete="current-password" required />
-          <button type="button" class="pass-toggle" data-toggle-pass="auth-login-pass" aria-label="Показать пароль">*</button>
-        </div>
-        <p class="field-error" id="auth-login-pass-error" hidden></p>
-
-        <button type="submit" class="mc-btn">ВОЙТИ</button>
-        <div class="tg-login-block tg-login-block--modal">
-          <p class="tg-login-block__label">или через Telegram</p>
-          <div class="tg-widget-host" id="tg-widget-login"></div>
-        </div>
-      </form>
-
-      <form class="auth-form" id="auth-register-form" novalidate>
-        <div class="field-label">Telegram <span class="req">*</span></div>
-        <p class="field-hint">Привяжите Telegram через кнопку ниже</p>
-        <div class="tg-login-block tg-login-block--modal" id="reg-tg-block">
-          <div class="tg-widget-host" id="tg-widget-register"></div>
-        </div>
-        <p class="reg-tg-status" id="reg-tg-status" hidden></p>
-        <p class="field-error" id="auth-reg-telegram-error" hidden></p>
-
-        <label class="field-label" for="auth-reg-nick">Ник внутри игры Minecraft <span class="req">*</span></label>
-        <input class="field-input" id="auth-reg-nick" type="text" maxlength="16" autocomplete="off" spellcheck="false" required />
-        <p class="field-hint">3–16 символов · латиница, цифры и _</p>
-        <p class="field-error" id="auth-reg-nick-error" hidden></p>
-
-        <div class="field-label">Аккаунт <span class="req">*</span></div>
-        <div class="choice-grid choice-grid--2" role="radiogroup" aria-label="Тип аккаунта">
-          <label class="choice-chip"><input type="radio" name="accountType" value="pirate" checked /><span>Пиратский</span></label>
-          <label class="choice-chip"><input type="radio" name="accountType" value="licensed" /><span>Лицензионный</span></label>
-        </div>
-        <p class="field-error" id="auth-reg-account-error" hidden></p>
-
-        <label class="field-label" for="auth-reg-pass">Пароль <span class="req">*</span></label>
-        <div class="pass-row">
-          <input class="field-input" id="auth-reg-pass" type="password" maxlength="72" autocomplete="new-password" required />
-          <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass" aria-label="Показать пароль">*</button>
-        </div>
-        <p class="field-hint">Этот пароль будет использоваться в Minecraft при входе.</p>
-        <p class="field-error" id="auth-reg-pass-error" hidden></p>
-
-        <label class="field-label" for="auth-reg-pass2">Повтор пароля <span class="req">*</span></label>
-        <div class="pass-row">
-          <input class="field-input" id="auth-reg-pass2" type="password" maxlength="72" autocomplete="new-password" required />
-          <button type="button" class="pass-toggle" data-toggle-pass="auth-reg-pass2" aria-label="Показать пароль">*</button>
-        </div>
-        <p class="field-hint">Для подтверждения</p>
-        <p class="field-error" id="auth-reg-pass2-error" hidden></p>
-
-        <button type="submit" class="mc-btn">ЗАРЕГИСТРИРОВАТЬСЯ</button>
-      </form>
-      </div>
-
-      <p class="form-status" id="auth-status" hidden></p>
     </div>
   </div>
 
@@ -1398,55 +1400,56 @@
 
   
   <div class="rules-modal" id="rules-modal" hidden>
-    <div class="rules-modal__panel" role="dialog" aria-modal="true" aria-labelledby="rules-modal-title">
-      <div class="rules-modal__head">
-        <h2 class="rules-modal__title" id="rules-modal-title">Редактирование</h2>
-        <button type="button" class="auth-modal__close" id="rules-modal-close" aria-label="Закрыть">×</button>
+    <div class="popup-shell popup-shell--rules">
+      <button type="button" class="popup-close" id="rules-modal-close" aria-label="Закрыть">×</button>
+      <div class="rules-modal__panel" role="dialog" aria-modal="true" aria-labelledby="rules-modal-title">
+        <div class="rules-modal__head">
+          <h2 class="rules-modal__title" id="rules-modal-title">Редактирование</h2>
+        </div>
+        <form class="rules-modal__form" id="rules-modal-form" novalidate>
+          <div class="field-block" id="rules-field-title-wrap">
+            <label class="field-label" for="rules-field-title">Заголовок</label>
+            <input class="field-input" id="rules-field-title" type="text" maxlength="120" />
+          </div>
+          <div class="field-block" id="rules-field-number-wrap" hidden>
+            <label class="field-label" for="rules-field-number">Номер раздела</label>
+            <input class="field-input" id="rules-field-number" type="number" min="1" max="99" step="1" />
+          </div>
+          <div class="field-block" id="rules-field-code-wrap" hidden>
+            <label class="field-label" for="rules-field-code">Пункт (например 1.1)</label>
+            <input class="field-input" id="rules-field-code" type="text" maxlength="16" />
+          </div>
+          <div class="field-block" id="rules-field-text-wrap">
+            <label class="field-label" for="rules-field-text">Текст</label>
+            <textarea class="field-area" id="rules-field-text" rows="5"></textarea>
+          </div>
+          <div class="field-block" id="rules-field-bullets-wrap" hidden>
+            <label class="field-label" for="rules-field-bullets">Подпункты (каждый с новой строки)</label>
+            <textarea class="field-area" id="rules-field-bullets" rows="4"></textarea>
+          </div>
+          <div class="field-block" id="rules-field-penalty-wrap" hidden>
+            <label class="field-label" for="rules-field-penalty">Наказание</label>
+            <textarea class="field-area field-area--sm" id="rules-field-penalty" rows="2"></textarea>
+          </div>
+          <div class="field-block" id="rules-field-penalty-note-wrap" hidden>
+            <label class="field-label" for="rules-field-penalty-note">Примечание к наказанию</label>
+            <textarea class="field-area field-area--sm" id="rules-field-penalty-note" rows="2"></textarea>
+          </div>
+          <div class="field-block" id="rules-field-note-wrap" hidden>
+            <label class="field-label" for="rules-field-note">Примечание раздела</label>
+            <textarea class="field-area field-area--sm" id="rules-field-note" rows="3"></textarea>
+          </div>
+          <div class="rules-modal__actions">
+            <button type="submit" class="mc-btn">Сохранить</button>
+          </div>
+        </form>
       </div>
-      <form class="rules-modal__form" id="rules-modal-form" novalidate>
-        <div class="field-block" id="rules-field-title-wrap">
-          <label class="field-label" for="rules-field-title">Заголовок</label>
-          <input class="field-input" id="rules-field-title" type="text" maxlength="120" />
-        </div>
-        <div class="field-block" id="rules-field-number-wrap" hidden>
-          <label class="field-label" for="rules-field-number">Номер раздела</label>
-          <input class="field-input" id="rules-field-number" type="number" min="1" max="99" step="1" />
-        </div>
-        <div class="field-block" id="rules-field-code-wrap" hidden>
-          <label class="field-label" for="rules-field-code">Пункт (например 1.1)</label>
-          <input class="field-input" id="rules-field-code" type="text" maxlength="16" />
-        </div>
-        <div class="field-block" id="rules-field-text-wrap">
-          <label class="field-label" for="rules-field-text">Текст</label>
-          <textarea class="field-area" id="rules-field-text" rows="5"></textarea>
-        </div>
-        <div class="field-block" id="rules-field-bullets-wrap" hidden>
-          <label class="field-label" for="rules-field-bullets">Подпункты (каждый с новой строки)</label>
-          <textarea class="field-area" id="rules-field-bullets" rows="4"></textarea>
-        </div>
-        <div class="field-block" id="rules-field-penalty-wrap" hidden>
-          <label class="field-label" for="rules-field-penalty">Наказание</label>
-          <textarea class="field-area field-area--sm" id="rules-field-penalty" rows="2"></textarea>
-        </div>
-        <div class="field-block" id="rules-field-penalty-note-wrap" hidden>
-          <label class="field-label" for="rules-field-penalty-note">Примечание к наказанию</label>
-          <textarea class="field-area field-area--sm" id="rules-field-penalty-note" rows="2"></textarea>
-        </div>
-        <div class="field-block" id="rules-field-note-wrap" hidden>
-          <label class="field-label" for="rules-field-note">Примечание раздела</label>
-          <textarea class="field-area field-area--sm" id="rules-field-note" rows="3"></textarea>
-        </div>
-        <div class="rules-modal__actions">
-          <button type="button" class="mc-btn mc-btn--ghost" id="rules-modal-cancel">Отмена</button>
-          <button type="submit" class="mc-btn">Сохранить</button>
-        </div>
-      </form>
     </div>
   </div>
 
   <div class="auth-modal ui-layer" id="studio-folder-modal" hidden>
-    <div class="studio-modal-shell">
-      <button type="button" class="studio-modal__close" id="studio-folder-modal-close" aria-label="Закрыть">×</button>
+    <div class="popup-shell studio-modal-shell">
+      <button type="button" class="popup-close studio-modal__close" id="studio-folder-modal-close" aria-label="Закрыть">×</button>
       <div class="auth-modal__panel studio-modal__panel" role="dialog" aria-modal="true" aria-labelledby="studio-folder-modal-title">
         <div class="auth-modal__head">
           <h2 class="auth-modal__title" id="studio-folder-modal-title">Новая папка</h2>
@@ -1477,84 +1480,90 @@
     <button type="button" class="studio-ctx__btn studio-ctx__btn--danger" data-studio-act="delete">Удалить</button>
   </div>
 
+  <div class="studio-ctx" id="studio-item-menu" hidden>
+    <button type="button" class="studio-ctx__btn" data-studio-item-act="edit">Редактировать</button>
+    <button type="button" class="studio-ctx__btn studio-ctx__btn--danger" data-studio-item-act="delete">Удалить</button>
+  </div>
+
   <div class="auth-modal ui-layer" id="studio-create-modal" hidden>
-    <div class="auth-modal__panel studio-modal__panel studio-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="studio-create-modal-title">
-      <div class="auth-modal__head">
-        <h2 class="auth-modal__title" id="studio-create-modal-title">Анкета контента</h2>
-        <button type="button" class="auth-modal__close" id="studio-create-modal-close" aria-label="Закрыть">×</button>
+    <div class="popup-shell popup-shell--wide">
+      <button type="button" class="popup-close" id="studio-create-modal-close" aria-label="Закрыть">×</button>
+      <div class="auth-modal__panel studio-modal__panel studio-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="studio-create-modal-title">
+        <div class="auth-modal__head">
+          <h2 class="auth-modal__title" id="studio-create-modal-title">Анкета контента</h2>
+        </div>
+        <form class="studio-modal__form" id="studio-create-form" novalidate>
+          <div class="field-block">
+            <label class="field-label" for="studio-create-name">Название</label>
+            <input class="field-input" id="studio-create-name" type="text" maxlength="64" required autocomplete="off" />
+          </div>
+          <p class="studio-modal__hint">Выберите тип контента</p>
+          <div class="studio-type-grid" id="studio-type-grid" role="listbox" aria-label="Типы контента"></div>
+          <p class="field-error" id="studio-create-error" hidden></p>
+          <div class="studio-modal__actions">
+            <button type="submit" class="mc-btn">Подтвердить</button>
+          </div>
+        </form>
       </div>
-      <form class="studio-modal__form" id="studio-create-form" novalidate>
-        <div class="field-block">
-          <label class="field-label" for="studio-create-name">Название</label>
-          <input class="field-input" id="studio-create-name" type="text" maxlength="64" required autocomplete="off" />
-        </div>
-        <p class="studio-modal__hint">Выберите тип контента</p>
-        <div class="studio-type-grid" id="studio-type-grid" role="listbox" aria-label="Типы контента"></div>
-        <p class="field-error" id="studio-create-error" hidden></p>
-        <div class="studio-modal__actions">
-          <button type="button" class="mc-btn mc-btn--ghost" id="studio-create-cancel">Отмена</button>
-          <button type="submit" class="mc-btn">Подтвердить</button>
-        </div>
-      </form>
     </div>
   </div>
 
   <div class="auth-modal ui-layer" id="studio-edit-modal" hidden>
-    <div class="auth-modal__panel studio-modal__panel studio-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="studio-edit-modal-title">
-      <div class="auth-modal__head">
-        <h2 class="auth-modal__title" id="studio-edit-modal-title">Контент</h2>
-        <button type="button" class="auth-modal__close" id="studio-edit-modal-close" aria-label="Закрыть">×</button>
+    <div class="popup-shell popup-shell--wide">
+      <button type="button" class="popup-close" id="studio-edit-modal-close" aria-label="Закрыть">×</button>
+      <div class="auth-modal__panel studio-modal__panel studio-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="studio-edit-modal-title">
+        <div class="auth-modal__head">
+          <h2 class="auth-modal__title" id="studio-edit-modal-title">Контент</h2>
+        </div>
+        <form class="studio-modal__form" id="studio-edit-form" novalidate>
+          <p class="studio-edit__meta" id="studio-edit-meta"></p>
+          <div class="field-block studio-edit__body-block">
+            <label class="field-label" for="studio-edit-body">Текст</label>
+            <textarea class="field-area studio-edit__textarea" id="studio-edit-body" rows="12" placeholder="Опишите контент…"></textarea>
+          </div>
+          <div class="studio-modal__actions">
+            <button type="submit" class="mc-btn">Сохранить</button>
+          </div>
+        </form>
       </div>
-      <form class="studio-modal__form" id="studio-edit-form" novalidate>
-        <p class="studio-edit__meta" id="studio-edit-meta"></p>
-        <div class="field-block studio-edit__body-block">
-          <label class="field-label" for="studio-edit-body">Текст</label>
-          <textarea class="field-area studio-edit__textarea" id="studio-edit-body" rows="12" placeholder="Опишите контент…"></textarea>
-        </div>
-        <div class="studio-modal__actions">
-          <button type="button" class="mc-btn mc-btn--ghost" id="studio-edit-delete">Удалить</button>
-          <span class="studio-modal__spacer"></span>
-          <button type="button" class="mc-btn mc-btn--ghost" id="studio-edit-cancel">Отмена</button>
-          <button type="submit" class="mc-btn">Сохранить</button>
-        </div>
-      </form>
     </div>
   </div>
 
   <div class="patch-editor" id="patch-editor" hidden>
-    <div class="patch-editor__panel" role="dialog" aria-modal="true" aria-labelledby="patch-editor-title">
-      <div class="patch-editor__head">
-        <h2 class="patch-editor__title" id="patch-editor-title">Новый патч</h2>
-        <button type="button" class="auth-modal__close" id="patch-editor-close" aria-label="Закрыть">×</button>
-      </div>
-      <form class="patch-editor__form" id="patch-editor-form" novalidate>
-        <div class="field-block">
-          <label class="field-label" for="patch-field-title">Название</label>
-          <input class="field-input" id="patch-field-title" type="text" maxlength="120" required />
+    <div class="popup-shell popup-shell--wide">
+      <button type="button" class="popup-close" id="patch-editor-close" aria-label="Закрыть">×</button>
+      <div class="patch-editor__panel" role="dialog" aria-modal="true" aria-labelledby="patch-editor-title">
+        <div class="patch-editor__head">
+          <h2 class="patch-editor__title" id="patch-editor-title">Новый патч</h2>
         </div>
-        <div class="field-block">
-          <label class="field-label" for="patch-field-version">Версия</label>
-          <input class="field-input" id="patch-field-version" type="text" maxlength="32" placeholder="0.12.0" />
-        </div>
-        <div class="field-block patch-editor__body-block">
-          <label class="field-label" for="patch-field-body">Текст патча</label>
-          <div class="patch-md-toolbar" id="patch-md-toolbar" role="toolbar" aria-label="Форматирование">
-            <button type="button" class="patch-md-btn" data-md="bold" title="Жирный">B</button>
-            <button type="button" class="patch-md-btn" data-md="italic" title="Курсив"><em>I</em></button>
-            <button type="button" class="patch-md-btn" data-md="h2" title="Заголовок">H</button>
-            <button type="button" class="patch-md-btn" data-md="ul" title="Список">•≡</button>
-            <button type="button" class="patch-md-btn" data-md="code" title="Код">&lt;/&gt;</button>
-            <button type="button" class="patch-md-btn" data-md="link" title="Ссылка">URL</button>
+        <form class="patch-editor__form" id="patch-editor-form" novalidate>
+          <div class="field-block">
+            <label class="field-label" for="patch-field-title">Название</label>
+            <input class="field-input" id="patch-field-title" type="text" maxlength="120" required />
           </div>
-          <textarea class="field-area patch-editor__textarea" id="patch-field-body" rows="12" placeholder="Текст патча в Markdown…"></textarea>
-        </div>
-        <div class="patch-editor__actions">
-          <button type="button" class="mc-btn mc-btn--ghost" id="patch-editor-delete" hidden>Удалить</button>
-          <span class="patch-editor__spacer"></span>
-          <button type="button" class="mc-btn mc-btn--ghost" id="patch-editor-cancel">Отмена</button>
-          <button type="submit" class="mc-btn">Сохранить</button>
-        </div>
-      </form>
+          <div class="field-block">
+            <label class="field-label" for="patch-field-version">Версия</label>
+            <input class="field-input" id="patch-field-version" type="text" maxlength="32" placeholder="0.12.0" />
+          </div>
+          <div class="field-block patch-editor__body-block">
+            <label class="field-label" for="patch-field-body">Текст патча</label>
+            <div class="patch-md-toolbar" id="patch-md-toolbar" role="toolbar" aria-label="Форматирование">
+              <button type="button" class="patch-md-btn" data-md="bold" title="Жирный">B</button>
+              <button type="button" class="patch-md-btn" data-md="italic" title="Курсив"><em>I</em></button>
+              <button type="button" class="patch-md-btn" data-md="h2" title="Заголовок">H</button>
+              <button type="button" class="patch-md-btn" data-md="ul" title="Список">•≡</button>
+              <button type="button" class="patch-md-btn" data-md="code" title="Код">&lt;/&gt;</button>
+              <button type="button" class="patch-md-btn" data-md="link" title="Ссылка">URL</button>
+            </div>
+            <textarea class="field-area patch-editor__textarea" id="patch-field-body" rows="12" placeholder="Текст патча в Markdown…"></textarea>
+          </div>
+          <div class="patch-editor__actions">
+            <button type="button" class="mc-btn mc-btn--ghost" id="patch-editor-delete" hidden>Удалить</button>
+            <span class="patch-editor__spacer"></span>
+            <button type="submit" class="mc-btn">Сохранить</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -1570,6 +1579,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=53"></script>
+  <script src="script.js?v=54"></script>
 </body>
 </html>
