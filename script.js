@@ -1481,45 +1481,30 @@
       for (const provider of data.providers || []) {
         const rows = provider.chars || [];
         if (!rows.length) continue;
-        // Minecraft bitmap rows are UTF-16 code units (string.length), not code points.
-        const rowLen = Math.max(...rows.map((row) => row.length));
+        // Glyph grid is one cell per Unicode code point (not UTF-16 code unit).
+        const parsedRows = rows.map((row) => Array.from(row));
+        const rowLen = Math.max(...parsedRows.map((chars) => chars.length));
         if (!rowLen) continue;
         const img = await loadImageEl(provider.file);
         const cellW = img.width / rowLen;
-        const cellH = img.height / rows.length;
+        const cellH = img.height / parsedRows.length;
         const glyphH = provider.height || 8;
         const ascent = provider.ascent ?? glyphH;
-        for (let row = 0; row < rows.length; row += 1) {
-          const rowStr = rows[row];
-          for (let col = 0; col < rowStr.length; col += 1) {
-            const code = rowStr.charCodeAt(col);
-            // skip low surrogate; high surrogate pairs are one glyph cell in MC atlases
-            if (code >= 0xdc00 && code <= 0xdfff) continue;
-            let ch;
-            let cells = 1;
-            if (code >= 0xd800 && code <= 0xdbff && col + 1 < rowStr.length) {
-              ch = rowStr.slice(col, col + 2);
-              cells = 2;
-            } else {
-              ch = rowStr.charAt(col);
-            }
-            if (!ch || ch === "\u0000" || glyphs.has(ch)) {
-              col += cells - 1;
-              continue;
-            }
-            if (!needed.has(ch) && ch !== " ") {
-              col += cells - 1;
-              continue;
-            }
+        for (let row = 0; row < parsedRows.length; row += 1) {
+          const chars = parsedRows[row];
+          for (let col = 0; col < chars.length; col += 1) {
+            const ch = chars[col];
+            if (!ch || ch === "\u0000" || glyphs.has(ch)) continue;
+            if (!needed.has(ch) && ch !== " ") continue;
             const sx = Math.round(col * cellW);
             const sy = Math.round(row * cellH);
-            const cw = Math.round(cellW * cells);
+            const cw = Math.round(cellW);
             const chh = Math.round(cellH);
             let inkW = 0;
             try {
               inkW = measureGlyphWidth(img, sx, sy, cw, chh);
             } catch (_) {
-              inkW = Math.round(cellW);
+              inkW = Math.max(1, Math.round(cellW) - 1);
             }
             if (ch === " ") inkW = Math.max(inkW, 4);
             glyphs.set(ch, {
@@ -1533,7 +1518,6 @@
               ascent,
               blank: ch === " " || inkW === 0,
             });
-            col += cells - 1;
           }
         }
       }
