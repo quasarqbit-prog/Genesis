@@ -2886,9 +2886,18 @@ function mapStudioSubmissionRow(row) {
   const clientFolderId = String(row.client_folder_id || "");
   const kind =
     payload.kind === "race" || clientFolderId === "race" ? "race" : "folder";
+  const version = Math.max(1, Number(payload.version) || 1);
+  const baseName = String(
+    payload.baseName ||
+      (payload.race && payload.race.raceName) ||
+      row.folder_name ||
+      ""
+  ).trim();
   return {
     id: Number(row.id),
     kind,
+    version,
+    baseName,
     clientFolderId,
     submitterId: Number(row.submitter_id),
     submitterMcNick: String(row.submitter_mc_nick || ""),
@@ -2902,6 +2911,23 @@ function mapStudioSubmissionRow(row) {
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
   };
+}
+
+function studioDisplayName(baseName, version) {
+  const name = String(baseName || "").trim() || "Анкета";
+  const ver = Math.max(1, Number(version) || 1);
+  return ver > 1 ? `${name} V${ver}` : name;
+}
+
+async function getLatestStudioSubmission(submitterId, clientFolderId) {
+  const [rows] = await pool.execute(
+    `SELECT * FROM studio_submissions
+     WHERE submitter_id = :submitterId AND client_folder_id = :clientFolderId
+     ORDER BY id DESC
+     LIMIT 1`,
+    { submitterId, clientFolderId }
+  );
+  return rows[0] ? mapStudioSubmissionRow(rows[0]) : null;
 }
 
 app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
@@ -2944,6 +2970,20 @@ app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
       payload = { ...payload, kind: "folder" };
     }
 
+    const submitterId = Number(req.user.id);
+    const previous = await getLatestStudioSubmission(submitterId, clientFolderId);
+    const prevStatus = previous ? String(previous.status || "") : "";
+    const prevVersion = previous ? Math.max(1, Number(previous.version) || 1) : 1;
+    const version =
+      prevStatus === "approved" || prevStatus === "added" ? prevVersion + 1 : prevVersion;
+    const baseName = String(folderName || "").trim().slice(0, 120);
+    payload = {
+      ...payload,
+      version,
+      baseName,
+    };
+    folderName = studioDisplayName(baseName, version).slice(0, 128);
+
     const mcNick = String(req.user.mcNick || "").slice(0, 16) || "unknown";
     const payloadJson = JSON.stringify(payload);
     if (payloadJson.length > 30 * 1024 * 1024) {
@@ -2956,7 +2996,7 @@ app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
         (:clientFolderId, :submitterId, :submitterMcNick, :folderName, :folderColor, :payloadJson, 'pending', NULL, NULL, NULL)`,
       {
         clientFolderId,
-        submitterId: Number(req.user.id),
+        submitterId,
         submitterMcNick: mcNick,
         folderName,
         folderColor,

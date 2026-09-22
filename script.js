@@ -5274,7 +5274,10 @@
           `;
           appendStudioStar(btn, s.status || "pending", s.reason);
           btn.querySelector(".studio-tile__name").textContent =
-            s.folderName || (isRace ? "Раса" : "Папка");
+            s.folderName ||
+            (s.version > 1
+              ? `${s.baseName || (isRace ? "Раса" : "Папка")} V${s.version}`
+              : s.baseName || (isRace ? "Раса" : "Папка"));
           btn.querySelector(".studio-tile__sub").textContent = s.submitterMcNick || "—";
           btn.addEventListener("click", () => {
             hideStudioMenus();
