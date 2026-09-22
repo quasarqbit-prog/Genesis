@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=25" />
+  <link rel="stylesheet" href="styles.css?v=26" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -57,6 +57,7 @@
       <div class="app-shell__main settings-drawer" id="settings-drawer">
         <button type="button" class="drawer-close-btn" id="settings-drawer-close" aria-label="Закрыть настройки">×</button>
         <nav class="hub-nav" aria-label="Разделы">
+          <button type="button" class="hub-nav__btn hub-nav__btn--close" id="settings-close-tab">Закрыть</button>
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
           <button type="button" class="hub-nav__btn" data-hub-tab="panel" id="hub-tab-panel" hidden>Панель</button>
         </nav>
@@ -320,6 +321,7 @@
 
       <aside class="user-profile-drawer" id="user-profile-drawer" aria-hidden="true">
         <button type="button" class="drawer-close-btn" id="user-profile-close" aria-label="Закрыть профиль">×</button>
+        <button type="button" class="user-profile-close-tab" id="user-profile-close-tab">Закрыть</button>
         <div class="user-profile-drawer__inner">
           <div class="user-profile-card" id="user-profile-card">
             <div class="user-profile-card__avatar is-offline" id="user-profile-avatar">
@@ -1330,6 +1332,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=25"></script>
+  <script src="script.js?v=26"></script>
 </body>
 </html>

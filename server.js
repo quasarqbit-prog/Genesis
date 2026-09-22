@@ -97,7 +97,7 @@ function authMiddleware(req, res, next) {
   try {
     const payload = jwt.verify(match[1], JWT_SECRET);
     req.user = {
-      id: payload.sub,
+      id: Number(payload.sub),
       mcNick: payload.mcNick,
       telegram: payload.telegram,
       role: payload.role || "user",
@@ -149,7 +149,7 @@ function isAdminRole(role) {
 }
 
 async function refreshUserRole(req) {
-  if (!req.user?.id) return;
+  if (req.user?.id == null || !Number.isFinite(Number(req.user.id))) return;
   const [rows] = await pool.execute(
     `SELECT role FROM users WHERE id = :userId LIMIT 1`,
     { userId: req.user.id }
@@ -410,6 +410,80 @@ async function ensureSchema() {
   }
 }
 
+async function ensureFounderIdZero(founderId) {
+  const fromId = Number(founderId);
+  if (!Number.isFinite(fromId) || fromId === 0) return 0;
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.query("SET FOREIGN_KEY_CHECKS = 0");
+    await conn.query(
+      "SET SESSION sql_mode = CONCAT(@@SESSION.sql_mode, ',NO_AUTO_VALUE_ON_ZERO')"
+    );
+
+    const [zeroRows] = await conn.execute(
+      `SELECT id, role FROM users WHERE id = 0 LIMIT 1`
+    );
+    if (zeroRows[0]) {
+      if (zeroRows[0].role === "founder") {
+        console.log("Founder already has id 0");
+        return 0;
+      }
+      throw new Error("users.id=0 занят не-основателем");
+    }
+
+    await conn.execute(`UPDATE profiles SET user_id = 0 WHERE user_id = :id`, {
+      id: fromId,
+    });
+    await conn.execute(`UPDATE game_stats SET user_id = 0 WHERE user_id = :id`, {
+      id: fromId,
+    });
+    await conn.execute(`UPDATE user_bans SET user_id = 0 WHERE user_id = :id`, {
+      id: fromId,
+    });
+    await conn.execute(
+      `UPDATE user_bans SET banned_by = 0 WHERE banned_by = :id`,
+      { id: fromId }
+    );
+    await conn.execute(`UPDATE users SET id = 0 WHERE id = :id`, { id: fromId });
+
+    await conn.execute(
+      `UPDATE profiles
+       SET avatar_path = REPLACE(avatar_path, :fromPref, :toPref)
+       WHERE user_id = 0 AND avatar_path LIKE :fromLike`,
+      {
+        fromPref: `/uploads/avatars/${fromId}.`,
+        toPref: `/uploads/avatars/0.`,
+        fromLike: `/uploads/avatars/${fromId}.%`,
+      }
+    );
+
+    for (const ext of ["png", "jpg", "jpeg", "webp", "gif"]) {
+      const fromPath = path.join(AVATARS_DIR, `${fromId}.${ext}`);
+      const toPath = path.join(AVATARS_DIR, `0.${ext}`);
+      if (!fs.existsSync(fromPath)) continue;
+      if (fs.existsSync(toPath)) fs.unlinkSync(toPath);
+      fs.renameSync(fromPath, toPath);
+    }
+
+    const [[maxRow]] = await conn.query(
+      `SELECT COALESCE(MAX(id), 0) AS maxId FROM users`
+    );
+    const nextAi = Math.max(1, Number(maxRow.maxId) + 1);
+    await conn.query(`ALTER TABLE users AUTO_INCREMENT = ${nextAi}`);
+
+    console.log(`Founder id remapped ${fromId} → 0`);
+    return 0;
+  } finally {
+    try {
+      await conn.query("SET FOREIGN_KEY_CHECKS = 1");
+    } catch {
+      /* ignore */
+    }
+    conn.release();
+  }
+}
+
 async function ensureAdminSeed() {
   const telegram = normalizeTelegram(
     process.env.ADMIN_TELEGRAM || "@kunvutikmurmurmurrr"
@@ -432,7 +506,9 @@ async function ensureAdminSeed() {
     { telegram, mcNick }
   );
 
+  let founderId;
   if (rows[0]) {
+    founderId = Number(rows[0].id);
     await pool.execute(
       `UPDATE users
        SET telegram = :telegram,
@@ -441,20 +517,34 @@ async function ensureAdminSeed() {
            role = 'founder',
            password_hash = :hash
        WHERE id = :id`,
-      { telegram, mcNick, accountType, hash, id: rows[0].id }
+      { telegram, mcNick, accountType, hash, id: founderId }
     );
-    await ensureProfile(rows[0].id, mcNick);
+    await ensureProfile(founderId, mcNick);
     console.log(`Founder seed updated: ${telegram} / ${mcNick}`);
-    return;
+  } else {
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        "SET SESSION sql_mode = CONCAT(@@SESSION.sql_mode, ',NO_AUTO_VALUE_ON_ZERO')"
+      );
+      await conn.execute(
+        `INSERT INTO users (id, telegram, mc_nick, account_type, role, password_hash)
+         VALUES (0, :telegram, :mcNick, :accountType, 'founder', :hash)`,
+        { telegram, mcNick, accountType, hash }
+      );
+      founderId = 0;
+    } finally {
+      conn.release();
+    }
+    await ensureProfile(0, mcNick);
+    console.log(`Founder seed created with id 0: ${telegram} / ${mcNick}`);
   }
 
-  const [result] = await pool.execute(
-    `INSERT INTO users (telegram, mc_nick, account_type, role, password_hash)
-     VALUES (:telegram, :mcNick, :accountType, 'founder', :hash)`,
-    { telegram, mcNick, accountType, hash }
-  );
-  await ensureProfile(result.insertId, mcNick);
-  console.log(`Founder seed created: ${telegram} / ${mcNick}`);
+  try {
+    founderId = await ensureFounderIdZero(founderId);
+  } catch (err) {
+    console.warn("Founder id=0 remap:", err.message);
+  }
 }
 
 async function ensureProfile(userId, mcNick = null) {
@@ -1260,7 +1350,7 @@ function getOnlineUserIds() {
   const ids = new Set();
   for (const entry of onlineUsers.values()) {
     const id = Number(entry?.userId);
-    if (Number.isFinite(id) && id > 0) ids.add(id);
+    if (Number.isFinite(id) && id >= 0) ids.add(id);
   }
   return [...ids];
 }
@@ -2102,7 +2192,7 @@ app.post("/api/mc/online", async (req, res) => {
     serverOnlineIds.clear();
     for (const row of rows) {
       const id = Number(row.id);
-      if (Number.isFinite(id) && id > 0) serverOnlineIds.add(id);
+      if (Number.isFinite(id) && id >= 0) serverOnlineIds.add(id);
     }
     broadcastPresence();
     return res.json({
@@ -2233,7 +2323,7 @@ io.use((socket, next) => {
   try {
     const payload = jwt.verify(String(token), JWT_SECRET);
     socket.data.user = {
-      id: payload.sub,
+      id: Number(payload.sub),
       mcNick: payload.mcNick,
       telegram: payload.telegram,
     };
@@ -2244,14 +2334,18 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
+  const socketUserId = socket.data.user?.id;
   onlineUsers.set(socket.id, {
-    userId: socket.data.user?.id || null,
+    userId:
+      socketUserId != null && Number.isFinite(Number(socketUserId))
+        ? Number(socketUserId)
+        : null,
     mcNick: socket.data.user?.mcNick || null,
   });
   broadcastPresence();
 
-  if (socket.data.user?.id) {
-    socket.join(`user:${socket.data.user.id}`);
+  if (socketUserId != null && Number.isFinite(Number(socketUserId))) {
+    socket.join(`user:${Number(socketUserId)}`);
   }
 
   socket.emit("presence:update", {

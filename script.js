@@ -740,7 +740,6 @@
     card.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!isDesktopLayout()) return;
       const user = userFromPresenceCard(card);
       if (!user) return;
       hidePresenceMini();
@@ -864,11 +863,6 @@
   function setUserProfileDrawerOpen(open, user = null) {
     const drawer = document.getElementById("user-profile-drawer");
     if (!drawer) return;
-    if (!isDesktopLayout()) {
-      drawer.classList.remove("is-open");
-      drawer.setAttribute("aria-hidden", "true");
-      return;
-    }
     if (open && user) {
       const nick = String(user.siteNick || user.mcNick || "—").trim() || "—";
       const mcNick = String(user.mcNick || "").trim();
@@ -940,7 +934,7 @@
       e.preventDefault();
       e.stopPropagation();
       const user = userFromPresenceCard(card);
-      if (!user || !isDesktopLayout()) return;
+      if (!user) return;
       hidePresenceMini();
       setUserProfileDrawerOpen(true, user);
     });
@@ -1166,18 +1160,12 @@
     const btn = document.getElementById("profile-avatar-btn");
     if (!drawer) return;
     const next = Boolean(open);
-    if (!isDesktopLayout()) {
-      drawer.classList.remove("is-open");
-      if (btn) btn.setAttribute("aria-expanded", "false");
-      return;
-    }
     if (next) setUserProfileDrawerOpen(false);
     drawer.classList.toggle("is-open", next);
     if (btn) btn.setAttribute("aria-expanded", next ? "true" : "false");
   }
 
   function toggleSettingsDrawer() {
-    if (!isDesktopLayout()) return;
     const drawer = document.getElementById("settings-drawer");
     setSettingsDrawerOpen(!drawer?.classList.contains("is-open"));
   }
@@ -2152,7 +2140,7 @@
         return;
       }
       setHubTab(tab);
-      if (isDesktopLayout()) setSettingsDrawerOpen(true);
+      setSettingsDrawerOpen(true);
       if (tab === "panel") {
         renderConsoleHistory();
         syncPanelAccess();
@@ -2162,7 +2150,6 @@
 
   document.getElementById("profile-avatar-btn")?.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (!isDesktopLayout()) return;
     toggleSettingsDrawer();
   });
 
@@ -2170,24 +2157,29 @@
     setSettingsDrawerOpen(false);
   });
 
+  document.getElementById("settings-close-tab")?.addEventListener("click", () => {
+    setSettingsDrawerOpen(false);
+  });
+
   document.getElementById("user-profile-close")?.addEventListener("click", () => {
+    setUserProfileDrawerOpen(false);
+  });
+
+  document.getElementById("user-profile-close-tab")?.addEventListener("click", () => {
     setUserProfileDrawerOpen(false);
   });
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (!isDesktopLayout()) return;
     setSettingsDrawerOpen(false);
     setUserProfileDrawerOpen(false);
     hidePresenceMini();
   });
 
-  window.matchMedia("(min-width: 721px)").addEventListener("change", (e) => {
-    if (!e.matches) {
-      setSettingsDrawerOpen(false);
-      setUserProfileDrawerOpen(false);
-      hidePresenceMini();
-    }
+  window.matchMedia("(min-width: 721px)").addEventListener("change", () => {
+    setSettingsDrawerOpen(false);
+    setUserProfileDrawerOpen(false);
+    hidePresenceMini();
   });
 
   document.querySelectorAll(".panel-subnav__btn[data-panel-tab]").forEach((btn) => {
