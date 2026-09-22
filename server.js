@@ -2233,11 +2233,59 @@ app.put("/api/users/:id/profile", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Пользователь не найден" });
     }
     await ensureProfile(targetId, existing.mcNick || null);
+
+    let siteNick =
+      req.body?.siteNick !== undefined || req.body?.site_nick !== undefined
+        ? String(req.body?.siteNick || req.body?.site_nick || "").trim()
+        : String(existing.siteNick || "").trim();
+    if (!siteNick) {
+      const [rows] = await pool.execute(
+        `SELECT telegram FROM users WHERE id = :userId LIMIT 1`,
+        { userId: targetId }
+      );
+      const tg = String(rows[0]?.telegram || "").trim();
+      siteNick = tg.replace(/^@/, "") || tg;
+    }
+    siteNick = siteNick.slice(0, 32);
+
+    let mcNick = existing.mcNick || "";
+    if (req.body?.mcNick !== undefined || req.body?.mc_nick !== undefined) {
+      mcNick = normalizeMcNick(req.body?.mcNick || req.body?.mc_nick);
+      if (!MC_NICK_RE.test(mcNick)) {
+        return res.status(400).json({
+          error: "Игровой ник: 3–16 символов, латиница, цифры и _",
+          field: "mcNick",
+        });
+      }
+      if (mcNick !== existing.mcNick) {
+        const [taken] = await pool.execute(
+          `SELECT id FROM users WHERE mc_nick = :mcNick AND id <> :userId LIMIT 1`,
+          { mcNick, userId: targetId }
+        );
+        if (taken[0]) {
+          return res.status(409).json({
+            error: "Этот игровой ник уже занят",
+            field: "mcNick",
+          });
+        }
+        await pool.execute(
+          `UPDATE users SET mc_nick = :mcNick WHERE id = :userId`,
+          { mcNick, userId: targetId }
+        );
+        await ensureProfile(targetId, mcNick);
+      }
+    }
+
+    await pool.execute(
+      `UPDATE profiles SET site_nick = :siteNick WHERE user_id = :userId`,
+      { siteNick, userId: targetId }
+    );
+
     const formIn =
       req.body?.form && typeof req.body.form === "object" ? req.body.form : {};
     const prevForm = existing.race || {};
     const form = {
-      nick: existing.mcNick || "",
+      nick: mcNick || "",
       raceName: String(formIn.raceName ?? prevForm.raceName ?? "").trim().slice(0, 64),
       origin: String(formIn.origin ?? prevForm.origin ?? "").trim(),
       abilities: String(formIn.abilities ?? prevForm.abilities ?? "").trim(),

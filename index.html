@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=31" />
+  <link rel="stylesheet" href="styles.css?v=32" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -273,6 +273,21 @@
             <div class="user-profile-race" id="user-profile-race" hidden></div>
             <form class="user-profile-race-edit hub-race-form" id="user-profile-race-edit" hidden novalidate>
               <div class="field-block">
+                <label class="field-label" for="edit-site-nick">
+                  Ник на сайте
+                  <span class="field-tip" tabindex="0" data-tip="Отображаемое имя в списке игроков и профиле.">?</span>
+                </label>
+                <input class="field-input" id="edit-site-nick" type="text" maxlength="32" placeholder="Пример: DapRatt" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field-block">
+                <label class="field-label" for="edit-mc-nick">
+                  Игровой ник
+                  <span class="req">*</span>
+                  <span class="field-tip" tabindex="0" data-tip="Ник Minecraft: 3–16 символов, латиница, цифры и _.">?</span>
+                </label>
+                <input class="field-input" id="edit-mc-nick" type="text" maxlength="16" placeholder="Пример: DapRatt" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field-block">
                 <label class="field-label" for="edit-race-name">
                   Название расы
                   <span class="req">*</span>
@@ -321,7 +336,6 @@
                 <textarea class="field-area" id="edit-race-mechanics" rows="3" placeholder="Пример: новый биом, портал…"></textarea>
               </div>
               <p class="field-error" id="edit-race-error" hidden></p>
-              <button type="submit" class="mc-btn mc-btn--compact">СОХРАНИТЬ</button>
             </form>
           </div>
         </div>
@@ -1501,6 +1515,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=31"></script>
+  <script src="script.js?v=32"></script>
 </body>
 </html>

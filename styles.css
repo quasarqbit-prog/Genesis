@@ -1210,6 +1210,8 @@ h3,
 }
 
 .hub-race-form {
+  display: flex;
+  flex-direction: column;
   text-align: left;
   gap: 14px;
 }
@@ -1591,10 +1593,28 @@ h3,
 
   .user-profile-drawer__inner {
     flex: 1;
-    display: grid;
-    place-items: center;
-    padding: 28px 20px 24px;
-    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 28px 12px 24px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #5c4d78 transparent;
+  }
+
+  .user-profile-drawer__inner::-webkit-scrollbar {
+    width: 8px;
+    height: 0;
+  }
+
+  .user-profile-drawer__inner::-webkit-scrollbar:horizontal {
+    display: none;
+    height: 0;
+  }
+
+  .user-profile-drawer__inner::-webkit-scrollbar-thumb {
+    background: #5c4d78;
   }
 
   .user-profile-card {
@@ -1603,8 +1623,11 @@ h3,
     align-items: center;
     gap: 12px;
     text-align: center;
-    width: max-content;
-    max-width: 100%;
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    min-width: 0;
   }
 
   .user-profile-card__avatar {
@@ -1685,7 +1708,7 @@ h3,
   }
 
   .user-profile-race {
-    width: min(100%, 360px);
+    width: 100%;
     margin-top: 8px;
     display: flex;
     flex-direction: column;
@@ -1717,8 +1740,18 @@ h3,
   }
 
   .user-profile-race-edit {
-    width: min(100%, 360px);
+    width: 100%;
     margin-top: 12px;
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .user-profile-race-edit .field-block,
+  .user-profile-race-edit .field-input,
+  .user-profile-race-edit .field-area {
+    width: 100%;
+    box-sizing: border-box;
   }
 
   #user-profile-avatar-menu {
@@ -1730,19 +1763,24 @@ h3,
 
 .field-tip {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.05em;
-  height: 1.05em;
+  display: inline;
   margin-left: 6px;
-  border-radius: 50%;
-  border: 1px solid #b388ff;
+  border: none;
+  border-radius: 0;
+  width: auto;
+  height: auto;
   color: #b388ff;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   cursor: help;
-  vertical-align: middle;
+  vertical-align: baseline;
+  transition: color 0.12s ease;
+}
+
+.field-tip:hover,
+.field-tip:focus,
+.field-tip:focus-visible {
+  color: var(--accent);
 }
 
 .field-tip::after {
@@ -2057,10 +2095,39 @@ h3,
 
   .user-profile-drawer__inner {
     flex: 1;
-    display: grid;
-    place-items: center;
-    padding: 48px 24px 24px;
-    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 48px 16px 24px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #5c4d78 transparent;
+  }
+
+  .user-profile-drawer__inner::-webkit-scrollbar {
+    width: 8px;
+    height: 0;
+  }
+
+  .user-profile-drawer__inner::-webkit-scrollbar:horizontal {
+    display: none;
+    height: 0;
+  }
+
+  .user-profile-drawer__inner::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .user-profile-drawer__inner::-webkit-scrollbar-thumb {
+    background: #5c4d78;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .user-profile-drawer__inner::-webkit-scrollbar-thumb:hover {
+    background: #7a6a9a;
+    background-clip: padding-box;
   }
 
   .user-profile-card {
@@ -2069,8 +2136,11 @@ h3,
     align-items: center;
     gap: 12px;
     text-align: center;
-    width: max-content;
-    max-width: 100%;
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    min-width: 0;
   }
 
   .user-profile-card__avatar {
@@ -2183,8 +2253,25 @@ h3,
   }
 
   .user-profile-race-edit {
-    width: min(100%, 360px);
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
     margin-top: 12px;
+    box-sizing: border-box;
+  }
+
+  .user-profile-race-edit .field-block,
+  .user-profile-race-edit .field-input,
+  .user-profile-race-edit .field-area,
+  .user-profile-race-edit .field-label {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .user-profile-race-edit .hub-save-btn,
+  .user-profile-race-edit .mc-btn {
+    align-self: center;
   }
 
   #user-profile-avatar-menu {

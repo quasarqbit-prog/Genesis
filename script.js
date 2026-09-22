@@ -893,9 +893,13 @@
     }
   }
 
+  const AUTH_MC_NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
+
   function fillFounderRaceEdit(user) {
     const race = userRaceInfo(user);
     const map = {
+      "edit-site-nick": String(user?.siteNick || "").trim(),
+      "edit-mc-nick": String(user?.mcNick || "").trim(),
       "edit-race-name": race.raceName,
       "edit-race-origin": race.origin,
       "edit-race-abilities": race.abilities,
@@ -908,6 +912,93 @@
       if (el) el.value = value;
     });
     setHubFieldError("edit-race-error", "");
+  }
+
+  function readFounderEditPayload() {
+    return {
+      siteNick: String(document.getElementById("edit-site-nick")?.value || "").trim(),
+      mcNick: String(document.getElementById("edit-mc-nick")?.value || "").trim(),
+      form: {
+        raceName: String(document.getElementById("edit-race-name")?.value || "").trim(),
+        origin: String(document.getElementById("edit-race-origin")?.value || "").trim(),
+        abilities: String(document.getElementById("edit-race-abilities")?.value || "").trim(),
+        traits: String(document.getElementById("edit-race-traits")?.value || "").trim(),
+        useful: String(document.getElementById("edit-race-useful")?.value || "").trim(),
+        mechanics: String(document.getElementById("edit-race-mechanics")?.value || "").trim(),
+      },
+    };
+  }
+
+  function applyFounderEditLiveUi() {
+    if (!profileViewUser) return;
+    const { siteNick, mcNick, form } = readFounderEditPayload();
+    const displayNick = siteNick || mcNick || "—";
+    const nickEl = document.getElementById("user-profile-nick");
+    const metaEl = document.getElementById("user-profile-meta");
+    const raceEl = document.getElementById("user-profile-race");
+    if (nickEl) nickEl.textContent = displayNick;
+    if (metaEl) {
+      metaEl.textContent =
+        mcNick && mcNick !== displayNick ? `игра: ${mcNick}` : "";
+      metaEl.hidden = !metaEl.textContent;
+    }
+    if (raceEl) {
+      raceEl.innerHTML = renderRaceBlocks(form);
+    }
+    profileViewUser = {
+      ...profileViewUser,
+      siteNick,
+      mcNick,
+      raceName: form.raceName,
+      race: form,
+    };
+  }
+
+  let founderEditSaveTimer = null;
+  let founderEditSaveToken = 0;
+
+  async function persistFounderProfileEdit() {
+    if (!canFounderEditUser(profileViewUser)) return;
+    const token = ++founderEditSaveToken;
+    const { siteNick, mcNick, form } = readFounderEditPayload();
+    if (!mcNick) {
+      setHubFieldError("edit-race-error", "Укажи игровой ник");
+      return;
+    }
+    if (!AUTH_MC_NICK_RE.test(mcNick)) {
+      setHubFieldError(
+        "edit-race-error",
+        "Игровой ник: 3–16 символов, латиница, цифры и _"
+      );
+      return;
+    }
+    setHubFieldError("edit-race-error", "");
+    try {
+      const data = await api(`/api/users/${Number(profileViewUser.id)}/profile`, {
+        method: "PUT",
+        body: JSON.stringify({
+          siteNick,
+          mcNick,
+          form,
+          registered: Boolean(
+            form.raceName && form.origin && form.abilities && form.useful
+          ),
+        }),
+      });
+      if (token !== founderEditSaveToken) return;
+      if (data.user) mergeDirectoryUser(data.user);
+    } catch (err) {
+      if (token !== founderEditSaveToken) return;
+      setHubFieldError("edit-race-error", err.message || "Не удалось сохранить");
+    }
+  }
+
+  function scheduleFounderProfileSave() {
+    applyFounderEditLiveUi();
+    clearTimeout(founderEditSaveTimer);
+    founderEditSaveTimer = setTimeout(() => {
+      persistFounderProfileEdit();
+    }, 420);
   }
 
   function hidePresenceMini() {
@@ -1621,7 +1712,6 @@
     status.textContent = message || "";
   }
 
-  const AUTH_MC_NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
   const AUTH_FIELD_IDS = [
     "auth-login-user",
     "auth-login-pass",
@@ -2475,38 +2565,17 @@
     }
   });
 
-  document.getElementById("user-profile-race-edit")?.addEventListener("submit", async (e) => {
+  document.getElementById("user-profile-race-edit")?.addEventListener("submit", (e) => {
     e.preventDefault();
     if (!canFounderEditUser(profileViewUser)) return;
-    setHubFieldError("edit-race-error", "");
-    const form = {
-      raceName: String(document.getElementById("edit-race-name")?.value || "").trim(),
-      origin: String(document.getElementById("edit-race-origin")?.value || "").trim(),
-      abilities: String(document.getElementById("edit-race-abilities")?.value || "").trim(),
-      traits: String(document.getElementById("edit-race-traits")?.value || "").trim(),
-      useful: String(document.getElementById("edit-race-useful")?.value || "").trim(),
-      mechanics: String(document.getElementById("edit-race-mechanics")?.value || "").trim(),
-    };
-    if (!form.raceName || !form.origin || !form.abilities || !form.useful) {
-      setHubFieldError("edit-race-error", "Заполни обязательные поля расы");
-      return;
-    }
-    try {
-      const data = await api(`/api/users/${Number(profileViewUser.id)}/profile`, {
-        method: "PUT",
-        body: JSON.stringify({ form, registered: true }),
-      });
-      if (data.user) {
-        mergeDirectoryUser(data.user);
-        setUserProfileDrawerOpen(true, data.user);
-        setUserProfileEditMode(true);
-        const menu = document.getElementById("user-profile-avatar-menu");
-        if (menu) menu.hidden = false;
-      }
-      showToast("Профиль сохранён");
-    } catch (err) {
-      setHubFieldError("edit-race-error", err.message || "Не удалось сохранить");
-    }
+    clearTimeout(founderEditSaveTimer);
+    applyFounderEditLiveUi();
+    persistFounderProfileEdit();
+  });
+
+  document.getElementById("user-profile-race-edit")?.addEventListener("input", () => {
+    if (!canFounderEditUser(profileViewUser)) return;
+    scheduleFounderProfileSave();
   });
 
   document.getElementById("user-profile-avatar-menu")?.addEventListener("click", (e) => {
