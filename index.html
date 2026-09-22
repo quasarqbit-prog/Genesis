@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=37" />
+  <link rel="stylesheet" href="styles.css?v=38" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -29,7 +29,9 @@
           <button type="button" class="main-tabs__btn is-active" data-main-tab="studio">Студия</button>
           <button type="button" class="main-tabs__btn" data-main-tab="compendium">Компендиум</button>
           <button type="button" class="main-tabs__btn" data-main-tab="rules">Правила</button>
-          <button type="button" class="main-tabs__btn" data-main-tab="server">Сервер</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="server">
+            Сервер<span class="main-tabs__badge" id="server-tab-badge" hidden>!</span>
+          </button>
           <button type="button" class="main-tabs__btn" data-main-tab="patch">Патч-ноут</button>
         </nav>
 
@@ -69,40 +71,52 @@
 
           <div class="main-tab-panel main-tab-panel--scroll" data-main-panel="server" id="main-panel-server" hidden>
             <section class="server main-embed-server" id="server">
-      <article class="server-panel">
-        <p class="server-lead">
-          <span class="server-brand">Genesis</span> — это приватный мирный сервер без PvP,
-          где каждый игрок может почувствовать себя тем, кем хочет.
-        </p>
-        <p class="server-text">
-          Здесь нет готовых шаблонов и обязательных ролей — игрок сам придумывает себе расу,
-          её способности и предназначение в мире, а другие уважают этот выбор и не пытаются
-          подчинить или эксплуатировать чужого персонажа.
-        </p>
-        <p class="server-text">
-          Мир Genesis живёт и растёт вместе с игроками: вы можете добавлять свой контент,
-          который станет частью общего сервера для всех.
-        </p>
+              <article class="server-panel" id="server-panel">
+                <h1 class="server-panel__title" id="server-name">Genesis</h1>
 
-        <div class="server-meta-block">
-          <p class="server-meta-row">
-            <span class="server-meta-label">IP сервера:</span>
-            <button type="button" class="server-ip" id="server-ip-btn" title="Скопировать IP">
-              srv1001.godlike.club:26519
-            </button>
-          </p>
-          <p class="server-meta-row server-meta-row--soft">Minecraft 1.21.11 Fabric</p>
-          <a
-            class="mc-btn server-mod-btn"
-            id="server-mod-btn"
-            href="https://drive.google.com/uc?export=download&id=1exnMmynSp5HCRfYZsLrDXjmPzHzah2QY"
-            download="genesis-0.11.2.jar"
-            target="_blank"
-            rel="noopener noreferrer"
-          >УСТАНОВИТЬ МОД</a>
-          <p class="server-mod-hint">Скачает genesis-0.11.2.jar · положите в папку mods</p>
-        </div>
-      </article>
+                <section class="server-block" aria-labelledby="server-join-title">
+                  <h2 class="server-block__title" id="server-join-title">Зайти на сервер</h2>
+                  <div class="server-pass-row">
+                    <input
+                      class="field-input server-pass-input"
+                      id="server-password"
+                      type="password"
+                      readonly
+                      value=""
+                      autocomplete="off"
+                      spellcheck="false"
+                      aria-label="Пароль сервера"
+                    />
+                    <button type="button" class="server-pass-toggle" id="server-pass-toggle" aria-label="Показать пароль" aria-pressed="false">*</button>
+                  </div>
+                  <p class="server-block__hint">Это пароль нужно вводить при входе на сервер в игре.</p>
+                  <div class="server-accent-meta">
+                    <button type="button" class="server-ip" id="server-ip-btn" title="Скопировать IP">
+                      <span class="server-ip__label">IP сервера:</span><span id="server-ip-value">srv1001.godlike.club:26519</span>
+                    </button>
+                    <p class="server-mc-version" id="server-mc-version">Minecraft 1.21.11 Fabric</p>
+                  </div>
+                </section>
+
+                <section class="server-block" aria-labelledby="server-mod-title">
+                  <h2 class="server-block__title" id="server-mod-title">
+                    Установить мод
+                    <span class="server-update-mark" id="server-mod-update-mark" hidden title="Доступно обновление мода">!</span>
+                  </h2>
+                  <p class="server-block__text">
+                    Это обязательный мод для входа на сервер. Убедитесь что у вас установлена последняя версия мода.
+                    Подробнее про мод во вкладке
+                    <button type="button" class="server-patch-link" id="server-open-patch">ПАТЧ-НОУТ</button>
+                  </p>
+                  <a class="mc-btn server-mod-btn" id="server-mod-btn" href="#" download>УСТАНОВИТЬ МОД</a>
+                  <p class="server-mod-hint" id="server-mod-version">версия —</p>
+                </section>
+
+                <div class="server-founder-actions" id="server-founder-actions" hidden>
+                  <button type="button" class="mc-btn mc-btn--ghost" id="server-mod-upload-btn">Загрузить обновление мода</button>
+                  <input id="server-mod-file" type="file" accept=".jar,application/java-archive" hidden />
+                </div>
+              </article>
             </section>
           </div>
 
@@ -1425,6 +1439,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=37"></script>
+  <script src="script.js?v=38"></script>
 </body>
 </html>

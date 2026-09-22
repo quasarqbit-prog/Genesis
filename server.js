@@ -28,9 +28,11 @@ const TELEGRAM_BOT_USERNAME = (process.env.TELEGRAM_BOT_USERNAME || "").replace(
 );
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 const AVATARS_DIR = path.join(UPLOADS_DIR, "avatars");
+const MODS_DIR = path.join(UPLOADS_DIR, "mods");
 const DATA_DIR = path.join(__dirname, "data");
 const RULES_FILE = path.join(DATA_DIR, "rules.json");
 const RULES_DEFAULT_FILE = path.join(__dirname, "rules-default.json");
+const SERVER_INFO_FILE = path.join(DATA_DIR, "server.json");
 
 const app = express();
 const server = http.createServer(app);
@@ -76,6 +78,7 @@ const pool = mysql.createPool({
 
 function ensureUploadDirs() {
   fs.mkdirSync(AVATARS_DIR, { recursive: true });
+  fs.mkdirSync(MODS_DIR, { recursive: true });
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
@@ -2709,6 +2712,207 @@ app.post("/api/rules/reset", authMiddleware, async (req, res) => {
     });
   }
 });
+
+function defaultServerInfo() {
+  return {
+    name: "Genesis",
+    password: String(process.env.SERVER_JOIN_PASSWORD || "").trim(),
+    ip: String(process.env.SERVER_IP || "srv1001.godlike.club:26519").trim(),
+    mcVersion: String(
+      process.env.SERVER_MC_VERSION || "Minecraft 1.21.11 Fabric"
+    ).trim(),
+    mod: {
+      version: "0.11.2",
+      fileName: "genesis-0.11.2.jar",
+      path: null,
+      url: "https://drive.google.com/uc?export=download&id=1exnMmynSp5HCRfYZsLrDXjmPzHzah2QY",
+      updatedAt: null,
+    },
+  };
+}
+
+function normalizeServerInfo(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const fallback = defaultServerInfo();
+  const modIn = src.mod && typeof src.mod === "object" ? src.mod : {};
+  const fileName = String(modIn.fileName || fallback.mod.fileName || "genesis.jar")
+    .replace(/[^\w.\-]+/g, "_")
+    .slice(0, 120);
+  let pathVal = modIn.path ? String(modIn.path).trim() : null;
+  if (pathVal && !pathVal.startsWith("/uploads/mods/")) pathVal = null;
+  return {
+    name: String(src.name || fallback.name).trim().slice(0, 64) || "Genesis",
+    password: String(
+      src.password != null ? src.password : fallback.password
+    ).slice(0, 128),
+    ip: String(src.ip || fallback.ip).trim().slice(0, 128),
+    mcVersion: String(src.mcVersion || fallback.mcVersion).trim().slice(0, 64),
+    mod: {
+      version: String(modIn.version || fallback.mod.version || "0.0.0")
+        .trim()
+        .slice(0, 32),
+      fileName,
+      path: pathVal,
+      url: pathVal
+        ? pathVal
+        : String(modIn.url || fallback.mod.url || "").trim() || null,
+      updatedAt: modIn.updatedAt ? String(modIn.updatedAt) : null,
+    },
+  };
+}
+
+function readServerInfo() {
+  ensureUploadDirs();
+  if (!fs.existsSync(SERVER_INFO_FILE)) {
+    const doc = normalizeServerInfo(defaultServerInfo());
+    fs.writeFileSync(SERVER_INFO_FILE, JSON.stringify(doc, null, 2), "utf8");
+    return doc;
+  }
+  try {
+    return normalizeServerInfo(
+      JSON.parse(fs.readFileSync(SERVER_INFO_FILE, "utf8"))
+    );
+  } catch (err) {
+    console.warn("server.json corrupt, reseeding:", err.message);
+    const doc = normalizeServerInfo(defaultServerInfo());
+    fs.writeFileSync(SERVER_INFO_FILE, JSON.stringify(doc, null, 2), "utf8");
+    return doc;
+  }
+}
+
+function writeServerInfo(doc) {
+  ensureUploadDirs();
+  const normalized = normalizeServerInfo(doc);
+  fs.writeFileSync(
+    SERVER_INFO_FILE,
+    JSON.stringify(normalized, null, 2),
+    "utf8"
+  );
+  return normalized;
+}
+
+function publicServerInfo(doc, { includePassword = false } = {}) {
+  const info = normalizeServerInfo(doc);
+  const downloadUrl = info.mod.path || info.mod.url || null;
+  return {
+    name: info.name,
+    ip: info.ip,
+    mcVersion: info.mcVersion,
+    password: includePassword ? info.password : undefined,
+    hasPassword: Boolean(info.password),
+    mod: {
+      version: info.mod.version,
+      fileName: info.mod.fileName,
+      downloadUrl,
+      updatedAt: info.mod.updatedAt,
+    },
+  };
+}
+
+function parseModVersionFromName(fileName) {
+  const m = String(fileName || "").match(/(\d+\.\d+(?:\.\d+)?)/);
+  return m ? m[1] : null;
+}
+
+app.get("/api/server", authMiddleware, (req, res) => {
+  try {
+    const info = readServerInfo();
+    return res.json({
+      ok: true,
+      server: publicServerInfo(info, { includePassword: true }),
+    });
+  } catch (err) {
+    console.error("server get:", err);
+    return res.status(500).json({ error: "Не удалось загрузить данные сервера" });
+  }
+});
+
+app.put("/api/server", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const current = readServerInfo();
+    const next = {
+      ...current,
+      name:
+        req.body?.name !== undefined
+          ? String(req.body.name || "").trim()
+          : current.name,
+      password:
+        req.body?.password !== undefined
+          ? String(req.body.password || "")
+          : current.password,
+      ip:
+        req.body?.ip !== undefined
+          ? String(req.body.ip || "").trim()
+          : current.ip,
+      mcVersion:
+        req.body?.mcVersion !== undefined
+          ? String(req.body.mcVersion || "").trim()
+          : current.mcVersion,
+      mod: current.mod,
+    };
+    const saved = writeServerInfo(next);
+    const payload = publicServerInfo(saved, { includePassword: true });
+    io.emit("server:updated", { server: payload });
+    return res.json({ ok: true, server: payload });
+  } catch (err) {
+    console.error("server put:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось сохранить данные сервера",
+    });
+  }
+});
+
+app.post(
+  "/api/server/mod/upload",
+  authMiddleware,
+  express.raw({ type: () => true, limit: "80mb" }),
+  async (req, res) => {
+    try {
+      await assertFounderActor(req);
+      const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
+      if (!buf.length) {
+        return res.status(400).json({ error: "Пустой файл" });
+      }
+      if (buf.length > 80 * 1024 * 1024) {
+        return res.status(400).json({ error: "Файл слишком большой (до 80 МБ)" });
+      }
+      const rawName = String(
+        req.headers["x-filename"] || req.query?.name || "genesis.jar"
+      );
+      let fileName = path.basename(rawName).replace(/[^\w.\-]+/g, "_");
+      if (!/\.jar$/i.test(fileName)) fileName = `${fileName || "genesis"}.jar`;
+      fileName = fileName.slice(0, 120);
+      const version =
+        String(req.headers["x-mod-version"] || "").trim() ||
+        parseModVersionFromName(fileName) ||
+        new Date().toISOString().slice(0, 10);
+
+      ensureUploadDirs();
+      const abs = path.join(MODS_DIR, fileName);
+      fs.writeFileSync(abs, buf);
+      const current = readServerInfo();
+      current.mod = {
+        version,
+        fileName,
+        path: `/uploads/mods/${fileName}`,
+        url: null,
+        updatedAt: new Date().toISOString(),
+      };
+      const saved = writeServerInfo(current);
+      const payload = publicServerInfo(saved, { includePassword: true });
+      io.emit("server:updated", { server: payload });
+      return res.json({ ok: true, server: payload });
+    } catch (err) {
+      console.error("mod upload:", err);
+      const status = err.status || 500;
+      return res.status(status).json({
+        error: err.message || "Не удалось загрузить мод",
+      });
+    }
+  }
+);
 
 app.put("/api/user/profile", authMiddleware, async (req, res) => {
   try {

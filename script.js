@@ -314,6 +314,9 @@
   }
 /* ---------- Form / views / catalog ---------- */
   const SERVER_IP = "srv1001.godlike.club:26519";
+  const MOD_INSTALLED_KEY = "genesis_mod_installed_version";
+  let serverInfo = null;
+  let serverInfoPromise = null;
   const STORAGE_KEY = "genesis_race_v1";
   const AUTH_TOKEN_KEY = "genesis_auth_token";
   const AUTH_USER_KEY = "genesis_auth_user";
@@ -584,6 +587,12 @@
         rulesDoc = payload.rules;
         rulesLoaded = true;
         renderRulesUi();
+      }
+    });
+    socket.on("server:updated", (payload) => {
+      if (payload?.server) {
+        serverInfo = payload.server;
+        renderServerTab();
       }
     });
     socket.on("connect_error", () => {
@@ -1410,6 +1419,7 @@
     if (name === "server") {
       const panel = document.getElementById("main-panel-server");
       if (panel) panel.scrollTop = 0;
+      ensureServerInfoLoaded().then(() => renderServerTab());
     }
   }
 
@@ -3706,12 +3716,105 @@
   }
 
   async function copyServerIp() {
+    const ip = serverInfo?.ip || SERVER_IP;
     try {
-      await navigator.clipboard.writeText(SERVER_IP);
+      await navigator.clipboard.writeText(ip);
       showToast("IP скопирован");
     } catch {
       showToast("Не удалось скопировать");
     }
+  }
+
+  function readInstalledModVersion() {
+    try {
+      return String(localStorage.getItem(MOD_INSTALLED_KEY) || "").trim();
+    } catch {
+      return "";
+    }
+  }
+
+  function writeInstalledModVersion(version) {
+    try {
+      localStorage.setItem(MOD_INSTALLED_KEY, String(version || ""));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function hasModUpdate() {
+    const current = String(serverInfo?.mod?.version || "").trim();
+    if (!current) return false;
+    const installed = readInstalledModVersion();
+    return Boolean(installed) ? installed !== current : Boolean(serverInfo?.mod?.updatedAt);
+  }
+
+  async function ensureServerInfoLoaded(force = false) {
+    if (serverInfo && !force) return serverInfo;
+    if (serverInfoPromise && !force) return serverInfoPromise;
+    if (!authToken) return serverInfo;
+    serverInfoPromise = (async () => {
+      try {
+        const data = await api("/api/server");
+        serverInfo = data.server || null;
+        return serverInfo;
+      } catch (err) {
+        console.warn("server info:", err.message);
+        return serverInfo;
+      } finally {
+        serverInfoPromise = null;
+      }
+    })();
+    return serverInfoPromise;
+  }
+
+  function renderServerTab() {
+    const nameEl = document.getElementById("server-name");
+    const passInput = document.getElementById("server-password");
+    const ipValue = document.getElementById("server-ip-value");
+    const mcVersion = document.getElementById("server-mc-version");
+    const modBtn = document.getElementById("server-mod-btn");
+    const modVersion = document.getElementById("server-mod-version");
+    const founderActions = document.getElementById("server-founder-actions");
+    const tabBadge = document.getElementById("server-tab-badge");
+    const modMark = document.getElementById("server-mod-update-mark");
+    const founder = String(authUser?.role || "") === "founder";
+
+    if (founderActions) founderActions.hidden = !founder;
+    if (nameEl) nameEl.textContent = serverInfo?.name || "Genesis";
+    if (passInput) {
+      const pass = serverInfo?.password || "";
+      passInput.value = pass;
+      passInput.placeholder = pass ? "" : "Пароль не задан";
+    }
+    if (ipValue) ipValue.textContent = serverInfo?.ip || SERVER_IP;
+    if (mcVersion) {
+      mcVersion.textContent = serverInfo?.mcVersion || "Minecraft 1.21.11 Fabric";
+    }
+    const fileName = serverInfo?.mod?.fileName || "genesis.jar";
+    const version = serverInfo?.mod?.version || "—";
+    const downloadUrl = serverInfo?.mod?.downloadUrl || "#";
+    if (modBtn) {
+      modBtn.href = downloadUrl;
+      modBtn.setAttribute("download", fileName);
+      if (downloadUrl.startsWith("http")) {
+        modBtn.setAttribute("target", "_blank");
+        modBtn.setAttribute("rel", "noopener noreferrer");
+      } else {
+        modBtn.removeAttribute("target");
+        modBtn.removeAttribute("rel");
+      }
+    }
+    if (modVersion) modVersion.textContent = `версия ${version}`;
+
+    const update = hasModUpdate();
+    if (tabBadge) tabBadge.hidden = !update;
+    if (modMark) modMark.hidden = !update;
+  }
+
+  function markModInstalled() {
+    const version = String(serverInfo?.mod?.version || "").trim();
+    if (version) writeInstalledModVersion(version);
+    renderServerTab();
   }
 
   function renderStep() {
@@ -4740,6 +4843,72 @@
 
   serverIpBtn?.addEventListener("click", copyServerIp);
 
+  document.getElementById("server-pass-toggle")?.addEventListener("click", () => {
+    const input = document.getElementById("server-password");
+    const btn = document.getElementById("server-pass-toggle");
+    if (!input || !btn) return;
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    btn.setAttribute("aria-pressed", show ? "true" : "false");
+    btn.setAttribute("aria-label", show ? "Скрыть пароль" : "Показать пароль");
+    btn.textContent = show ? "•" : "*";
+  });
+
+  document.getElementById("server-open-patch")?.addEventListener("click", () => {
+    setMainTab("patch");
+  });
+
+  document.getElementById("server-mod-btn")?.addEventListener("click", () => {
+    const url = serverInfo?.mod?.downloadUrl;
+    if (!url || url === "#") {
+      showToast("Файл мода пока не загружен");
+      return;
+    }
+    // локальная установка отмечается сразу при клике скачивания
+    markModInstalled();
+  });
+
+  document.getElementById("server-mod-upload-btn")?.addEventListener("click", () => {
+    if (String(authUser?.role || "") !== "founder") return;
+    document.getElementById("server-mod-file")?.click();
+  });
+
+  document.getElementById("server-mod-file")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || String(authUser?.role || "") !== "founder") return;
+    if (!/\.jar$/i.test(file.name)) {
+      showToast("Нужен файл .jar");
+      return;
+    }
+    try {
+      const res = await fetch("/api/server/mod/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          "Content-Type": "application/octet-stream",
+          "X-Filename": file.name,
+        },
+        body: file,
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      if (!res.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      if (data?.server) serverInfo = data.server;
+      // у основателя после загрузки тоже виден знак обновления, пока сам не скачает
+      renderServerTab();
+      showToast("Мод обновлён");
+    } catch (err) {
+      showToast(err.message || "Не удалось загрузить мод");
+    }
+  });
+
   function canEditRules() {
     return String(authUser?.role || "") === "founder";
   }
@@ -5109,6 +5278,9 @@
     updateRegisterChrome();
     applyAuthUi();
     ensureRulesLoaded();
+    if (authToken) {
+      ensureServerInfoLoaded().then(() => renderServerTab());
+    }
   })();
 
   /* ---------- Main loop ---------- */
