@@ -5837,13 +5837,7 @@
         modelTexture: data?.modelTexture || "/assets/model/model/texture.png",
       };
     } catch {
-      ordersSkinUrls = [
-        "/assets/model/skin/slime-S.png",
-        "/assets/model/skin/liver-S.png",
-        "/assets/model/skin/cs-S.png",
-        "/assets/model/skin/DOC-liver-S.png",
-        "/assets/model/skin/slime_two-S.png",
-      ];
+      ordersSkinUrls = Array.from({ length: 17 }, (_, i) => `/assets/model/skin/${i + 1}.png`);
       ordersAssets.skins = ordersSkinUrls;
     }
     ordersSkinLoaded = true;
