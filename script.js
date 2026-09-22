@@ -941,6 +941,9 @@
   }
 
   let profileViewUser = null;
+  let profileDrawerTab = "profile";
+  let profilePublished = { race: null, folders: [] };
+  let profileContentFolder = null;
 
   function isFounderViewer() {
     return String(authUser?.role || "") === "founder";
@@ -954,32 +957,159 @@
     return viewerId !== targetId;
   }
 
+  function setUserProfileTab(tab) {
+    const name = ["profile", "race", "content"].includes(tab) ? tab : "profile";
+    profileDrawerTab = name;
+    document.querySelectorAll("#user-profile-tabs [data-profile-tab]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.getAttribute("data-profile-tab") === name);
+    });
+    document.querySelectorAll("#user-profile-card [data-profile-panel]").forEach((panel) => {
+      const on = panel.getAttribute("data-profile-panel") === name;
+      panel.classList.toggle("is-active", on);
+      panel.hidden = !on;
+    });
+  }
+
   function setUserProfileEditMode(on) {
     const allowed = Boolean(on) && canFounderEditUser(profileViewUser);
     const canEdit = canFounderEditUser(profileViewUser);
     const view = document.getElementById("user-profile-race");
     const edit = document.getElementById("user-profile-race-edit");
+    const identityEdit = document.getElementById("user-profile-identity-edit");
+    const raceEmpty = document.getElementById("user-profile-race-empty");
     const avatar = document.getElementById("user-profile-avatar");
     const menu = document.getElementById("user-profile-avatar-menu");
+    if (identityEdit) {
+      identityEdit.hidden = !allowed;
+      identityEdit.querySelectorAll("input").forEach((el) => {
+        el.disabled = !canEdit;
+      });
+    }
     if (edit) {
       edit.hidden = !allowed;
       edit.setAttribute("aria-hidden", allowed ? "false" : "true");
-      if (!canEdit) {
-        edit.querySelectorAll("input, textarea, button").forEach((el) => {
-          el.disabled = true;
-        });
-      } else {
-        edit.querySelectorAll("input, textarea, button").forEach((el) => {
-          el.disabled = false;
-        });
-      }
+      edit.querySelectorAll("input, textarea, button").forEach((el) => {
+        el.disabled = !canEdit;
+      });
     }
-    if (view) view.hidden = allowed || !view.innerHTML.trim();
+    if (view) {
+      const hasHtml = Boolean(view.innerHTML.trim());
+      view.hidden = allowed || !hasHtml;
+    }
+    if (raceEmpty) {
+      raceEmpty.hidden = allowed || Boolean(view?.innerHTML.trim());
+    }
     if (avatar) {
       avatar.classList.toggle("is-editable", canEdit);
       avatar.tabIndex = canEdit ? 0 : -1;
     }
     if (menu) menu.hidden = !allowed;
+  }
+
+  function renderProfilePublishedContent() {
+    const raceEl = document.getElementById("user-profile-race");
+    const raceEmpty = document.getElementById("user-profile-race-empty");
+    const grid = document.getElementById("user-profile-content-grid");
+    const contentEmpty = document.getElementById("user-profile-content-empty");
+    const editing =
+      canFounderEditUser(profileViewUser) &&
+      Boolean(document.getElementById("user-profile-race-edit")) &&
+      !document.getElementById("user-profile-race-edit").hidden;
+
+    const publishedRace = profilePublished?.race?.race || null;
+    if (raceEl) {
+      if (!editing && publishedRace) {
+        const html = renderRaceBlocks(publishedRace);
+        raceEl.innerHTML = html;
+        raceEl.hidden = !html;
+      } else if (!editing) {
+        raceEl.innerHTML = "";
+        raceEl.hidden = true;
+      }
+    }
+    if (raceEmpty) {
+      raceEmpty.hidden = editing || Boolean(publishedRace);
+    }
+
+    if (!grid) return;
+    grid.innerHTML = "";
+
+    if (profileContentFolder) {
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "user-profile-content-back";
+      back.textContent = "← Назад";
+      back.addEventListener("click", () => {
+        profileContentFolder = null;
+        renderProfilePublishedContent();
+      });
+      grid.appendChild(back);
+
+      const items = Array.isArray(profileContentFolder.payload?.items)
+        ? profileContentFolder.payload.items
+        : [];
+      items.forEach((item) => {
+        const type = typeof getCatalogType === "function" ? getCatalogType(item.typeId) : null;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "studio-tile catalog-card user-profile-content-tile";
+        btn.style.setProperty("--section-accent", "var(--accent)");
+        const icon = type?.icon || "assets/icons/item.png";
+        btn.innerHTML = `
+          <span class="catalog-card__visual" aria-hidden="true">
+            <span class="catalog-card__shadow"></span>
+            <img class="catalog-card__img" src="${icon}" alt="" draggable="false" />
+          </span>
+          <span class="catalog-card__label"></span>
+        `;
+        btn.querySelector(".catalog-card__label").textContent = item.name || "Анкета";
+        btn.addEventListener("click", () => openStudioEditModal(item, { readOnly: true }));
+        grid.appendChild(btn);
+      });
+      if (contentEmpty) contentEmpty.hidden = true;
+      return;
+    }
+
+    const folders = Array.isArray(profilePublished?.folders) ? profilePublished.folders : [];
+    folders.forEach((folder) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "studio-tile studio-tile--folder catalog-card user-profile-content-tile";
+      const color =
+        typeof normalizeStudioColor === "function"
+          ? normalizeStudioColor(folder.color)
+          : folder.color || "#8ec8ff";
+      btn.style.setProperty("--section-accent", color);
+      btn.innerHTML = `
+        <span class="catalog-card__visual" aria-hidden="true">
+          <span class="catalog-card__shadow"></span>
+          <img class="catalog-card__img" src="assets/folder.png" alt="" draggable="false" />
+        </span>
+        <span class="catalog-card__label"></span>
+      `;
+      btn.querySelector(".catalog-card__label").textContent = folder.name || "Папка";
+      btn.addEventListener("click", () => {
+        profileContentFolder = folder;
+        renderProfilePublishedContent();
+      });
+      grid.appendChild(btn);
+    });
+    if (contentEmpty) contentEmpty.hidden = folders.length > 0;
+  }
+
+  async function loadProfilePublished(userId) {
+    profilePublished = { race: null, folders: [] };
+    profileContentFolder = null;
+    try {
+      const data = await api(`/api/users/${Number(userId)}/published`);
+      profilePublished = {
+        race: data?.race || null,
+        folders: Array.isArray(data?.folders) ? data.folders : [],
+      };
+    } catch (_) {
+      profilePublished = { race: null, folders: [] };
+    }
+    renderProfilePublishedContent();
   }
 
   const AUTH_MC_NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
@@ -1139,10 +1269,11 @@
     if (menu) menu.hidden = true;
     if (open && user) {
       profileViewUser = user;
+      profileContentFolder = null;
+      setUserProfileTab("profile");
       const nick = String(user.siteNick || user.mcNick || "—").trim() || "—";
       const mcNick = String(user.mcNick || "").trim();
       const status = presenceClass(user);
-      const race = userRaceInfo(user);
       fillProfileAvatar(
         document.getElementById("user-profile-avatar"),
         user,
@@ -1151,7 +1282,6 @@
       const nickEl = document.getElementById("user-profile-nick");
       const metaEl = document.getElementById("user-profile-meta");
       const idEl = document.getElementById("user-profile-id");
-      const raceEl = document.getElementById("user-profile-race");
       if (nickEl) nickEl.textContent = nick;
       if (metaEl) {
         metaEl.textContent =
@@ -1159,13 +1289,9 @@
         metaEl.hidden = !metaEl.textContent;
       }
       if (idEl) idEl.textContent = `id ${Number(user.id)}`;
-      if (raceEl) {
-        const html = renderRaceBlocks(race);
-        raceEl.innerHTML = html;
-        raceEl.hidden = !html;
-      }
       if (canFounderEditUser(user)) fillFounderRaceEdit(user);
       setUserProfileEditMode(false);
+      loadProfilePublished(user.id);
       const avatarBtn = document.getElementById("user-profile-avatar");
       if (avatarBtn) {
         const canEdit = canFounderEditUser(user);
@@ -1183,6 +1309,8 @@
       hidePresenceMini();
     } else {
       profileViewUser = null;
+      profilePublished = { race: null, folders: [] };
+      profileContentFolder = null;
       setUserProfileEditMode(false);
       drawer.classList.remove("is-open");
       drawer.setAttribute("aria-hidden", "true");
@@ -3529,6 +3657,109 @@
     }
   });
 
+  let raceSubmissionStatus = null;
+  let raceSubmissionReason = "";
+
+  function updateHubRaceStarUi() {
+    const star = document.getElementById("hub-race-star");
+    if (!star) return;
+    const status = raceSubmissionStatus;
+    if (!status) {
+      star.hidden = true;
+      star.removeAttribute("data-tip");
+      star.className = "hub-tab-star";
+      return;
+    }
+    star.hidden = false;
+    star.className = `hub-tab-star hub-tab-star--${status}`;
+    const tip =
+      status === "rejected"
+        ? raceSubmissionReason
+          ? `Отклонено: ${raceSubmissionReason}`
+          : "Отклонено"
+        : status === "approved"
+          ? "Одобрено"
+          : status === "added"
+            ? "Добавлено в игру"
+            : "В обработке";
+    star.setAttribute("data-tip", tip);
+    star.setAttribute("aria-label", tip);
+  }
+
+  async function syncRaceSubmissionStatus() {
+    if (!authToken) {
+      raceSubmissionStatus = null;
+      raceSubmissionReason = "";
+      updateHubRaceStarUi();
+      return;
+    }
+    try {
+      const data = await api("/api/studio/submissions/mine");
+      const list = Array.isArray(data?.submissions) ? data.submissions : [];
+      const race = list.find(
+        (s) => s.kind === "race" || s.clientFolderId === "race"
+      );
+      raceSubmissionStatus = race ? String(race.status || "pending") : null;
+      raceSubmissionReason = race ? String(race.reason || "") : "";
+    } catch (_) {
+      /* ignore */
+    }
+    updateHubRaceStarUi();
+  }
+
+  document.getElementById("hub-race-submit-btn")?.addEventListener("click", async () => {
+    setHubFieldError("hub-race-error", "");
+    if (!authToken) {
+      showToast("Войдите, чтобы отправить расу");
+      return;
+    }
+    const form = readHubRaceForm();
+    const required = ["raceName", "origin", "abilities", "useful"];
+    if (required.find((key) => !form[key])) {
+      setHubFieldError("hub-race-error", "Заполни обязательные поля расы");
+      return;
+    }
+    const ok = window.confirm(
+      `Отправить расу «${form.raceName}» на рассмотрение админам и помощникам?`
+    );
+    if (!ok) return;
+    const btn = document.getElementById("hub-race-submit-btn");
+    if (btn) btn.disabled = true;
+    try {
+      await api("/api/user/profile", {
+        method: "PUT",
+        body: JSON.stringify({ form, registered: true }),
+      });
+      profileCache = {
+        ...profileCache,
+        registered: true,
+        form: { ...(profileCache.form || {}), ...form },
+      };
+      writeLocalStorageFallback(profileCache);
+
+      const data = await api("/api/studio/submissions", {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "race",
+          clientFolderId: "race",
+          folderName: form.raceName,
+          folderColor: "#c4ff4d",
+          race: form,
+          payload: { kind: "race", race: form },
+        }),
+      });
+      const sub = data?.submission;
+      raceSubmissionStatus = String(sub?.status || "pending");
+      raceSubmissionReason = String(sub?.reason || "");
+      updateHubRaceStarUi();
+      showToast("Раса отправлена на рассмотрение");
+    } catch (err) {
+      setHubFieldError("hub-race-error", err.message || "Не удалось отправить");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   /* ---------- Staff panel (controller + console) ---------- */
   const PANEL_HISTORY_KEY = "genesis_panel_console_history";
   const PANEL_SITE_COMMANDS = [
@@ -3832,6 +4063,12 @@
     }
     renderPlayersDirectory();
   }
+
+  document.getElementById("user-profile-tabs")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-profile-tab]");
+    if (!btn) return;
+    setUserProfileTab(btn.getAttribute("data-profile-tab"));
+  });
 
   document.getElementById("user-profile-avatar")?.addEventListener("click", (e) => {
     e.preventDefault();
@@ -4683,9 +4920,17 @@
     try {
       const data = await api("/api/studio/submissions/mine");
       const list = Array.isArray(data?.submissions) ? data.submissions : [];
+      const race = list.find(
+        (s) => s.kind === "race" || s.clientFolderId === "race"
+      );
+      raceSubmissionStatus = race ? String(race.status || "pending") : null;
+      raceSubmissionReason = race ? String(race.reason || "") : "";
+      updateHubRaceStarUi();
+
       loadStudioDoc();
       let changed = false;
       list.forEach((sub) => {
+        if (sub.kind === "race" || sub.clientFolderId === "race") return;
         const folder = studioDoc.folders.find((f) => f.id === sub.clientFolderId);
         if (!folder) return;
         const nextId = Number(sub.id) || null;
@@ -4910,16 +5155,22 @@
         }
 
         studioReviewList.forEach((s) => {
-          const color = normalizeStudioColor(s.folderColor);
+          const isRace = s.kind === "race" || s.clientFolderId === "race";
+          const color = isRace
+            ? "var(--accent)"
+            : normalizeStudioColor(s.folderColor);
           const btn = document.createElement("button");
           btn.type = "button";
-          btn.className = "studio-tile studio-tile--folder catalog-card";
+          btn.className = isRace
+            ? "studio-tile catalog-card"
+            : "studio-tile studio-tile--folder catalog-card";
           btn.setAttribute("role", "listitem");
           btn.style.setProperty("--section-accent", color);
+          const icon = isRace ? "assets/race.png" : "assets/folder.png";
           btn.innerHTML = `
             <span class="catalog-card__visual" aria-hidden="true">
               <span class="catalog-card__shadow"></span>
-              <img class="catalog-card__img" src="assets/folder.png" alt="" draggable="false" />
+              <img class="catalog-card__img" src="${icon}" alt="" draggable="false" />
             </span>
             <span class="catalog-card__label studio-tile__label-stack">
               <span class="studio-tile__name"></span>
@@ -4927,7 +5178,8 @@
             </span>
           `;
           appendStudioStar(btn, s.status || "pending", s.reason);
-          btn.querySelector(".studio-tile__name").textContent = s.folderName || "Папка";
+          btn.querySelector(".studio-tile__name").textContent =
+            s.folderName || (isRace ? "Раса" : "Папка");
           btn.querySelector(".studio-tile__sub").textContent = s.submitterMcNick || "—";
           btn.addEventListener("click", () => {
             hideStudioMenus();
@@ -4940,10 +5192,26 @@
       }
 
       if (bar) bar.hidden = false;
+      const isRaceOpen =
+        sub.kind === "race" ||
+        sub.clientFolderId === "race" ||
+        sub.payload?.kind === "race";
       if (title) {
-        title.textContent = `${sub.folderName || "Папка"} · ${sub.submitterMcNick || ""}`.trim();
+        title.textContent = `${sub.folderName || (isRaceOpen ? "Раса" : "Папка")} · ${sub.submitterMcNick || ""}`.trim();
       }
       updateStudioReviewActionsUi(sub);
+
+      if (isRaceOpen) {
+        const race =
+          (sub.payload?.race && typeof sub.payload.race === "object"
+            ? sub.payload.race
+            : null) || { raceName: sub.folderName };
+        const panel = document.createElement("div");
+        panel.className = "studio-race-review";
+        panel.innerHTML = renderRaceBlocks(race) || `<p class="studio-empty">Нет текста расы</p>`;
+        grid.appendChild(panel);
+        return;
+      }
 
       const items = Array.isArray(sub.payload?.items) ? sub.payload.items : [];
       if (!items.length) {

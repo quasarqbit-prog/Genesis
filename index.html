@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=67" />
+  <link rel="stylesheet" href="styles.css?v=68" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -184,7 +184,9 @@
         <nav class="hub-nav" aria-label="Разделы">
           <button type="button" class="hub-nav__btn hub-nav__btn--close" id="settings-close-tab">Закрыть</button>
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
-          <button type="button" class="hub-nav__btn" data-hub-tab="race">Раса</button>
+          <button type="button" class="hub-nav__btn" data-hub-tab="race" id="hub-tab-race">
+            Раса<span class="hub-tab-star" id="hub-race-star" hidden aria-hidden="true">★</span>
+          </button>
           <button type="button" class="hub-nav__btn" data-hub-tab="sound">Звук</button>
         </nav>
 
@@ -373,7 +375,10 @@
               </div>
 
               <p class="field-error" id="hub-race-error" hidden></p>
-              <button type="submit" class="mc-btn mc-btn--compact hub-save-btn" id="hub-race-save-btn">СОХРАНИТЬ</button>
+              <div class="hub-race-actions">
+                <button type="submit" class="mc-btn mc-btn--compact hub-save-btn" id="hub-race-save-btn">СОХРАНИТЬ</button>
+                <button type="button" class="mc-btn mc-btn--compact" id="hub-race-submit-btn">ОТПРАВИТЬ</button>
+              </div>
             </form>
           </section>
 
@@ -430,86 +435,104 @@
         <button type="button" class="drawer-close-btn" id="user-profile-close" aria-label="Закрыть профиль">×</button>
         <button type="button" class="user-profile-close-tab" id="user-profile-close-tab">Закрыть</button>
         <div class="user-profile-drawer__inner">
+          <nav class="user-profile-tabs" id="user-profile-tabs" aria-label="Разделы профиля">
+            <button type="button" class="user-profile-tabs__btn is-active" data-profile-tab="profile">Профиль</button>
+            <button type="button" class="user-profile-tabs__btn" data-profile-tab="race">Раса</button>
+            <button type="button" class="user-profile-tabs__btn" data-profile-tab="content">Контент</button>
+          </nav>
           <div class="user-profile-card" id="user-profile-card">
-            <button type="button" class="user-profile-card__avatar is-offline" id="user-profile-avatar" aria-label="Аватар">
-              <img alt="" hidden />
-              <span class="user-profile-card__fallback">?</span>
-            </button>
-            <div class="ctx-menu" id="user-profile-avatar-menu" hidden>
-              <button type="button" class="ctx-menu__item" id="user-profile-avatar-upload">Загрузить аватар</button>
-              <button type="button" class="ctx-menu__item" id="user-profile-avatar-reset">Сбросить аватар</button>
+            <div class="user-profile-panel is-active" data-profile-panel="profile">
+              <button type="button" class="user-profile-card__avatar is-offline" id="user-profile-avatar" aria-label="Аватар">
+                <img alt="" hidden />
+                <span class="user-profile-card__fallback">?</span>
+              </button>
+              <div class="ctx-menu" id="user-profile-avatar-menu" hidden>
+                <button type="button" class="ctx-menu__item" id="user-profile-avatar-upload">Загрузить аватар</button>
+                <button type="button" class="ctx-menu__item" id="user-profile-avatar-reset">Сбросить аватар</button>
+              </div>
+              <input id="user-profile-avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+              <div class="user-profile-card__nick" id="user-profile-nick">—</div>
+              <div class="user-profile-card__meta" id="user-profile-meta"></div>
+              <div class="user-profile-card__id" id="user-profile-id">id —</div>
+              <div class="user-profile-identity-edit" id="user-profile-identity-edit" hidden>
+                <div class="field-block">
+                  <label class="field-label" for="edit-site-nick">
+                    Ник на сайте
+                    <span class="field-tip" tabindex="0" data-tip="Отображаемое имя в списке игроков и профиле.">?</span>
+                  </label>
+                  <input class="field-input" id="edit-site-nick" type="text" maxlength="32" placeholder="Пример: DapRatt" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="field-block">
+                  <label class="field-label" for="edit-mc-nick">
+                    Игровой ник
+                    <span class="req">*</span>
+                    <span class="field-tip" tabindex="0" data-tip="Ник Minecraft: 3–16 символов, латиница, цифры и _.">?</span>
+                  </label>
+                  <input class="field-input" id="edit-mc-nick" type="text" maxlength="16" placeholder="Пример: DapRatt" autocomplete="off" spellcheck="false" />
+                </div>
+              </div>
             </div>
-            <input id="user-profile-avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
-            <div class="user-profile-card__nick" id="user-profile-nick">—</div>
-            <div class="user-profile-card__meta" id="user-profile-meta"></div>
-            <div class="user-profile-card__id" id="user-profile-id">id —</div>
-            <div class="user-profile-race" id="user-profile-race" hidden></div>
-            <form class="user-profile-race-edit hub-race-form" id="user-profile-race-edit" hidden novalidate>
-              <div class="field-block">
-                <label class="field-label" for="edit-site-nick">
-                  Ник на сайте
-                  <span class="field-tip" tabindex="0" data-tip="Отображаемое имя в списке игроков и профиле.">?</span>
-                </label>
-                <input class="field-input" id="edit-site-nick" type="text" maxlength="32" placeholder="Пример: DapRatt" autocomplete="off" spellcheck="false" />
-              </div>
-              <div class="field-block">
-                <label class="field-label" for="edit-mc-nick">
-                  Игровой ник
-                  <span class="req">*</span>
-                  <span class="field-tip" tabindex="0" data-tip="Ник Minecraft: 3–16 символов, латиница, цифры и _.">?</span>
-                </label>
-                <input class="field-input" id="edit-mc-nick" type="text" maxlength="16" placeholder="Пример: DapRatt" autocomplete="off" spellcheck="false" />
-              </div>
-              <div class="field-block">
-                <label class="field-label" for="edit-race-name">
-                  Название расы
-                  <span class="req">*</span>
-                  <span class="field-tip" tabindex="0" data-tip="Короткое имя расы, как в анкете.">?</span>
-                </label>
-                <input class="field-input" id="edit-race-name" type="text" maxlength="48" placeholder="Пример: Эндариты" autocomplete="off" spellcheck="false" />
-              </div>
-              <div class="field-block">
-                <label class="field-label" for="edit-race-origin">
-                  Происхождение расы
-                  <span class="req">*</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите как появилась ваша раса, не выходя за рамки логики и лора Minecraft.">?</span>
-                </label>
-                <textarea class="field-area" id="edit-race-origin" rows="4" placeholder="Пример: родились в Энде из обсидиана…"></textarea>
-              </div>
-              <div class="field-block">
-                <label class="field-label" for="edit-race-abilities">
-                  Способности расы
-                  <span class="req">*</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите какие есть способности у вашей расы.">?</span>
-                </label>
-                <textarea class="field-area" id="edit-race-abilities" rows="4" placeholder="Пример: ночное зрение, прыжок x2…"></textarea>
-              </div>
-              <div class="field-block">
-                <label class="field-label" for="edit-race-traits">
-                  Особенности расы
-                  <span class="opt">необязательно</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите какие есть побочные эффекты у этой расы. (отрицательные эффекты, фоновые фишки)">?</span>
-                </label>
-                <textarea class="field-area" id="edit-race-traits" rows="3" placeholder="Пример: боятся воды…"></textarea>
-              </div>
-              <div class="field-block">
-                <label class="field-label" for="edit-race-useful">
-                  Чем ваша раса полезна для других
-                  <span class="req">*</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите чем ваша раса может помочь другим игрокам в быту.">?</span>
-                </label>
-                <textarea class="field-area" id="edit-race-useful" rows="4" placeholder="Пример: чинят броню соседям…"></textarea>
-              </div>
-              <div class="field-block">
-                <label class="field-label" for="edit-race-mechanics">
-                  Особые механики
-                  <span class="opt">необязательно</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите что нового в игровой мир добавит приход вашей расы. (новые предметы, биомы, структуры, механики)">?</span>
-                </label>
-                <textarea class="field-area" id="edit-race-mechanics" rows="3" placeholder="Пример: новый биом, портал…"></textarea>
-              </div>
-              <p class="field-error" id="edit-race-error" hidden></p>
-            </form>
+
+            <div class="user-profile-panel" data-profile-panel="race" hidden>
+              <div class="user-profile-race" id="user-profile-race" hidden></div>
+              <p class="user-profile-empty" id="user-profile-race-empty" hidden>Нет одобренной расы</p>
+              <form class="user-profile-race-edit hub-race-form" id="user-profile-race-edit" hidden novalidate>
+                <div class="field-block">
+                  <label class="field-label" for="edit-race-name">
+                    Название расы
+                    <span class="req">*</span>
+                    <span class="field-tip" tabindex="0" data-tip="Короткое имя расы, как в анкете.">?</span>
+                  </label>
+                  <input class="field-input" id="edit-race-name" type="text" maxlength="48" placeholder="Пример: Эндариты" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="field-block">
+                  <label class="field-label" for="edit-race-origin">
+                    Происхождение расы
+                    <span class="req">*</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите как появилась ваша раса, не выходя за рамки логики и лора Minecraft.">?</span>
+                  </label>
+                  <textarea class="field-area" id="edit-race-origin" rows="4" placeholder="Пример: родились в Энде из обсидиана…"></textarea>
+                </div>
+                <div class="field-block">
+                  <label class="field-label" for="edit-race-abilities">
+                    Способности расы
+                    <span class="req">*</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите какие есть способности у вашей расы.">?</span>
+                  </label>
+                  <textarea class="field-area" id="edit-race-abilities" rows="4" placeholder="Пример: ночное зрение, прыжок x2…"></textarea>
+                </div>
+                <div class="field-block">
+                  <label class="field-label" for="edit-race-traits">
+                    Особенности расы
+                    <span class="opt">необязательно</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите какие есть побочные эффекты у этой расы. (отрицательные эффекты, фоновые фишки)">?</span>
+                  </label>
+                  <textarea class="field-area" id="edit-race-traits" rows="3" placeholder="Пример: боятся воды…"></textarea>
+                </div>
+                <div class="field-block">
+                  <label class="field-label" for="edit-race-useful">
+                    Чем ваша раса полезна для других
+                    <span class="req">*</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите чем ваша раса может помочь другим игрокам в быту.">?</span>
+                  </label>
+                  <textarea class="field-area" id="edit-race-useful" rows="4" placeholder="Пример: чинят броню соседям…"></textarea>
+                </div>
+                <div class="field-block">
+                  <label class="field-label" for="edit-race-mechanics">
+                    Особые механики
+                    <span class="opt">необязательно</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите что нового в игровой мир добавит приход вашей расы. (новые предметы, биомы, структуры, механики)">?</span>
+                  </label>
+                  <textarea class="field-area" id="edit-race-mechanics" rows="3" placeholder="Пример: новый биом, портал…"></textarea>
+                </div>
+                <p class="field-error" id="edit-race-error" hidden></p>
+              </form>
+            </div>
+
+            <div class="user-profile-panel" data-profile-panel="content" hidden>
+              <div class="user-profile-content-grid" id="user-profile-content-grid"></div>
+              <p class="user-profile-empty" id="user-profile-content-empty" hidden>Нет одобренного контента</p>
+            </div>
           </div>
         </div>
       </aside>
@@ -1671,6 +1694,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=67"></script>
+  <script src="script.js?v=68"></script>
 </body>
 </html>

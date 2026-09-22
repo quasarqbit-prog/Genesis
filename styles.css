@@ -906,6 +906,125 @@ h3,
   color: var(--muted);
 }
 
+.studio-race-review {
+  grid-column: 1 / -1;
+  padding: 8px 4px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.studio-race-review .user-profile-race__block {
+  border: 2px solid rgba(107, 90, 138, 0.4);
+  background: rgba(12, 7, 22, 0.55);
+  padding: 10px 12px;
+}
+
+.studio-race-review .user-profile-race__label {
+  margin-bottom: 6px;
+  font-family: var(--font-ded);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.studio-race-review .user-profile-race__text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.user-profile-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0 2px;
+}
+
+.user-profile-tabs__btn {
+  appearance: none;
+  margin: 0;
+  padding: 7px 10px;
+  border: 2px solid rgba(107, 90, 138, 0.5);
+  background: rgba(20, 12, 36, 0.75);
+  color: var(--muted);
+  font-family: var(--font-ded);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.user-profile-tabs__btn:hover {
+  color: var(--text);
+  border-color: rgba(196, 255, 77, 0.35);
+}
+
+.user-profile-tabs__btn.is-active {
+  color: var(--accent);
+  border-color: rgba(196, 255, 77, 0.55);
+  background: rgba(28, 18, 48, 0.95);
+}
+
+.user-profile-panel[hidden] {
+  display: none !important;
+}
+
+.user-profile-empty {
+  margin: 16px 0 0;
+  font-family: var(--font-ded);
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+}
+
+.user-profile-identity-edit {
+  width: 100%;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+
+.user-profile-identity-edit[hidden] {
+  display: none !important;
+}
+
+.user-profile-content-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.user-profile-content-back {
+  appearance: none;
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin: 0 0 4px;
+  padding: 6px 10px;
+  border: 2px solid rgba(107, 90, 138, 0.55);
+  background: rgba(24, 16, 42, 0.85);
+  color: var(--text);
+  font-family: var(--font-ded);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.user-profile-content-back:hover {
+  color: var(--accent);
+  border-color: rgba(196, 255, 77, 0.4);
+}
+
+.user-profile-content-tile {
+  min-height: 120px;
+}
+
 .studio-tile .catalog-card__visual {
   position: relative;
 }
@@ -1707,6 +1826,7 @@ h3,
 
 .hub-nav__btn {
   appearance: none;
+  position: relative;
   font-family: var(--font-ded);
   font-size: 11px;
   letter-spacing: 0.5px;
@@ -1728,6 +1848,79 @@ h3,
   color: var(--accent);
   border-color: var(--border-hi);
   background: rgba(196, 255, 77, 0.06);
+}
+
+.hub-tab-star {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.hub-tab-star[hidden] {
+  display: none !important;
+}
+
+.hub-tab-star::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  z-index: 40;
+  width: max-content;
+  max-width: min(240px, 70vw);
+  padding: 6px 8px;
+  border: 2px solid #b388ff;
+  background: rgba(16, 8, 28, 0.98);
+  color: #efe8ff;
+  font-family: var(--font-ded);
+  font-size: 11px;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  text-align: left;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+
+.hub-tab-star:hover::after,
+.hub-tab-star:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.hub-tab-star--pending {
+  color: #9ca3af;
+}
+
+.hub-tab-star--rejected {
+  color: #ef4444;
+}
+
+.hub-tab-star--approved {
+  color: #38bdf8;
+}
+
+.hub-tab-star--added {
+  color: var(--accent);
+}
+
+.hub-race-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.hub-race-actions .mc-btn {
+  width: auto;
 }
 
 .hub-body {

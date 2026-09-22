@@ -2882,14 +2882,19 @@ function mapStudioSubmissionRow(row) {
       payload = {};
     }
   }
+  if (!payload || typeof payload !== "object") payload = {};
+  const clientFolderId = String(row.client_folder_id || "");
+  const kind =
+    payload.kind === "race" || clientFolderId === "race" ? "race" : "folder";
   return {
     id: Number(row.id),
-    clientFolderId: String(row.client_folder_id || ""),
+    kind,
+    clientFolderId,
     submitterId: Number(row.submitter_id),
     submitterMcNick: String(row.submitter_mc_nick || ""),
     folderName: String(row.folder_name || ""),
     folderColor: String(row.folder_color || "#8ec8ff"),
-    payload: payload && typeof payload === "object" ? payload : {},
+    payload,
     status: String(row.status || "pending"),
     reason: row.reason != null ? String(row.reason) : "",
     reviewedBy: row.reviewed_by != null ? Number(row.reviewed_by) : null,
@@ -2902,13 +2907,43 @@ function mapStudioSubmissionRow(row) {
 app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
   try {
     const body = req.body || {};
-    const clientFolderId = String(body.clientFolderId || "").trim().slice(0, 64);
-    const folderName = String(body.folderName || "").trim().slice(0, 128);
-    const folderColor = String(body.folderColor || "#8ec8ff").trim().slice(0, 16);
-    const payload = body.payload && typeof body.payload === "object" ? body.payload : null;
+    const kind = String(body.kind || body.payload?.kind || "folder").trim() === "race"
+      ? "race"
+      : "folder";
+    let clientFolderId = String(body.clientFolderId || "").trim().slice(0, 64);
+    let folderName = String(body.folderName || "").trim().slice(0, 128);
+    let folderColor = String(body.folderColor || "#8ec8ff").trim().slice(0, 16);
+    let payload = body.payload && typeof body.payload === "object" ? { ...body.payload } : null;
+
+    if (kind === "race") {
+      clientFolderId = "race";
+      const raceSrc =
+        (payload && payload.race && typeof payload.race === "object" && payload.race) ||
+        (body.race && typeof body.race === "object" && body.race) ||
+        {};
+      const race = {
+        raceName: String(raceSrc.raceName || folderName || "").trim().slice(0, 48),
+        origin: String(raceSrc.origin || "").trim().slice(0, 4000),
+        abilities: String(raceSrc.abilities || "").trim().slice(0, 4000),
+        traits: String(raceSrc.traits || "").trim().slice(0, 4000),
+        useful: String(raceSrc.useful || "").trim().slice(0, 4000),
+        mechanics: String(raceSrc.mechanics || "").trim().slice(0, 4000),
+      };
+      if (!race.raceName || !race.origin || !race.abilities || !race.useful) {
+        return res.status(400).json({ error: "Заполни обязательные поля расы" });
+      }
+      folderName = race.raceName;
+      folderColor = folderColor || "#c4ff4d";
+      payload = { kind: "race", race };
+    }
+
     if (!clientFolderId || !folderName || !payload) {
       return res.status(400).json({ error: "Нужны clientFolderId, folderName и payload" });
     }
+    if (kind === "folder") {
+      payload = { ...payload, kind: "folder" };
+    }
+
     const mcNick = String(req.user.mcNick || "").slice(0, 16) || "unknown";
     const payloadJson = JSON.stringify(payload);
     if (payloadJson.length > 30 * 1024 * 1024) {
@@ -3083,6 +3118,51 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
     console.error("studio patch:", err);
     const status = err.status || 500;
     return res.status(status).json({ error: err.message || "Не удалось обновить статус" });
+  }
+});
+
+app.get("/api/users/:id/published", authMiddleware, async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isFinite(userId)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(
+      `SELECT s.*
+       FROM studio_submissions s
+       INNER JOIN (
+         SELECT client_folder_id, MAX(id) AS max_id
+         FROM studio_submissions
+         WHERE submitter_id = :uid
+         GROUP BY client_folder_id
+       ) latest ON latest.max_id = s.id
+       WHERE s.submitter_id = :uid
+         AND s.status IN ('approved', 'added')
+       ORDER BY s.updated_at DESC`,
+      { uid: userId }
+    );
+    const submissions = rows.map(mapStudioSubmissionRow);
+    const raceSub = submissions.find((s) => s.kind === "race") || null;
+    const folders = submissions.filter((s) => s.kind !== "race");
+    return res.json({
+      ok: true,
+      race: raceSub
+        ? {
+            status: raceSub.status,
+            race: raceSub.payload?.race || {
+              raceName: raceSub.folderName,
+            },
+          }
+        : null,
+      folders: folders.map((s) => ({
+        id: s.id,
+        name: s.folderName,
+        color: s.folderColor,
+        status: s.status,
+        payload: s.payload,
+      })),
+    });
+  } catch (err) {
+    console.error("user published:", err);
+    return res.status(500).json({ error: "Не удалось загрузить контент" });
   }
 });
 
