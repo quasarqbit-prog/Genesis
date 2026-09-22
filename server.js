@@ -54,7 +54,7 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: "8mb" }));
+app.use(express.json({ limit: "32mb" }));
 app.use(
   "/uploads",
   express.static(UPLOADS_DIR, {
@@ -2909,19 +2909,23 @@ app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
     if (!clientFolderId || !folderName || !payload) {
       return res.status(400).json({ error: "Нужны clientFolderId, folderName и payload" });
     }
-    const mcNick = String(req.user.mcNick || "").slice(0, 16);
+    const mcNick = String(req.user.mcNick || "").slice(0, 16) || "unknown";
+    const payloadJson = JSON.stringify(payload);
+    if (payloadJson.length > 30 * 1024 * 1024) {
+      return res.status(413).json({ error: "Слишком большой объём данных в папке" });
+    }
     const [result] = await pool.execute(
       `INSERT INTO studio_submissions
         (client_folder_id, submitter_id, submitter_mc_nick, folder_name, folder_color, payload_json, status, reason, reviewed_by, reviewed_at)
        VALUES
-        (:clientFolderId, :submitterId, :submitterMcNick, :folderName, :folderColor, CAST(:payload AS JSON), 'pending', NULL, NULL, NULL)`,
+        (:clientFolderId, :submitterId, :submitterMcNick, :folderName, :folderColor, :payloadJson, 'pending', NULL, NULL, NULL)`,
       {
         clientFolderId,
-        submitterId: req.user.id,
+        submitterId: Number(req.user.id),
         submitterMcNick: mcNick,
         folderName,
         folderColor,
-        payload: JSON.stringify(payload),
+        payloadJson,
       }
     );
     const id = Number(result.insertId);
@@ -2932,7 +2936,23 @@ app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
     return res.json({ ok: true, submission: mapStudioSubmissionRow(rows[0]) });
   } catch (err) {
     console.error("studio submit:", err);
-    return res.status(500).json({ error: "Не удалось отправить папку" });
+    const msg = String(err?.message || "");
+    if (/doesn't exist|ER_NO_SUCH_TABLE/i.test(msg)) {
+      try {
+        await ensureSchema();
+        return res.status(503).json({
+          error: "Таблица анкет создана. Отправь папку ещё раз",
+        });
+      } catch (schemaErr) {
+        console.error("studio ensureSchema:", schemaErr);
+        return res.status(500).json({
+          error: "Не удалось создать таблицу анкет. Проверь pm2 logs",
+        });
+      }
+    }
+    return res.status(500).json({
+      error: msg ? `Не удалось отправить: ${msg}` : "Не удалось отправить папку",
+    });
   }
 });
 
@@ -3017,9 +3037,9 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
       await assertFounderActor(req);
       await pool.execute(
         `UPDATE studio_submissions
-         SET payload_json = CAST(:payload AS JSON)
+         SET payload_json = :payloadJson
          WHERE id = :id`,
-        { id, payload: JSON.stringify(req.body.payload) }
+        { id, payloadJson: JSON.stringify(req.body.payload) }
       );
     }
 
