@@ -2874,6 +2874,17 @@ h3,
   min-width: 220px;
 }
 
+.user-profile-edit-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.user-profile-identity-edit .user-profile-edit-actions,
+.user-profile-race-edit .user-profile-edit-actions {
+  padding-bottom: 4px;
+}
+
 .hub-view .hub-save-btn {
   margin-top: 14px;
   min-width: 220px;

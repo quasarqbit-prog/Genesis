@@ -3202,9 +3202,9 @@ app.delete("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
     );
     if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
     const status = String(rows[0].status || "");
-    if (status !== "rejected" && status !== "added") {
+    if (status !== "rejected" && status !== "added" && status !== "approved") {
       return res.status(400).json({
-        error: "Удалить можно только отклонённые или добавленные анкеты",
+        error: "Удалить можно только отклонённые, одобренные или добавленные анкеты",
       });
     }
     await pool.execute(`DELETE FROM studio_submissions WHERE id = :id`, { id });
@@ -3325,12 +3325,14 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
       `INSERT INTO orders
         (submitter_id, submitter_mc_nick, kind, description, refs_json, results_json, status)
        VALUES
-        (:submitterId, :submitterMcNick, :kind, :description, CAST('[]' AS JSON), CAST('[]' AS JSON), 'pending')`,
+        (:submitterId, :submitterMcNick, :kind, :description, :refsJson, :resultsJson, 'pending')`,
       {
         submitterId: Number(req.user.id),
         submitterMcNick: mcNick,
         kind,
         description,
+        refsJson: "[]",
+        resultsJson: "[]",
       }
     );
     const id = Number(result.insertId);
@@ -3343,7 +3345,20 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
     return res.json({ ok: true, order: mapOrderRow(rows[0]) });
   } catch (err) {
     console.error("orders create:", err);
-    return res.status(500).json({ error: "Не удалось отправить заказ" });
+    const msg = String(err?.message || "");
+    if (/doesn't exist|ER_NO_SUCH_TABLE/i.test(msg)) {
+      try {
+        await ensureSchema();
+        return res.status(503).json({
+          error: "Таблица заказов создана. Отправь заказ ещё раз",
+        });
+      } catch (schemaErr) {
+        console.error("orders ensureSchema:", schemaErr);
+      }
+    }
+    return res.status(500).json({
+      error: msg && msg.length < 180 ? msg : "Не удалось отправить заказ",
+    });
   }
 });
 
@@ -3551,6 +3566,7 @@ app.get("/api/users/:id/published", authMiddleware, async (req, res) => {
         name: s.folderName,
         color: s.folderColor,
         status: s.status,
+        version: s.version,
         payload: s.payload,
       })),
     });

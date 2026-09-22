@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=79" />
+  <link rel="stylesheet" href="styles.css?v=80" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -544,6 +544,9 @@
                   </label>
                   <input class="field-input" id="edit-mc-nick" type="text" maxlength="16" placeholder="Пример: DapRatt" autocomplete="off" spellcheck="false" />
                 </div>
+                <div class="studio-modal__actions user-profile-edit-actions">
+                  <button type="button" class="mc-btn hub-save-btn" id="edit-profile-save-btn">СОХРАНИТЬ</button>
+                </div>
               </div>
             </div>
 
@@ -600,6 +603,9 @@
                   <textarea class="field-area" id="edit-race-mechanics" rows="3" placeholder="Пример: новый биом, портал…"></textarea>
                 </div>
                 <p class="field-error" id="edit-race-error" hidden></p>
+                <div class="studio-modal__actions user-profile-edit-actions">
+                  <button type="submit" class="mc-btn hub-save-btn" id="edit-race-save-btn">СОХРАНИТЬ</button>
+                </div>
               </form>
             </div>
 
@@ -1676,6 +1682,13 @@
             <label class="field-label" for="studio-edit-name">Название</label>
             <input class="field-input" id="studio-edit-name" type="text" maxlength="64" required autocomplete="off" />
           </div>
+          <div class="field-block" id="studio-edit-color-block">
+            <label class="field-label" for="studio-edit-color">Цвет</label>
+            <div class="studio-color-row">
+              <input class="studio-color-input" id="studio-edit-color" type="color" value="#8ec8ff" />
+              <div class="studio-color-swatches" id="studio-edit-swatches" role="group" aria-label="Быстрый цвет"></div>
+            </div>
+          </div>
 
           <div class="field-block studio-blocks-field">
             <div class="studio-blocks" id="studio-blocks-list"></div>
@@ -1828,6 +1841,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=79"></script>
+  <script src="script.js?v=80"></script>
 </body>
 </html>

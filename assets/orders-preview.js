@@ -46,6 +46,14 @@ function fitCamera(camera, object, canvas, yOffset = 0, xOffset = 0) {
   camera.updateProjectionMatrix();
 }
 
+export function stopOrdersPreview(canvas) {
+  const prev = previews.get(canvas);
+  if (prev) {
+    prev.stop();
+    previews.delete(canvas);
+  }
+}
+
 /**
  * @param {HTMLCanvasElement} canvas
  * @param {{ objUrl: string, textureUrl: string, yaw?: number, yOffset?: number, xOffset?: number }} opts

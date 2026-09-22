@@ -1056,7 +1056,13 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "studio-tile catalog-card user-profile-content-tile";
-        btn.style.setProperty("--section-accent", "var(--accent)");
+        const accent =
+          typeof normalizeStudioColor === "function"
+            ? normalizeStudioColor(
+                item.color || profileContentFolder.color || "#8ec8ff"
+              )
+            : item.color || profileContentFolder.color || "#8ec8ff";
+        btn.style.setProperty("--section-accent", accent);
         const icon = type?.icon || "assets/icons/item.png";
         btn.innerHTML = `
           <span class="catalog-card__visual" aria-hidden="true">
@@ -1090,7 +1096,10 @@
         </span>
         <span class="catalog-card__label"></span>
       `;
-      btn.querySelector(".catalog-card__label").textContent = folder.name || "Папка";
+      btn.querySelector(".catalog-card__label").textContent = studioVersionLabel(
+        folder.name || "Папка",
+        folder.version
+      );
       btn.addEventListener("click", () => {
         profileContentFolder = folder;
         renderProfilePublishedContent();
@@ -1185,14 +1194,14 @@
     const { siteNick, mcNick, form } = readFounderEditPayload();
     if (!mcNick) {
       setHubFieldError("edit-race-error", "Укажи игровой ник");
-      return;
+      throw new Error("Укажи игровой ник");
     }
     if (!AUTH_MC_NICK_RE.test(mcNick)) {
       setHubFieldError(
         "edit-race-error",
         "Игровой ник: 3–16 символов, латиница, цифры и _"
       );
-      return;
+      throw new Error("Некорректный игровой ник");
     }
     setHubFieldError("edit-race-error", "");
     try {
@@ -1212,6 +1221,7 @@
     } catch (err) {
       if (token !== founderEditSaveToken) return;
       setHubFieldError("edit-race-error", err.message || "Не удалось сохранить");
+      throw err;
     }
   }
 
@@ -2763,6 +2773,11 @@
 
   function setMainTab(tab) {
     const name = String(tab || "studio");
+    const prevPanel = document.querySelector(".main-tab-panel.is-active");
+    const prevName = prevPanel?.getAttribute("data-main-panel") || "";
+    if (prevName === "orders" && name !== "orders") {
+      disposeOrdersPreviews();
+    }
     const shell = document.getElementById("profile-card");
     document.querySelectorAll(".main-tabs__btn[data-main-tab]").forEach((btn) => {
       btn.classList.toggle("is-active", btn.getAttribute("data-main-tab") === name);
@@ -4148,12 +4163,29 @@
     if (!canFounderEditUser(profileViewUser)) return;
     clearTimeout(founderEditSaveTimer);
     applyFounderEditLiveUi();
-    persistFounderProfileEdit();
+    persistFounderProfileEdit().then(() => showToast("Сохранено"));
   });
 
   document.getElementById("user-profile-race-edit")?.addEventListener("input", () => {
     if (!canFounderEditUser(profileViewUser)) return;
     scheduleFounderProfileSave();
+  });
+
+  document.getElementById("user-profile-identity-edit")?.addEventListener("input", () => {
+    if (!canFounderEditUser(profileViewUser)) return;
+    scheduleFounderProfileSave();
+  });
+
+  document.getElementById("edit-profile-save-btn")?.addEventListener("click", async () => {
+    if (!canFounderEditUser(profileViewUser)) return;
+    clearTimeout(founderEditSaveTimer);
+    applyFounderEditLiveUi();
+    try {
+      await persistFounderProfileEdit();
+      showToast("Сохранено");
+    } catch (_) {
+      /* error already shown */
+    }
   });
 
   document.getElementById("user-profile-avatar-menu")?.addEventListener("click", (e) => {
@@ -4712,11 +4744,13 @@
               submissionId: f.submissionId != null ? Number(f.submissionId) : null,
               submissionStatus: f.submissionStatus ? String(f.submissionStatus) : null,
               submissionReason: f.submissionReason != null ? String(f.submissionReason) : "",
+              submissionVersion: Math.max(1, Number(f.submissionVersion) || 1),
               items: Array.isArray(f.items)
                 ? f.items.map((it) => ({
                     id: String(it.id || studioUid("item")),
                     typeId: String(it.typeId || ""),
                     name: String(it.name || "Контент"),
+                    color: normalizeStudioColor(it.color || STUDIO_DEFAULT_COLOR),
                     body: String(it.body || ""),
                     blocks: Array.isArray(it.blocks) ? it.blocks : [],
                     updatedAt: Number(it.updatedAt) || Date.now(),
@@ -4793,20 +4827,52 @@
     });
   }
 
+  function setStudioItemColorInput(color) {
+    const input = document.getElementById("studio-edit-color");
+    const value = normalizeStudioColor(color);
+    if (input) input.value = value;
+    document.querySelectorAll("#studio-edit-swatches .studio-color-swatch").forEach((btn) => {
+      btn.classList.toggle("is-selected", normalizeStudioColor(btn.dataset.color) === value);
+    });
+  }
+
   function renderStudioColorSwatches() {
     const wrap = document.getElementById("studio-folder-swatches");
-    if (!wrap || wrap.childElementCount) return;
-    STUDIO_COLOR_SWATCHES.forEach((color) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "studio-color-swatch";
-      btn.dataset.color = color;
-      btn.style.setProperty("--swatch", color);
-      btn.title = color;
-      btn.setAttribute("aria-label", `Цвет ${color}`);
-      btn.addEventListener("click", () => setStudioFolderColorInput(color));
-      wrap.appendChild(btn);
-    });
+    if (wrap && !wrap.childElementCount) {
+      STUDIO_COLOR_SWATCHES.forEach((color) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "studio-color-swatch";
+        btn.dataset.color = color;
+        btn.style.setProperty("--swatch", color);
+        btn.title = color;
+        btn.setAttribute("aria-label", `Цвет ${color}`);
+        btn.addEventListener("click", () => setStudioFolderColorInput(color));
+        wrap.appendChild(btn);
+      });
+    }
+    const itemWrap = document.getElementById("studio-edit-swatches");
+    if (itemWrap && !itemWrap.childElementCount) {
+      STUDIO_COLOR_SWATCHES.forEach((color) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "studio-color-swatch";
+        btn.dataset.color = color;
+        btn.style.setProperty("--swatch", color);
+        btn.title = color;
+        btn.setAttribute("aria-label", `Цвет ${color}`);
+        btn.addEventListener("click", () => setStudioItemColorInput(color));
+        itemWrap.appendChild(btn);
+      });
+    }
+  }
+
+  function studioVersionLabel(name, version) {
+    const ver = Math.max(1, Number(version) || 1);
+    const label = String(name || "").trim() || "Папка";
+    if (ver <= 1) return label;
+    if (/\sV\d+$/i.test(label)) return label;
+    return `${label} V${ver}`;
   }
 
   function hideStudioFolderMenu() {
@@ -4921,7 +4987,8 @@
       addedBtn.textContent = "Добавлено";
     }
     if (deleteBtn) {
-      deleteBtn.hidden = st !== "rejected" && st !== "added";
+      deleteBtn.hidden =
+        st !== "rejected" && st !== "added" && st !== "approved";
     }
   }
 
@@ -5025,14 +5092,17 @@
         const nextId = Number(sub.id) || null;
         const nextStatus = String(sub.status || "pending");
         const nextReason = String(sub.reason || "");
+        const nextVersion = Math.max(1, Number(sub.version) || 1);
         if (
           folder.submissionId !== nextId ||
           folder.submissionStatus !== nextStatus ||
-          folder.submissionReason !== nextReason
+          folder.submissionReason !== nextReason ||
+          folder.submissionVersion !== nextVersion
         ) {
           folder.submissionId = nextId;
           folder.submissionStatus = nextStatus;
           folder.submissionReason = nextReason;
+          folder.submissionVersion = nextVersion;
           changed = true;
         }
       });
@@ -5102,6 +5172,7 @@
         folder.submissionId = Number(sub.id) || null;
         folder.submissionStatus = String(sub.status || "pending");
         folder.submissionReason = String(sub.reason || "");
+        folder.submissionVersion = Math.max(1, Number(sub.version) || 1);
         saveStudioDoc();
       }
       showToast("Отправлено на рассмотрение");
@@ -5180,6 +5251,8 @@
     const title = document.getElementById("studio-edit-modal-title");
     const meta = document.getElementById("studio-edit-meta");
     const nameInput = document.getElementById("studio-edit-name");
+    const colorBlock = document.getElementById("studio-edit-color-block");
+    const colorInput = document.getElementById("studio-edit-color");
     const addBtn = document.getElementById("studio-block-add-btn");
     const saveBtn = document.querySelector("#studio-edit-form button[type='submit']");
     if (title) title.textContent = type ? type.label : "Анкета контента";
@@ -5189,6 +5262,16 @@
       nameInput.readOnly = studioEditReadOnly;
       nameInput.disabled = studioEditReadOnly;
     }
+    renderStudioColorSwatches();
+    setStudioItemColorInput(item.color || STUDIO_DEFAULT_COLOR);
+    if (colorBlock) colorBlock.hidden = false;
+    if (colorInput) {
+      colorInput.disabled = studioEditReadOnly;
+      colorInput.readOnly = studioEditReadOnly;
+    }
+    document.querySelectorAll("#studio-edit-swatches .studio-color-swatch").forEach((btn) => {
+      btn.disabled = studioEditReadOnly;
+    });
     if (addBtn) addBtn.hidden = studioEditReadOnly;
     if (saveBtn) {
       saveBtn.hidden = false;
@@ -5327,7 +5410,10 @@
         btn.type = "button";
         btn.className = "studio-tile catalog-card";
         btn.setAttribute("role", "listitem");
-        btn.style.setProperty("--section-accent", "var(--accent)");
+        btn.style.setProperty(
+          "--section-accent",
+          normalizeStudioColor(item.color || STUDIO_DEFAULT_COLOR)
+        );
         const icon = type?.icon || "assets/icons/item.png";
         btn.innerHTML = `
           <span class="catalog-card__visual" aria-hidden="true">
@@ -5386,7 +5472,10 @@
         if (f.submissionStatus) {
           appendStudioStar(btn, f.submissionStatus, f.submissionReason);
         }
-        btn.querySelector(".catalog-card__label").textContent = f.name;
+        btn.querySelector(".catalog-card__label").textContent = studioVersionLabel(
+          f.name,
+          f.submissionVersion
+        );
         btn.addEventListener("click", () => {
           hideStudioMenus();
           studioOpenFolderId = f.id;
@@ -5403,7 +5492,7 @@
     }
 
     if (bar) bar.hidden = false;
-    if (title) title.textContent = folder.name;
+    if (title) title.textContent = studioVersionLabel(folder.name, folder.submissionVersion);
 
     const createBtn = document.createElement("button");
     createBtn.type = "button";
@@ -5425,7 +5514,10 @@
       btn.type = "button";
       btn.className = "studio-tile catalog-card";
       btn.setAttribute("role", "listitem");
-      btn.style.setProperty("--section-accent", "var(--accent)");
+      btn.style.setProperty(
+        "--section-accent",
+        normalizeStudioColor(item.color || STUDIO_DEFAULT_COLOR)
+      );
       const icon = type?.icon || "assets/icons/item.png";
       btn.innerHTML = `
         <span class="catalog-card__visual" aria-hidden="true">
@@ -5476,6 +5568,9 @@
     document.getElementById("studio-folder-color")?.addEventListener("input", (e) => {
       setStudioFolderColorInput(e.target.value);
     });
+    document.getElementById("studio-edit-color")?.addEventListener("input", (e) => {
+      setStudioItemColorInput(e.target.value);
+    });
     document.getElementById("studio-folder-form")?.addEventListener("submit", (e) => {
       e.preventDefault();
       const input = document.getElementById("studio-folder-name");
@@ -5503,6 +5598,7 @@
           submissionId: null,
           submissionStatus: null,
           submissionReason: "",
+          submissionVersion: 1,
           items: [],
         });
       }
@@ -5600,6 +5696,7 @@
         id: studioUid("item"),
         typeId: studioSelectedTypeId,
         name,
+        color: STUDIO_DEFAULT_COLOR,
         body: "",
         blocks: [],
         updatedAt: Date.now(),
@@ -5625,6 +5722,9 @@
         nameInput?.focus();
         return;
       }
+      const color = normalizeStudioColor(
+        document.getElementById("studio-edit-color")?.value || STUDIO_DEFAULT_COLOR
+      );
       const blocks = serializeStudioBlocksMeta(studioEditBlocks);
       const bodyText = blocks
         .filter((b) => b.type === "text")
@@ -5641,6 +5741,7 @@
         items[idx] = {
           ...items[idx],
           name,
+          color,
           blocks,
           body: bodyText,
           updatedAt: Date.now(),
@@ -5662,6 +5763,7 @@
       const item = folder?.items.find((it) => it.id === studioEditingItemId);
       if (!item) return;
       item.name = name;
+      item.color = color;
       item.blocks = blocks;
       item.body = bodyText;
       item.updatedAt = Date.now();
@@ -5723,11 +5825,12 @@
       if (!studioOpenReviewId) return;
       const sub = getOpenReviewSubmission();
       const st = String(sub?.status || "");
-      if (st !== "rejected" && st !== "added") {
-        showToast("Удалить можно только отклонённые или добавленные");
+      if (st !== "rejected" && st !== "added" && st !== "approved") {
+        showToast("Удалить можно только отклонённые, одобренные или добавленные");
         return;
       }
-      const label = sub?.folderName || "анкету";
+      const isRace = isRaceSubmission(sub);
+      const label = sub?.folderName || (isRace ? "расу" : "анкету");
       const ok = window.confirm(`Удалить «${label}» из списка анкет?`);
       if (!ok) return;
       try {
@@ -5735,6 +5838,11 @@
         studioReviewList = studioReviewList.filter(
           (s) => Number(s.id) !== Number(studioOpenReviewId)
         );
+        if (isRace) {
+          raceSubmissionStatus = null;
+          raceSubmissionReason = "";
+          updateHubRaceStarUi();
+        }
         studioOpenReviewId = null;
         showToast("Удалено");
         renderStudio();
@@ -5784,6 +5892,8 @@
   };
   let ordersSkinLoaded = false;
   let ordersPreviewMod = null;
+  let ordersPreviewsReady = false;
+  let ordersPreviewSkinUrl = null;
 
   function isOrdersFounder() {
     return Boolean(authToken && isFounderViewer());
@@ -5821,8 +5931,23 @@
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=76`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=80`);
     return ordersPreviewMod;
+  }
+
+  async function disposeOrdersPreviews() {
+    const skinCanvas = document.getElementById("orders-skin-preview");
+    const modelCanvas = document.getElementById("orders-model-preview");
+    try {
+      const mod = ordersPreviewMod || (await ensureOrdersPreviewMod().catch(() => null));
+      if (mod?.stopOrdersPreview) {
+        if (skinCanvas) mod.stopOrdersPreview(skinCanvas);
+        if (modelCanvas) mod.stopOrdersPreview(modelCanvas);
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    ordersPreviewsReady = false;
   }
 
   async function ensureOrdersSkinAssets() {
@@ -5852,12 +5977,16 @@
     return list[Math.floor(Math.random() * list.length)];
   }
 
-  async function loadOrdersPreviews() {
+  async function loadOrdersPreviews({ force = false } = {}) {
+    if (ordersPreviewsReady && !force) return;
     const assets = await ensureOrdersSkinAssets();
     const mod = await ensureOrdersPreviewMod();
     const skinCanvas = document.getElementById("orders-skin-preview");
     const modelCanvas = document.getElementById("orders-model-preview");
-    const skinUrl = pickRandomOrderSkin();
+    if (!ordersPreviewSkinUrl || force) {
+      ordersPreviewSkinUrl = pickRandomOrderSkin();
+    }
+    const skinUrl = ordersPreviewSkinUrl;
     const tasks = [];
     if (skinCanvas && skinUrl) {
       tasks.push(
@@ -5879,10 +6008,13 @@
       );
     }
     await Promise.all(tasks);
+    ordersPreviewsReady = true;
   }
 
   async function onOrdersTabShown() {
-    await loadOrdersPreviews();
+    if (ordersTab === "create") {
+      await loadOrdersPreviews();
+    }
     if (ordersTab === "list") {
       await loadOrdersList();
       renderOrdersUi();
@@ -6283,13 +6415,14 @@
       ordersOpenId = null;
       hideOrdersItemMenu();
       if (ordersTab === "list") {
+        disposeOrdersPreviews();
         if (!authToken) {
           openAuthModal("login");
         } else {
           await loadOrdersList();
         }
       } else {
-        loadOrdersPreviews();
+        await loadOrdersPreviews();
       }
       renderOrdersUi();
     });
