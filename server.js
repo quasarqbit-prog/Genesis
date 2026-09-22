@@ -2214,6 +2214,22 @@ async function assertFounderActor(req) {
   }
 }
 
+async function assertFounderCanEditOtherUser(req, targetId) {
+  await assertFounderActor(req);
+  const actorId = Number(req.user?.id);
+  const otherId = Number(targetId);
+  if (!Number.isFinite(actorId) || !Number.isFinite(otherId) || otherId < 0) {
+    const err = new Error("Некорректный пользователь");
+    err.status = 400;
+    throw err;
+  }
+  if (actorId === otherId) {
+    const err = new Error("Свой профиль меняй в настройках");
+    err.status = 403;
+    throw err;
+  }
+}
+
 function parseTargetUserId(raw) {
   const id = Number(raw);
   if (!Number.isFinite(id) || id < 0) {
@@ -2226,8 +2242,8 @@ function parseTargetUserId(raw) {
 
 app.put("/api/users/:id/profile", authMiddleware, async (req, res) => {
   try {
-    await assertFounderActor(req);
     const targetId = parseTargetUserId(req.params.id);
+    await assertFounderCanEditOtherUser(req, targetId);
     const existing = await loadUserPublic(targetId);
     if (!existing) {
       return res.status(404).json({ error: "Пользователь не найден" });
@@ -2327,8 +2343,8 @@ app.put("/api/users/:id/profile", authMiddleware, async (req, res) => {
 
 app.post("/api/users/:id/avatar/upload", authMiddleware, async (req, res) => {
   try {
-    await assertFounderActor(req);
     const targetId = parseTargetUserId(req.params.id);
+    await assertFounderCanEditOtherUser(req, targetId);
     const existing = await loadUserPublic(targetId);
     if (!existing) {
       return res.status(404).json({ error: "Пользователь не найден" });
@@ -2352,8 +2368,8 @@ app.post("/api/users/:id/avatar/upload", authMiddleware, async (req, res) => {
 
 app.post("/api/users/:id/avatar/reset", authMiddleware, async (req, res) => {
   try {
-    await assertFounderActor(req);
     const targetId = parseTargetUserId(req.params.id);
+    await assertFounderCanEditOtherUser(req, targetId);
     const existing = await loadUserPublic(targetId);
     if (!existing) {
       return res.status(404).json({ error: "Пользователь не найден" });

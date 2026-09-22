@@ -872,25 +872,29 @@
   let profileViewUser = null;
 
   function isFounderViewer() {
-    return Boolean(
-      authUser?.role === "founder" || authUser?.isFounder
-    );
+    return String(authUser?.role || "") === "founder";
   }
 
   function canFounderEditUser(user) {
     if (!isFounderViewer() || !user) return false;
-    return Number(user.id) !== Number(authUser?.id);
+    const viewerId = Number(authUser?.id);
+    const targetId = Number(user.id);
+    if (!Number.isFinite(viewerId) || !Number.isFinite(targetId)) return false;
+    return viewerId !== targetId;
   }
 
   function setUserProfileEditMode(on) {
+    const allowed = Boolean(on) && canFounderEditUser(profileViewUser);
     const view = document.getElementById("user-profile-race");
     const edit = document.getElementById("user-profile-race-edit");
     const avatar = document.getElementById("user-profile-avatar");
-    if (edit) edit.hidden = !on;
-    if (view) view.hidden = on || !view.innerHTML.trim();
+    const menu = document.getElementById("user-profile-avatar-menu");
+    if (edit) edit.hidden = !allowed;
+    if (view) view.hidden = allowed || !view.innerHTML.trim();
     if (avatar) {
-      avatar.classList.toggle("is-editable", Boolean(on) || canFounderEditUser(profileViewUser));
+      avatar.classList.toggle("is-editable", canFounderEditUser(profileViewUser));
     }
+    if (menu && !allowed) menu.hidden = true;
   }
 
   const AUTH_MC_NICK_RE = /^[A-Za-z0-9_]{3,16}$/;
