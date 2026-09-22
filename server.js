@@ -94,18 +94,63 @@ function authMiddleware(req, res, next) {
   if (!match) {
     return res.status(401).json({ error: "Требуется авторизация" });
   }
+  let payload;
   try {
-    const payload = jwt.verify(match[1], JWT_SECRET);
-    req.user = {
-      id: Number(payload.sub),
-      mcNick: payload.mcNick,
-      telegram: payload.telegram,
-      role: payload.role || "user",
-    };
-    return next();
+    payload = jwt.verify(match[1], JWT_SECRET);
   } catch {
     return res.status(401).json({ error: "Сессия недействительна" });
   }
+  resolveAuthUserRow(payload)
+    .then((row) => {
+      if (!row) {
+        return res.status(401).json({ error: "Сессия недействительна" });
+      }
+      const tokenId = Number(payload.sub);
+      const userId = Number(row.id);
+      req.user = {
+        id: userId,
+        mcNick: row.mc_nick,
+        telegram: row.telegram,
+        role: row.role || "user",
+        tokenNeedsRefresh:
+          !Number.isFinite(tokenId) || tokenId !== userId,
+      };
+      return next();
+    })
+    .catch((err) => {
+      console.error("authMiddleware:", err);
+      return res.status(500).json({ error: "Ошибка авторизации" });
+    });
+}
+
+async function resolveAuthUserRow(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const id = Number(payload.sub);
+  if (Number.isFinite(id)) {
+    const [rows] = await pool.execute(
+      `SELECT id, telegram, mc_nick, role FROM users WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    if (rows[0]) return rows[0];
+  }
+  const mcNick = normalizeMcNick(String(payload.mcNick || ""));
+  if (mcNick) {
+    const [rows] = await pool.execute(
+      `SELECT id, telegram, mc_nick, role FROM users WHERE mc_nick = :mcNick LIMIT 1`,
+      { mcNick }
+    );
+    if (rows[0]) return rows[0];
+  }
+  const rawTg = String(payload.telegram || "").trim();
+  if (rawTg) {
+    const telegram = normalizeTelegram(rawTg);
+    const [rows] = await pool.execute(
+      `SELECT id, telegram, mc_nick, role FROM users WHERE telegram = :telegram LIMIT 1`,
+      { telegram }
+    );
+    if (rows[0]) return rows[0];
+  }
+  return null;
 }
 
 function adminMiddleware(req, res, next) {
@@ -466,6 +511,8 @@ async function ensureFounderIdZero(founderId) {
       fs.renameSync(fromPath, toPath);
     }
 
+    await repairUserLocalAvatar(0);
+
     const [[maxRow]] = await conn.query(
       `SELECT COALESCE(MAX(id), 0) AS maxId FROM users`
     );
@@ -482,6 +529,83 @@ async function ensureFounderIdZero(founderId) {
     }
     conn.release();
   }
+}
+
+async function repairUserLocalAvatar(userId) {
+  const id = Number(userId);
+  if (!Number.isFinite(id) || id < 0) return "";
+
+  const [rows] = await pool.execute(
+    `SELECT p.avatar_path, u.telegram_id
+     FROM users u
+     LEFT JOIN profiles p ON p.user_id = u.id
+     WHERE u.id = :id
+     LIMIT 1`,
+    { id }
+  );
+  if (!rows[0]) return "";
+
+  const exts = ["png", "jpg", "jpeg", "webp", "gif"];
+  const current = String(rows[0].avatar_path || "").split("?")[0].trim();
+
+  const setPath = async (publicPath) => {
+    await ensureProfile(id, null);
+    await pool.execute(
+      `UPDATE profiles SET avatar_path = :avatarPath WHERE user_id = :userId`,
+      { avatarPath: publicPath, userId: id }
+    );
+    return publicPath;
+  };
+
+  const existsPublic = (publicPath) => {
+    if (!publicPath.startsWith("/uploads/avatars/")) return false;
+    return fs.existsSync(path.join(AVATARS_DIR, path.basename(publicPath)));
+  };
+
+  if (current && existsPublic(current)) {
+    const base = path.basename(current);
+    const m = /^(\d+)\.(\w+)$/.exec(base);
+    if (m && Number(m[1]) !== id) {
+      const destName = `${id}.${m[2]}`;
+      const fromAbs = path.join(AVATARS_DIR, base);
+      const toAbs = path.join(AVATARS_DIR, destName);
+      if (fs.existsSync(fromAbs)) {
+        if (fs.existsSync(toAbs) && toAbs !== fromAbs) fs.unlinkSync(toAbs);
+        if (toAbs !== fromAbs) fs.renameSync(fromAbs, toAbs);
+        return setPath(`/uploads/avatars/${destName}`);
+      }
+    }
+    return current;
+  }
+
+  for (const ext of exts) {
+    const abs = path.join(AVATARS_DIR, `${id}.${ext}`);
+    if (fs.existsSync(abs)) {
+      return setPath(`/uploads/avatars/${id}.${ext}`);
+    }
+  }
+
+  const orphan = /^\/uploads\/avatars\/(\d+)\.(\w+)$/.exec(current);
+  if (orphan) {
+    const oldAbs = path.join(AVATARS_DIR, `${orphan[1]}.${orphan[2]}`);
+    const newAbs = path.join(AVATARS_DIR, `${id}.${orphan[2]}`);
+    if (fs.existsSync(oldAbs)) {
+      if (fs.existsSync(newAbs) && newAbs !== oldAbs) fs.unlinkSync(newAbs);
+      if (newAbs !== oldAbs) fs.renameSync(oldAbs, newAbs);
+      return setPath(`/uploads/avatars/${id}.${orphan[2]}`);
+    }
+  }
+
+  const telegramId = rows[0].telegram_id;
+  if (telegramId) {
+    try {
+      const restored = await saveTelegramAvatar(id, "", telegramId);
+      if (restored) return String(restored).split("?")[0];
+    } catch (err) {
+      console.warn(`avatar repair for user ${id}:`, err.message);
+    }
+  }
+  return "";
 }
 
 async function ensureAdminSeed() {
@@ -544,6 +668,11 @@ async function ensureAdminSeed() {
     founderId = await ensureFounderIdZero(founderId);
   } catch (err) {
     console.warn("Founder id=0 remap:", err.message);
+  }
+  try {
+    await repairUserLocalAvatar(founderId ?? 0);
+  } catch (err) {
+    console.warn("Founder avatar repair:", err.message);
   }
 }
 
@@ -1766,6 +1895,15 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
     );
     const row = rows[0] || {};
 
+    let avatarPath = String(row.avatar_path || "").split("?")[0];
+    if (!avatarPath || !fs.existsSync(path.join(AVATARS_DIR, path.basename(avatarPath)))) {
+      const repaired = await repairUserLocalAvatar(req.user.id);
+      if (repaired) {
+        avatarPath = String(repaired).split("?")[0];
+        row.avatar_path = avatarPath;
+      }
+    }
+
     if (!row.avatar_path && u.telegram_id) {
       const refreshed = await saveTelegramAvatar(req.user.id, "", u.telegram_id);
       if (refreshed) row.avatar_path = refreshed.split("?")[0];
@@ -1786,7 +1924,7 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
     if (user.avatarUrl) {
       user.avatarUrl = publicAvatarUrl(user.avatarUrl);
     }
-    return res.json({
+    const payload = {
       user,
       registered: Boolean(row.registered),
       mcNick: user.mcNick,
@@ -1798,7 +1936,11 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
         meta: parseFormJson(row.meta_json),
       },
       updatedAt: row.updated_at || null,
-    });
+    };
+    if (req.user.tokenNeedsRefresh) {
+      payload.token = signToken(user);
+    }
+    return res.json(payload);
   } catch (err) {
     console.error("profile get:", err);
     return res.status(500).json({ error: "Не удалось загрузить профиль" });
@@ -2320,17 +2462,30 @@ io.use((socket, next) => {
     socket.data.user = null;
     return next();
   }
+  let payload;
   try {
-    const payload = jwt.verify(String(token), JWT_SECRET);
-    socket.data.user = {
-      id: Number(payload.sub),
-      mcNick: payload.mcNick,
-      telegram: payload.telegram,
-    };
+    payload = jwt.verify(String(token), JWT_SECRET);
   } catch {
     socket.data.user = null;
+    return next();
   }
-  return next();
+  resolveAuthUserRow(payload)
+    .then((row) => {
+      if (!row) {
+        socket.data.user = null;
+        return next();
+      }
+      socket.data.user = {
+        id: Number(row.id),
+        mcNick: row.mc_nick,
+        telegram: row.telegram,
+      };
+      return next();
+    })
+    .catch(() => {
+      socket.data.user = null;
+      return next();
+    });
 });
 
 io.on("connection", (socket) => {

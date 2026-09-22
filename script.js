@@ -482,6 +482,10 @@
     }
     try {
       const data = await api("/api/user/profile");
+      if (data.token) {
+        setAuthSession(data.token, data.user || authUser);
+        connectSocket();
+      }
       const prevAvatar = authUser?.avatarUrl || "";
       const nextUser = data.user || authUser;
       if (nextUser) {
