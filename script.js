@@ -1946,7 +1946,8 @@
     if (isLoading) playBtn.classList.add("is-loading");
     if (isPlaying) playBtn.classList.add("is-active", "is-playing");
     if (isLoading) {
-      playBtn.innerHTML = '<span class="sound-track__spinner" aria-hidden="true"></span>';
+      playBtn.innerHTML =
+        '<span class="sound-track__dots" aria-hidden="true"><i></i><i></i><i></i></span>';
       playBtn.title = "Загрузка…";
     } else if (isPlaying) {
       playBtn.textContent = "❚❚";
