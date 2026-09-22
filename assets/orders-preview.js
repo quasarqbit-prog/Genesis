@@ -34,13 +34,14 @@ function fitCamera(camera, object, canvas) {
   const maxDim = Math.max(size.x, size.y, size.z, 0.001);
   const aspect = canvas.width / Math.max(canvas.height, 1);
   const fov = camera.fov * (Math.PI / 180);
-  let dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.35;
-  if (aspect < 1) dist /= aspect;
+  // Closer framing so the model fills most of the preview frame
+  let dist = (maxDim / (2 * Math.tan(fov / 2))) * 0.92;
+  if (aspect < 1) dist *= 0.92;
 
-  camera.position.set(dist * 0.55, dist * 0.25, dist * 0.95);
+  camera.position.set(dist * 0.28, dist * 0.08, dist * 0.88);
   camera.near = Math.max(0.01, dist / 100);
   camera.far = dist * 20;
-  camera.lookAt(0, 0, 0);
+  camera.lookAt(0, size.y * 0.05, 0);
   camera.updateProjectionMatrix();
 }
 
@@ -71,7 +72,7 @@ export async function mountOrdersPreview(canvas, opts) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(32, width / height, 0.05, 50);
+  const camera = new THREE.PerspectiveCamera(28, width / height, 0.05, 50);
   const hemi = new THREE.HemisphereLight(0xffffff, 0x443355, 1.15);
   const key = new THREE.DirectionalLight(0xffffff, 0.85);
   key.position.set(2.2, 3.4, 2.8);
@@ -103,12 +104,49 @@ export async function mountOrdersPreview(canvas, opts) {
   scene.add(root);
   fitCamera(camera, root, canvas);
 
+  const host = canvas.closest(".orders-type-card") || canvas.parentElement || canvas;
+  let hovering = false;
+  let pointerX = 0;
+  let pointerY = 0;
+  let targetYaw = 0;
+  let targetPitch = 0;
+  let idlePhase = 0;
+
+  const onEnter = () => {
+    hovering = true;
+  };
+  const onLeave = () => {
+    hovering = false;
+  };
+  const onMove = (e) => {
+    const rect = host.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    pointerX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointerY = ((e.clientY - rect.top) / rect.height) * 2 - 1;
+    hovering = true;
+  };
+
+  host.addEventListener("pointerenter", onEnter);
+  host.addEventListener("pointerleave", onLeave);
+  host.addEventListener("pointermove", onMove);
+
   let alive = true;
   let frame = 0;
   const tick = () => {
     if (!alive) return;
     frame = requestAnimationFrame(tick);
-    root.rotation.y += 0.012;
+
+    if (hovering) {
+      targetYaw = pointerX * 0.85;
+      targetPitch = Math.max(-0.35, Math.min(0.4, -pointerY * 0.55));
+    } else {
+      idlePhase += 0.016;
+      targetYaw = Math.sin(idlePhase * 0.7) * 0.22;
+      targetPitch = 0;
+    }
+
+    root.rotation.y += (targetYaw - root.rotation.y) * 0.12;
+    root.rotation.x += (targetPitch - root.rotation.x) * 0.12;
     renderer.render(scene, camera);
   };
   tick();
@@ -117,6 +155,9 @@ export async function mountOrdersPreview(canvas, opts) {
     stop() {
       alive = false;
       cancelAnimationFrame(frame);
+      host.removeEventListener("pointerenter", onEnter);
+      host.removeEventListener("pointerleave", onLeave);
+      host.removeEventListener("pointermove", onMove);
       scene.remove(root);
       disposeObject(root);
       material.dispose();
