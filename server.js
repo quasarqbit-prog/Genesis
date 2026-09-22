@@ -270,6 +270,24 @@ function toPublicUser(rowOrUser) {
     rowOrUser.banned !== undefined
       ? Boolean(rowOrUser.banned) && Boolean(bannedUntil)
       : Boolean(bannedUntil);
+  const form =
+    rowOrUser.race && typeof rowOrUser.race === "object"
+      ? rowOrUser.race
+      : parseFormJson(rowOrUser.form_json || rowOrUser.formJson || rowOrUser.form);
+  const raceName = String(
+    rowOrUser.raceName ||
+      rowOrUser.race_name ||
+      form.raceName ||
+      ""
+  ).trim();
+  const race = {
+    raceName,
+    origin: String(form.origin || "").trim(),
+    abilities: String(form.abilities || "").trim(),
+    traits: String(form.traits || "").trim(),
+    useful: String(form.useful || "").trim(),
+    mechanics: String(form.mechanics || "").trim(),
+  };
   return {
     id: rowOrUser.id,
     mcNick: rowOrUser.mcNick || rowOrUser.mc_nick || "",
@@ -287,6 +305,8 @@ function toPublicUser(rowOrUser) {
     showOnlineFrame,
     banned,
     bannedUntil,
+    raceName,
+    race,
   };
 }
 
@@ -1102,7 +1122,8 @@ async function resetUserAvatar(userId) {
 async function loadUserPublic(userId) {
   const [rows] = await pool.execute(
     `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role,
-            p.avatar_path, p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame,
+            p.avatar_path, p.site_nick, p.race_name, p.form_json,
+            p.show_site_online, p.show_server_online, p.show_online_frame,
             b.expires_at AS banned_until
      FROM users u
      LEFT JOIN profiles p ON p.user_id = u.id
@@ -1917,6 +1938,8 @@ app.get("/api/user/profile", authMiddleware, async (req, res) => {
       role: u.role || req.user.role || "user",
       avatar_path: row.avatar_path || "",
       site_nick: row.site_nick || "",
+      race_name: row.race_name || "",
+      form_json: row.form_json || {},
       show_site_online: row.show_site_online,
       show_server_online: row.show_server_online,
       show_online_frame: row.show_online_frame,
@@ -2182,6 +2205,125 @@ app.post("/api/user/avatar/reset", authMiddleware, async (req, res) => {
   }
 });
 
+async function assertFounderActor(req) {
+  await refreshUserRole(req);
+  if (req.user?.role !== "founder") {
+    const err = new Error("Только основатель");
+    err.status = 403;
+    throw err;
+  }
+}
+
+function parseTargetUserId(raw) {
+  const id = Number(raw);
+  if (!Number.isFinite(id) || id < 0) {
+    const err = new Error("Некорректный пользователь");
+    err.status = 400;
+    throw err;
+  }
+  return id;
+}
+
+app.put("/api/users/:id/profile", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const targetId = parseTargetUserId(req.params.id);
+    const existing = await loadUserPublic(targetId);
+    if (!existing) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+    await ensureProfile(targetId, existing.mcNick || null);
+    const formIn =
+      req.body?.form && typeof req.body.form === "object" ? req.body.form : {};
+    const prevForm = existing.race || {};
+    const form = {
+      nick: existing.mcNick || "",
+      raceName: String(formIn.raceName ?? prevForm.raceName ?? "").trim().slice(0, 64),
+      origin: String(formIn.origin ?? prevForm.origin ?? "").trim(),
+      abilities: String(formIn.abilities ?? prevForm.abilities ?? "").trim(),
+      traits: String(formIn.traits ?? prevForm.traits ?? "").trim(),
+      useful: String(formIn.useful ?? prevForm.useful ?? "").trim(),
+      mechanics: String(formIn.mechanics ?? prevForm.mechanics ?? "").trim(),
+    };
+    const registered =
+      req.body?.registered !== undefined
+        ? Boolean(req.body.registered)
+        : Boolean(
+            form.raceName && form.origin && form.abilities && form.useful
+          );
+
+    await pool.execute(
+      `UPDATE profiles
+       SET form_json = CAST(:formJson AS JSON),
+           race_name = :raceName,
+           registered = :registered
+       WHERE user_id = :userId`,
+      {
+        userId: targetId,
+        formJson: JSON.stringify(form),
+        raceName: form.raceName || null,
+        registered: registered ? 1 : 0,
+      }
+    );
+    const user = await loadUserPublic(targetId);
+    broadcastDirectoryUser(user);
+    return res.json({ ok: true, user });
+  } catch (err) {
+    console.error("founder profile put:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось сохранить профиль",
+    });
+  }
+});
+
+app.post("/api/users/:id/avatar/upload", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const targetId = parseTargetUserId(req.params.id);
+    const existing = await loadUserPublic(targetId);
+    if (!existing) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+    const avatarUrl = await persistUploadedAvatar(
+      targetId,
+      req.body?.image || req.body?.dataUrl
+    );
+    const user = await loadUserPublic(targetId);
+    if (user) user.avatarUrl = avatarUrl;
+    broadcastDirectoryUser(user);
+    return res.json({ ok: true, user, avatarUrl });
+  } catch (err) {
+    console.error("founder avatar upload:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось загрузить аватар",
+    });
+  }
+});
+
+app.post("/api/users/:id/avatar/reset", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const targetId = parseTargetUserId(req.params.id);
+    const existing = await loadUserPublic(targetId);
+    if (!existing) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+    const avatarUrl = await resetUserAvatar(targetId);
+    const user = await loadUserPublic(targetId);
+    if (avatarUrl && user) user.avatarUrl = avatarUrl;
+    broadcastDirectoryUser(user);
+    return res.json({ ok: true, user, avatarUrl: user?.avatarUrl || "" });
+  } catch (err) {
+    console.error("founder avatar reset:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось сбросить аватар",
+    });
+  }
+});
+
 app.patch("/api/user/password", authMiddleware, async (req, res) => {
   try {
     const newPassword = String(req.body?.newPassword || "");
@@ -2220,7 +2362,8 @@ app.get("/api/users/directory", authMiddleware, async (_req, res) => {
   try {
     const [rows] = await pool.execute(
       `SELECT u.id, u.telegram, u.mc_nick, u.account_type, u.role,
-              p.avatar_path, p.site_nick, p.show_site_online, p.show_server_online, p.show_online_frame,
+              p.avatar_path, p.site_nick, p.race_name, p.form_json,
+              p.show_site_online, p.show_server_online, p.show_online_frame,
               b.expires_at AS banned_until
        FROM users u
        LEFT JOIN profiles p ON p.user_id = u.id

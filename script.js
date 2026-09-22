@@ -707,7 +707,8 @@
     tipParts.push(`id ${id}`);
     const tip = escapeHtml(tipParts.join(" · "));
     const avatarAttr = escapeHtml(String(user.avatarUrl || "").split("?")[0]);
-    return `<article class="presence-user ${cls}" data-user-id="${id}" data-nick="${nick}" data-mc-nick="${escapeHtml(mcNick)}" data-avatar="${avatarAttr}" data-status="${cls}">
+    const raceName = escapeHtml(userRaceName(user));
+    return `<article class="presence-user ${cls}" data-user-id="${id}" data-nick="${nick}" data-mc-nick="${escapeHtml(mcNick)}" data-avatar="${avatarAttr}" data-race="${raceName}" data-status="${cls}">
       <div class="presence-user__nick">${nick}</div>
       <button type="button" class="presence-avatar" aria-label="${tip}">${avatarHtml}</button>
       <div class="presence-user__tg">${tg || "—"}</div>
@@ -825,8 +826,88 @@
       siteNick: card.getAttribute("data-nick") || "",
       mcNick: card.getAttribute("data-mc-nick") || "",
       avatarUrl: card.getAttribute("data-avatar") || "",
+      raceName: card.getAttribute("data-race") || "",
       banned: card.getAttribute("data-status") === "is-banned",
     };
+  }
+
+  function userRaceName(user) {
+    return String(user?.raceName || user?.race?.raceName || "").trim();
+  }
+
+  function userRaceInfo(user) {
+    const race = user?.race && typeof user.race === "object" ? user.race : {};
+    return {
+      raceName: userRaceName(user),
+      origin: String(race.origin || "").trim(),
+      abilities: String(race.abilities || "").trim(),
+      traits: String(race.traits || "").trim(),
+      useful: String(race.useful || "").trim(),
+      mechanics: String(race.mechanics || "").trim(),
+    };
+  }
+
+  function renderRaceBlocks(race) {
+    const rows = [
+      ["Название", race.raceName],
+      ["Происхождение", race.origin],
+      ["Способности", race.abilities],
+      ["Особенности", race.traits],
+      ["Польза для других", race.useful],
+      ["Механики", race.mechanics],
+    ].filter(([, text]) => text);
+    if (!rows.length) return "";
+    return rows
+      .map(
+        ([label, text]) =>
+          `<div class="user-profile-race__block"><div class="user-profile-race__label">${escapeHtml(
+            label
+          )}</div><div class="user-profile-race__text">${escapeHtml(
+            text
+          )}</div></div>`
+      )
+      .join("");
+  }
+
+  let profileViewUser = null;
+
+  function isFounderViewer() {
+    return Boolean(
+      authUser?.role === "founder" || authUser?.isFounder
+    );
+  }
+
+  function canFounderEditUser(user) {
+    if (!isFounderViewer() || !user) return false;
+    return Number(user.id) !== Number(authUser?.id);
+  }
+
+  function setUserProfileEditMode(on) {
+    const view = document.getElementById("user-profile-race");
+    const edit = document.getElementById("user-profile-race-edit");
+    const avatar = document.getElementById("user-profile-avatar");
+    if (edit) edit.hidden = !on;
+    if (view) view.hidden = on || !view.innerHTML.trim();
+    if (avatar) {
+      avatar.classList.toggle("is-editable", Boolean(on) || canFounderEditUser(profileViewUser));
+    }
+  }
+
+  function fillFounderRaceEdit(user) {
+    const race = userRaceInfo(user);
+    const map = {
+      "edit-race-name": race.raceName,
+      "edit-race-origin": race.origin,
+      "edit-race-abilities": race.abilities,
+      "edit-race-traits": race.traits,
+      "edit-race-useful": race.useful,
+      "edit-race-mechanics": race.mechanics,
+    };
+    Object.entries(map).forEach(([id, value]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = value;
+    });
+    setHubFieldError("edit-race-error", "");
   }
 
   function hidePresenceMini() {
@@ -839,6 +920,7 @@
     if (!mini || !user) return;
     const nick = String(user.siteNick || user.mcNick || "—").trim() || "—";
     const id = Number(user.id);
+    const raceName = userRaceName(user);
     const status = presenceClass(user);
     fillProfileAvatar(
       document.getElementById("presence-mini-avatar"),
@@ -846,8 +928,13 @@
       status
     );
     const nickEl = document.getElementById("presence-mini-nick");
+    const raceEl = document.getElementById("presence-mini-race");
     const idEl = document.getElementById("presence-mini-id");
     if (nickEl) nickEl.textContent = nick;
+    if (raceEl) {
+      raceEl.textContent = raceName;
+      raceEl.hidden = !raceName;
+    }
     if (idEl) idEl.textContent = `id ${id}`;
     mini.hidden = false;
     mini.style.left = "0px";
@@ -868,10 +955,14 @@
   function setUserProfileDrawerOpen(open, user = null) {
     const drawer = document.getElementById("user-profile-drawer");
     if (!drawer) return;
+    const menu = document.getElementById("user-profile-avatar-menu");
+    if (menu) menu.hidden = true;
     if (open && user) {
+      profileViewUser = user;
       const nick = String(user.siteNick || user.mcNick || "—").trim() || "—";
       const mcNick = String(user.mcNick || "").trim();
       const status = presenceClass(user);
+      const race = userRaceInfo(user);
       fillProfileAvatar(
         document.getElementById("user-profile-avatar"),
         user,
@@ -880,6 +971,7 @@
       const nickEl = document.getElementById("user-profile-nick");
       const metaEl = document.getElementById("user-profile-meta");
       const idEl = document.getElementById("user-profile-id");
+      const raceEl = document.getElementById("user-profile-race");
       if (nickEl) nickEl.textContent = nick;
       if (metaEl) {
         metaEl.textContent =
@@ -887,12 +979,29 @@
         metaEl.hidden = !metaEl.textContent;
       }
       if (idEl) idEl.textContent = `id ${Number(user.id)}`;
+      if (raceEl) {
+        const html = renderRaceBlocks(race);
+        raceEl.innerHTML = html;
+        raceEl.hidden = !html;
+      }
+      fillFounderRaceEdit(user);
+      setUserProfileEditMode(false);
+      const avatarBtn = document.getElementById("user-profile-avatar");
+      if (avatarBtn) {
+        avatarBtn.classList.toggle("is-editable", canFounderEditUser(user));
+        avatarBtn.setAttribute(
+          "aria-label",
+          canFounderEditUser(user) ? "Редактировать профиль" : "Аватар"
+        );
+      }
       setSettingsDrawerOpen(false);
       setStaffPanelOpen(false);
       drawer.classList.add("is-open");
       drawer.setAttribute("aria-hidden", "false");
       hidePresenceMini();
     } else {
+      profileViewUser = null;
+      setUserProfileEditMode(false);
       drawer.classList.remove("is-open");
       drawer.setAttribute("aria-hidden", "true");
     }
@@ -2276,6 +2385,137 @@
 
   document.getElementById("user-profile-close-tab")?.addEventListener("click", () => {
     setUserProfileDrawerOpen(false);
+  });
+
+  function mergeDirectoryUser(user) {
+    if (!user || !Number.isFinite(Number(user.id))) return;
+    const id = Number(user.id);
+    const idx = directoryUsers.findIndex((u) => Number(u.id) === id);
+    if (idx >= 0) {
+      directoryUsers[idx] = {
+        ...directoryUsers[idx],
+        ...user,
+        avatarUrl: user.avatarUrl || directoryUsers[idx].avatarUrl || "",
+        race: user.race || directoryUsers[idx].race,
+        raceName: user.raceName || user.race?.raceName || directoryUsers[idx].raceName || "",
+      };
+    } else {
+      directoryUsers.push(user);
+    }
+    if (profileViewUser && Number(profileViewUser.id) === id) {
+      profileViewUser = { ...profileViewUser, ...directoryUsers[idx >= 0 ? idx : directoryUsers.length - 1] };
+    }
+    renderPlayersDirectory();
+  }
+
+  document.getElementById("user-profile-avatar")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!canFounderEditUser(profileViewUser)) return;
+    const edit = document.getElementById("user-profile-race-edit");
+    const menu = document.getElementById("user-profile-avatar-menu");
+    const next = Boolean(edit?.hidden);
+    setUserProfileEditMode(next);
+    if (menu) menu.hidden = !next;
+  });
+
+  document.getElementById("user-profile-avatar-upload")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.getElementById("user-profile-avatar-file")?.click();
+  });
+
+  document.getElementById("user-profile-avatar-file")?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !canFounderEditUser(profileViewUser)) return;
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+        reader.readAsDataURL(file);
+      });
+      const data = await api(`/api/users/${Number(profileViewUser.id)}/avatar/upload`, {
+        method: "POST",
+        body: JSON.stringify({ image: dataUrl }),
+      });
+      if (data.user) {
+        mergeDirectoryUser(data.user);
+        fillProfileAvatar(
+          document.getElementById("user-profile-avatar"),
+          data.user,
+          presenceClass(data.user)
+        );
+      }
+      showToast("Аватар обновлён");
+    } catch (err) {
+      showToast(err.message || "Не удалось загрузить аватар");
+    }
+  });
+
+  document.getElementById("user-profile-avatar-reset")?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (!canFounderEditUser(profileViewUser)) return;
+    try {
+      const data = await api(`/api/users/${Number(profileViewUser.id)}/avatar/reset`, {
+        method: "POST",
+        body: "{}",
+      });
+      if (data.user) {
+        mergeDirectoryUser(data.user);
+        fillProfileAvatar(
+          document.getElementById("user-profile-avatar"),
+          data.user,
+          presenceClass(data.user)
+        );
+      }
+      showToast("Аватар сброшен");
+    } catch (err) {
+      showToast(err.message || "Не удалось сбросить аватар");
+    }
+  });
+
+  document.getElementById("user-profile-race-edit")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!canFounderEditUser(profileViewUser)) return;
+    setHubFieldError("edit-race-error", "");
+    const form = {
+      raceName: String(document.getElementById("edit-race-name")?.value || "").trim(),
+      origin: String(document.getElementById("edit-race-origin")?.value || "").trim(),
+      abilities: String(document.getElementById("edit-race-abilities")?.value || "").trim(),
+      traits: String(document.getElementById("edit-race-traits")?.value || "").trim(),
+      useful: String(document.getElementById("edit-race-useful")?.value || "").trim(),
+      mechanics: String(document.getElementById("edit-race-mechanics")?.value || "").trim(),
+    };
+    if (!form.raceName || !form.origin || !form.abilities || !form.useful) {
+      setHubFieldError("edit-race-error", "Заполни обязательные поля расы");
+      return;
+    }
+    try {
+      const data = await api(`/api/users/${Number(profileViewUser.id)}/profile`, {
+        method: "PUT",
+        body: JSON.stringify({ form, registered: true }),
+      });
+      if (data.user) {
+        mergeDirectoryUser(data.user);
+        setUserProfileDrawerOpen(true, data.user);
+        setUserProfileEditMode(true);
+        const menu = document.getElementById("user-profile-avatar-menu");
+        if (menu) menu.hidden = false;
+      }
+      showToast("Профиль сохранён");
+    } catch (err) {
+      setHubFieldError("edit-race-error", err.message || "Не удалось сохранить");
+    }
+  });
+
+  document.getElementById("user-profile-avatar-menu")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
+
+  document.addEventListener("click", () => {
+    const menu = document.getElementById("user-profile-avatar-menu");
+    if (menu) menu.hidden = true;
   });
 
   document.getElementById("staff-panel-close")?.addEventListener("click", () => {

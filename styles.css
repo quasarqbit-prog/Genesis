@@ -1661,6 +1661,174 @@ h3,
     font-size: 12px;
     color: var(--accent);
   }
+
+  .user-profile-card__avatar {
+    appearance: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: default;
+  }
+
+  .user-profile-card__avatar.is-editable {
+    cursor: pointer;
+  }
+
+  .user-profile-card__avatar.is-editable:hover {
+    outline: 2px solid #b388ff;
+    outline-offset: 2px;
+  }
+
+  .user-profile-card {
+    position: relative;
+  }
+
+  .user-profile-race {
+    width: min(100%, 360px);
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+  }
+
+  .user-profile-race__block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .user-profile-race__label {
+    font-family: var(--font-ded);
+    font-size: 10px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: #b388ff;
+  }
+
+  .user-profile-race__text {
+    font-family: var(--font-ded);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .user-profile-race-edit {
+    width: min(100%, 360px);
+    margin-top: 12px;
+  }
+
+  #user-profile-avatar-menu {
+    top: 108px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
+.field-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05em;
+  height: 1.05em;
+  margin-left: 6px;
+  border-radius: 50%;
+  border: 1px solid #b388ff;
+  color: #b388ff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.field-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  z-index: 40;
+  width: max-content;
+  max-width: min(280px, 70vw);
+  padding: 8px 10px;
+  border: 2px solid #b388ff;
+  background: rgba(16, 8, 28, 0.98);
+  color: #efe8ff;
+  font-family: var(--font-ded);
+  font-size: 11px;
+  line-height: 1.35;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
+  text-align: left;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+
+.field-tip:hover::after,
+.field-tip:focus::after,
+.field-tip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (max-width: 720px) {
+  .user-profile-card__avatar {
+    appearance: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: default;
+  }
+
+  .user-profile-card__avatar.is-editable {
+    cursor: pointer;
+  }
+
+  .user-profile-race {
+    width: min(100%, 360px);
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+  }
+
+  .user-profile-race__label {
+    font-family: var(--font-ded);
+    font-size: 10px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: #b388ff;
+  }
+
+  .user-profile-race__text {
+    font-family: var(--font-ded);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .user-profile-race-edit {
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  .presence-mini__race {
+    font-family: var(--font-ded);
+    font-size: 10px;
+    color: #b388ff;
+  }
 }
 
 /* ---------- Desktop layout ---------- */
@@ -1960,6 +2128,71 @@ h3,
     color: var(--accent);
   }
 
+  .user-profile-card__avatar {
+    appearance: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: default;
+  }
+
+  .user-profile-card__avatar.is-editable {
+    cursor: pointer;
+  }
+
+  .user-profile-card__avatar.is-editable:hover {
+    outline: 2px solid #b388ff;
+    outline-offset: 2px;
+  }
+
+  .user-profile-card {
+    position: relative;
+  }
+
+  .user-profile-race {
+    width: min(100%, 360px);
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+  }
+
+  .user-profile-race__block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .user-profile-race__label {
+    font-family: var(--font-ded);
+    font-size: 10px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: #b388ff;
+  }
+
+  .user-profile-race__text {
+    font-family: var(--font-ded);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .user-profile-race-edit {
+    width: min(100%, 360px);
+    margin-top: 12px;
+  }
+
+  #user-profile-avatar-menu {
+    top: 108px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
   .presence-mini {
     position: fixed;
     z-index: 120;
@@ -2027,6 +2260,16 @@ h3,
     font-size: 12px;
     color: #efe8ff;
     white-space: nowrap;
+  }
+
+  .presence-mini__race {
+    font-family: var(--font-ded);
+    font-size: 10px;
+    color: #b388ff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
   }
 
   .presence-mini__id {
