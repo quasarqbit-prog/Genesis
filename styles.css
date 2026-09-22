@@ -734,6 +734,102 @@ h3,
   align-items: stretch;
 }
 
+.staff-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(8, 4, 16, 0.78);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 0.32s ease,
+    visibility 0.32s ease;
+}
+
+.staff-panel.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.staff-panel[hidden] {
+  display: none !important;
+}
+
+.staff-panel__frame {
+  width: min(720px, 100%);
+  max-height: min(90vh, 820px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #0e0818;
+  border: 3px solid var(--border-hi);
+  box-shadow: 6px 6px 0 var(--border-lo);
+  opacity: 0;
+  transform: translateY(14px) scale(0.98);
+  transition:
+    opacity 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.staff-panel.is-open .staff-panel__frame {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.staff-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 2px solid rgba(107, 90, 138, 0.45);
+  background: rgba(10, 6, 18, 0.55);
+}
+
+.staff-panel__title {
+  font-family: var(--font-ded);
+  font-size: 14px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.staff-panel__close {
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 2px solid var(--border-hi);
+  background: rgba(20, 12, 36, 0.96);
+  color: var(--text);
+  font-family: var(--font-ded);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.staff-panel__close:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.staff-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
 .hub-nav__btn[hidden] {
   display: none !important;
 }
@@ -2248,6 +2344,8 @@ h3,
   .app-shell,
   .admin-shell,
   .admin-shell__panel,
+  .staff-panel,
+  .staff-panel__frame,
   .auth-form.is-active {
     transition: none !important;
     animation: none !important;

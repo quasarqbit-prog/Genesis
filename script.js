@@ -887,6 +887,7 @@
       }
       if (idEl) idEl.textContent = `id ${Number(user.id)}`;
       setSettingsDrawerOpen(false);
+      setStaffPanelOpen(false);
       drawer.classList.add("is-open");
       drawer.setAttribute("aria-hidden", "false");
       hidePresenceMini();
@@ -1121,19 +1122,14 @@
   }
 
   function syncPanelAccess() {
-    const tabBtn = document.getElementById("hub-tab-panel");
-    const staff = Boolean(authUser?.isStaff || isStaffUser(authUser));
-    if (tabBtn) tabBtn.hidden = !(authToken && staff);
-    if (!staff) {
-      const activePanel = document.querySelector('.hub-nav__btn.is-active[data-hub-tab="panel"]');
-      if (activePanel) setHubTab("profile");
-    }
-    const permBlock = document.getElementById("panel-perm-block");
+    const staff = Boolean(authToken && (authUser?.isStaff || isStaffUser(authUser)));
+    if (!staff) setStaffPanelOpen(false);
     const canAdmin = Boolean(
       authUser?.isFounder ||
         authUser?.role === "founder" ||
         authUser?.role === "admin"
     );
+    const permBlock = document.getElementById("panel-perm-block");
     if (permBlock) permBlock.hidden = !canAdmin;
     document.querySelectorAll(".panel-admin-only").forEach((el) => {
       el.hidden = !canAdmin;
@@ -1145,10 +1141,10 @@
 
   function setHubTab(tab) {
     const name = String(tab || "profile");
-    document.querySelectorAll(".hub-nav__btn").forEach((btn) => {
+    document.querySelectorAll(".hub-nav__btn[data-hub-tab]").forEach((btn) => {
       btn.classList.toggle("is-active", btn.getAttribute("data-hub-tab") === name);
     });
-    document.querySelectorAll(".hub-view").forEach((view) => {
+    document.querySelectorAll(".hub-view[data-hub-view]").forEach((view) => {
       const match = view.getAttribute("data-hub-view") === name;
       view.classList.toggle("is-active", match);
       view.hidden = !match;
@@ -1159,12 +1155,48 @@
     return window.matchMedia("(min-width: 721px)").matches;
   }
 
+  function setStaffPanelOpen(open) {
+    const panel = document.getElementById("staff-panel");
+    if (!panel) return;
+    const staff = Boolean(authToken && (authUser?.isStaff || isStaffUser(authUser)));
+    const next = Boolean(open) && staff;
+    if (next) {
+      setSettingsDrawerOpen(false);
+      setUserProfileDrawerOpen(false);
+      hidePresenceMini();
+      syncPanelAccess();
+      renderConsoleHistory();
+      panel.hidden = false;
+      void panel.offsetWidth;
+      panel.classList.add("is-open");
+      panel.setAttribute("aria-hidden", "false");
+    } else {
+      panel.classList.remove("is-open");
+      panel.setAttribute("aria-hidden", "true");
+      window.setTimeout(() => {
+        if (!panel.classList.contains("is-open")) panel.hidden = true;
+      }, UI_TRANSITION_MS);
+    }
+  }
+
+  function toggleStaffPanel(opts = {}) {
+    if (!authToken || !(authUser?.isStaff || isStaffUser(authUser))) {
+      if (opts.notify) showToast("Нет доступа к панели");
+      return;
+    }
+    const panel = document.getElementById("staff-panel");
+    setStaffPanelOpen(!panel?.classList.contains("is-open"));
+  }
+
   function setSettingsDrawerOpen(open) {
     const drawer = document.getElementById("settings-drawer");
     const btn = document.getElementById("profile-avatar-btn");
     if (!drawer) return;
     const next = Boolean(open);
-    if (next) setUserProfileDrawerOpen(false);
+    if (next) {
+      setUserProfileDrawerOpen(false);
+      setStaffPanelOpen(false);
+    }
     drawer.classList.toggle("is-open", next);
     if (btn) btn.setAttribute("aria-expanded", next ? "true" : "false");
   }
@@ -2139,16 +2171,8 @@
   document.querySelectorAll(".hub-nav__btn[data-hub-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const tab = btn.getAttribute("data-hub-tab");
-      if (tab === "panel" && !isStaffUser(authUser)) {
-        showToast("Нет доступа к панели");
-        return;
-      }
       setHubTab(tab);
       setSettingsDrawerOpen(true);
-      if (tab === "panel") {
-        renderConsoleHistory();
-        syncPanelAccess();
-      }
     });
   });
 
@@ -2173,16 +2197,46 @@
     setUserProfileDrawerOpen(false);
   });
 
+  document.getElementById("staff-panel-close")?.addEventListener("click", () => {
+    setStaffPanelOpen(false);
+  });
+
   document.addEventListener("keydown", (e) => {
+    if (e.key === "F2") {
+      e.preventDefault();
+      if (!authToken) return;
+      toggleStaffPanel({ notify: true });
+      return;
+    }
     if (e.key !== "Escape") return;
+    setStaffPanelOpen(false);
     setSettingsDrawerOpen(false);
     setUserProfileDrawerOpen(false);
     hidePresenceMini();
   });
 
+  let lastTwoFingerTapAt = 0;
+  document.addEventListener(
+    "touchstart",
+    (e) => {
+      if (e.touches.length !== 2) return;
+      if (!authToken) return;
+      const now = Date.now();
+      if (now - lastTwoFingerTapAt > 0 && now - lastTwoFingerTapAt < 420) {
+        lastTwoFingerTapAt = 0;
+        e.preventDefault();
+        toggleStaffPanel();
+      } else {
+        lastTwoFingerTapAt = now;
+      }
+    },
+    { passive: false }
+  );
+
   window.matchMedia("(min-width: 721px)").addEventListener("change", () => {
     setSettingsDrawerOpen(false);
     setUserProfileDrawerOpen(false);
+    setStaffPanelOpen(false);
     hidePresenceMini();
   });
 
