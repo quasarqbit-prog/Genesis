@@ -5949,7 +5949,20 @@
     const title = document.getElementById("orders-form-modal-title");
     if (title) title.textContent = ordersFormKind === "model" ? "Заказ модели" : "Заказ скина";
     const desc = document.getElementById("orders-form-desc");
-    if (desc) desc.value = "";
+    if (desc) {
+      desc.value = "";
+      desc.placeholder =
+        ordersFormKind === "model"
+          ? "Опишите костюмную модель: форма, детали, цвета, стиль…"
+          : "Опишите скин: внешность, одежда, цвета, стиль…";
+    }
+    const refsBtn = document.getElementById("orders-form-refs-btn");
+    if (refsBtn) {
+      refsBtn.textContent =
+        ordersFormKind === "model"
+          ? "Прикрепить референсы"
+          : "Прикрепить референсы / скин";
+    }
     const err = document.getElementById("orders-form-error");
     if (err) {
       err.hidden = true;
