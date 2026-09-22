@@ -38,6 +38,8 @@ const MUSIC_INDEX_FILE = path.join(__dirname, "assets", "sound", "music-index.js
 const MUSIC_INDEX_CACHE_FILE = path.join(DATA_DIR, "music-index-cache.json");
 const GDRIVE_MUSIC_FOLDER_ID =
   process.env.GDRIVE_MUSIC_FOLDER_ID || "1xXichFk7SQH3TSD4XETlZ7ENNId1Pr1R";
+const GDRIVE_MOD_FOLDER_ID =
+  process.env.GDRIVE_MOD_FOLDER_ID || "1SrkR-K4V-0wmdjGQeyCOsAIn6KSaeV-P";
 const GDRIVE_ID_RE = /^[a-zA-Z0-9_-]{10,128}$/;
 
 const app = express();
@@ -3439,6 +3441,13 @@ function normalizeServerInfo(raw) {
     .slice(0, 120);
   let pathVal = modIn.path ? String(modIn.path).trim() : null;
   if (pathVal && !pathVal.startsWith("/uploads/mods/")) pathVal = null;
+  let driveId = String(modIn.driveId || "").trim();
+  if (driveId && !GDRIVE_ID_RE.test(driveId)) driveId = "";
+  let url = String(modIn.url || fallback.mod.url || "").trim() || null;
+  if (driveId) {
+    url = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(driveId)}`;
+    pathVal = null;
+  }
   return {
     name: String(src.name || fallback.name).trim().slice(0, 64) || "Genesis",
     password: String(
@@ -3452,9 +3461,8 @@ function normalizeServerInfo(raw) {
         .slice(0, 32),
       fileName,
       path: pathVal,
-      url: pathVal
-        ? pathVal
-        : String(modIn.url || fallback.mod.url || "").trim() || null,
+      driveId: driveId || null,
+      url: pathVal ? pathVal : url,
       updatedAt: modIn.updatedAt ? String(modIn.updatedAt) : null,
     },
   };
@@ -3492,7 +3500,12 @@ function writeServerInfo(doc) {
 
 function publicServerInfo(doc, { includePassword = false } = {}) {
   const info = normalizeServerInfo(doc);
-  const downloadUrl = info.mod.path || info.mod.url || null;
+  let downloadUrl = null;
+  if (info.mod.driveId) {
+    downloadUrl = `/api/server/mod/download`;
+  } else {
+    downloadUrl = info.mod.path || info.mod.url || null;
+  }
   return {
     name: info.name,
     ip: info.ip,
@@ -3503,6 +3516,7 @@ function publicServerInfo(doc, { includePassword = false } = {}) {
       version: info.mod.version,
       fileName: info.mod.fileName,
       downloadUrl,
+      driveId: info.mod.driveId || null,
       updatedAt: info.mod.updatedAt,
     },
   };
@@ -3596,21 +3610,45 @@ app.post(
         parseModVersionFromName(fileName) ||
         new Date().toISOString().slice(0, 10);
 
-      ensureUploadDirs();
-      const abs = path.join(MODS_DIR, fileName);
-      fs.writeFileSync(abs, buf);
+      const {
+        hasDriveUploadCredentials,
+        uploadModJar,
+      } = require("./scripts/gdrive-mod.js");
+
+      if (!hasDriveUploadCredentials()) {
+        return res.status(503).json({
+          error:
+            "Google Drive не настроен. Добавьте GDRIVE_SERVICE_ACCOUNT_JSON (или FILE) в .env и выдайте сервисному аккаунту права редактора на папку мода",
+        });
+      }
+
+      let uploaded;
+      try {
+        uploaded = await uploadModJar({
+          buffer: buf,
+          fileName,
+          folderId: GDRIVE_MOD_FOLDER_ID,
+        });
+      } catch (err) {
+        console.error("mod drive upload:", err);
+        return res.status(502).json({
+          error: err.message || "Не удалось загрузить мод на Google Drive",
+        });
+      }
+
       const current = readServerInfo();
       current.mod = {
         version,
         fileName,
-        path: `/uploads/mods/${fileName}`,
-        url: null,
+        path: null,
+        driveId: uploaded.id,
+        url: uploaded.downloadUrl,
         updatedAt: new Date().toISOString(),
       };
       const saved = writeServerInfo(current);
       const payload = publicServerInfo(saved, { includePassword: true });
       io.emit("server:updated", { server: payload });
-      return res.json({ ok: true, server: payload });
+      return res.json({ ok: true, server: payload, drive: uploaded });
     } catch (err) {
       console.error("mod upload:", err);
       const status = err.status || 500;
@@ -3620,6 +3658,36 @@ app.post(
     }
   }
 );
+
+app.get("/api/server/mod/download", authMiddleware, async (req, res) => {
+  try {
+    const info = readServerInfo();
+    const driveId = String(info.mod?.driveId || "").trim();
+    if (driveId && GDRIVE_ID_RE.test(driveId)) {
+      const fileName = String(info.mod?.fileName || "genesis.jar");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${fileName.replace(/"/g, "")}"`
+      );
+      proxyGdriveFile(driveId, req, res);
+      return;
+    }
+    if (info.mod?.path) {
+      const abs = path.join(__dirname, info.mod.path.replace(/^\//, ""));
+      if (!fs.existsSync(abs)) {
+        return res.status(404).json({ error: "Файл мода не найден" });
+      }
+      return res.download(abs, info.mod.fileName || "genesis.jar");
+    }
+    if (info.mod?.url) {
+      return res.redirect(info.mod.url);
+    }
+    return res.status(404).json({ error: "Мод ещё не загружен" });
+  } catch (err) {
+    console.error("mod download:", err);
+    return res.status(500).json({ error: "Не удалось скачать мод" });
+  }
+});
 
 app.put("/api/user/profile", authMiddleware, async (req, res) => {
   try {

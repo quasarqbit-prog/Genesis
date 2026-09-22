@@ -7939,14 +7939,44 @@
     setMainTab("patch");
   });
 
-  document.getElementById("server-mod-btn")?.addEventListener("click", () => {
+  document.getElementById("server-mod-btn")?.addEventListener("click", async (e) => {
+    e.preventDefault();
     const url = serverInfo?.mod?.downloadUrl;
+    const fileName = serverInfo?.mod?.fileName || "genesis.jar";
     if (!url || url === "#") {
       showToast("Файл мода пока не загружен");
       return;
     }
-    // локальная установка отмечается сразу при клике скачивания
-    markModInstalled();
+    try {
+      if (String(url).startsWith("/")) {
+        const res = await fetch(url, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
+        if (!res.ok) {
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            data = null;
+          }
+          throw new Error(data?.error || `HTTP ${res.status}`);
+        }
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+      markModInstalled();
+    } catch (err) {
+      showToast(err.message || "Не удалось скачать мод");
+    }
   });
 
   document.getElementById("server-mod-upload-btn")?.addEventListener("click", () => {
@@ -7962,6 +7992,7 @@
       showToast("Нужен файл .jar");
       return;
     }
+    showToast("Загрузка мода на Google Drive…");
     try {
       const res = await fetch("/api/server/mod/upload", {
         method: "POST",
@@ -7982,9 +8013,8 @@
         throw new Error(data?.error || `HTTP ${res.status}`);
       }
       if (data?.server) serverInfo = data.server;
-      // у основателя после загрузки тоже виден знак обновления, пока сам не скачает
       renderServerTab();
-      showToast("Мод обновлён");
+      showToast("Мод загружен на Google Drive");
     } catch (err) {
       showToast(err.message || "Не удалось загрузить мод");
     }
