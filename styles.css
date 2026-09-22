@@ -3683,6 +3683,10 @@ h3,
   border-top: 2px solid rgba(107, 90, 138, 0.35);
 }
 
+.rules-side__actions[hidden] {
+  display: none !important;
+}
+
 .rules-action-btn,
 .rules-mini-btn {
   appearance: none;
