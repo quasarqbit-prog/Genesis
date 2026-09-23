@@ -3337,9 +3337,10 @@ app.delete("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
         error: "Удалить можно только отклонённые анкеты",
       });
     }
-    // Delete the whole version chain so older revisions cannot reappear
+    // Hide from founder «Анкеты» only — keep submission data so user's folder stays linked as draft-ready
     await pool.execute(
-      `DELETE FROM studio_submissions
+      `UPDATE studio_submissions
+       SET hidden = 1, queue_no = NULL, deleted_at = NULL
        WHERE submitter_id = :uid AND client_folder_id = :folderId`,
       {
         uid: rows[0].submitter_id,
@@ -3715,7 +3716,8 @@ app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
              reason = NULL,
              reviewed_by = NULL,
              reviewed_at = NULL,
-             queue_no = NULL
+             queue_no = NULL,
+             hidden = 0
          WHERE id = :id`,
         { id, description, refsJson }
       );
@@ -3844,9 +3846,14 @@ app.delete("/api/orders/:id", authMiddleware, async (req, res) => {
     if (String(rows[0].status || "") !== "rejected") {
       return res.status(400).json({ error: "Удалить можно только отклонённые заказы" });
     }
-    await pool.execute(`DELETE FROM orders WHERE id = :id`, { id });
+    // Remove from founder «Анкеты» only — keep the order for the submitter
+    await pool.execute(
+      `UPDATE orders SET hidden = 1, queue_no = NULL WHERE id = :id`,
+      { id }
+    );
     await renumberQueue("orders");
-    return res.json({ ok: true, id });
+    const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    return res.json({ ok: true, id, order: mapOrderRow(next[0]) });
   } catch (err) {
     console.error("orders delete:", err);
     const status = err.status || 500;

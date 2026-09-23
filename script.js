@@ -6331,20 +6331,17 @@
       }
       const isRace = isRaceSubmission(sub);
       const label = sub?.folderName || (isRace ? "расу" : "анкету");
-      const ok = window.confirm(`Удалить «${label}» из списка анкет?`);
+      const ok = window.confirm(
+        `Убрать «${label}» из списка анкет? Папка пользователя сохранится.`
+      );
       if (!ok) return;
       try {
         await api(`/api/studio/submissions/${studioOpenReviewId}`, { method: "DELETE" });
         studioReviewList = studioReviewList.filter(
           (s) => Number(s.id) !== Number(studioOpenReviewId)
         );
-        if (isRace) {
-          raceSubmissionStatus = null;
-          raceSubmissionReason = "";
-          updateHubRaceStarUi();
-        }
         studioOpenReviewId = null;
-        showToast("Удалено");
+        showToast("Убрано из анкет");
         renderStudio();
       } catch (err) {
         showToast(err.message || "Не удалось удалить");
@@ -6543,7 +6540,7 @@
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=90`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=91`);
     return ordersPreviewMod;
   }
 
@@ -7880,16 +7877,18 @@
         showToast("Удалить можно только отклонённые заказы");
         return;
       }
-      const ok = window.confirm(`Удалить заказ #${ordersOpenId}?`);
+      const ok = window.confirm(
+        `Убрать заказ #${ordersOpenId} из списка анкет? У пользователя заказ останется.`
+      );
       if (!ok) return;
       try {
-        await api(`/api/orders/${ordersOpenId}`, { method: "DELETE" });
-        ordersList = ordersList.filter((o) => Number(o.id) !== Number(ordersOpenId));
+        const data = await api(`/api/orders/${ordersOpenId}`, { method: "DELETE" });
+        if (data?.order) upsertOrderInLists(data.order);
         ordersReviewList = ordersReviewList.filter(
           (o) => Number(o.id) !== Number(ordersOpenId)
         );
         ordersOpenId = null;
-        showToast("Удалено");
+        showToast("Убрано из анкет");
         renderOrdersUi();
       } catch (err) {
         showToast(err.message || "Не удалось удалить");
