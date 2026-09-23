@@ -592,6 +592,57 @@ async function ensureSchema() {
   } catch (err) {
     console.warn("orders kind enum migrate:", err.message);
   }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_rooms (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      name VARCHAR(64) NOT NULL,
+      type ENUM('dm', 'group', 'public') NOT NULL,
+      created_by INT UNSIGNED NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_chat_rooms_type (type),
+      CONSTRAINT fk_chat_rooms_creator
+        FOREIGN KEY (created_by) REFERENCES users (id)
+        ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_members (
+      room_id INT UNSIGNED NOT NULL,
+      user_id INT UNSIGNED NOT NULL,
+      joined_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (room_id, user_id),
+      KEY idx_chat_members_user (user_id),
+      CONSTRAINT fk_chat_members_room
+        FOREIGN KEY (room_id) REFERENCES chat_rooms (id)
+        ON DELETE CASCADE,
+      CONSTRAINT fk_chat_members_user
+        FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      room_id INT UNSIGNED NOT NULL,
+      user_id INT UNSIGNED NULL,
+      author_nick VARCHAR(32) NOT NULL,
+      body VARCHAR(1000) NOT NULL,
+      source ENUM('web', 'mod') NOT NULL DEFAULT 'web',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_chat_messages_room_id (room_id, id),
+      CONSTRAINT fk_chat_messages_room
+        FOREIGN KEY (room_id) REFERENCES chat_rooms (id)
+        ON DELETE CASCADE,
+      CONSTRAINT fk_chat_messages_user
+        FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
 }
 
 async function ensureFounderIdZero(founderId) {
@@ -2739,6 +2790,16 @@ app.post("/api/mc/online", async (req, res) => {
   }
 });
 
+const { attachChatSocket } = require("./chat-routes").setupChatRoutes({
+  app,
+  pool,
+  io,
+  authMiddleware,
+  MOD_API_KEY,
+  MC_NICK_RE,
+  normalizeMcNick,
+});
+
 /* ---------- Admin stub ---------- */
 app.get("/api/admin/status", adminMiddleware, async (_req, res) => {
   try {
@@ -4685,18 +4746,10 @@ io.on("connection", (socket) => {
     serverOnlineIds: getServerOnlineUserIds(),
   });
 
-  socket.on("chat:message", (payload) => {
-    const text = String(payload?.text || "").trim().slice(0, 300);
-    if (!text) return;
-    const username =
-      socket.data.user?.mcNick ||
-      String(payload?.username || "Гость").slice(0, 32);
-    io.emit("chat:message", {
-      username,
-      text,
-      at: Date.now(),
-    });
+  socket.on("chat:message", () => {
+    /* legacy global chat disabled — use /api/chat + chat:join rooms */
   });
+  attachChatSocket(socket);
 
   socket.on("disconnect", () => {
     onlineUsers.delete(socket.id);

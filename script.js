@@ -647,6 +647,16 @@
         renderPatchesUi();
       }
     });
+    socket.on("chat:message", (payload) => {
+      onChatSocketMessage(payload);
+    });
+    socket.on("chat:rooms-updated", () => {
+      if (document.querySelector('.main-tab-panel[data-main-panel="chat"].is-active')) {
+        refreshChatRooms({ keepSelection: true });
+      } else {
+        chatRoomsDirty = true;
+      }
+    });
     socket.on("connect_error", () => {
       /* API может быть недоступен офлайн — UI продолжает работать локально */
     });
@@ -3193,6 +3203,9 @@
     }
     if (name === "orders") {
       onOrdersTabShown();
+    }
+    if (name === "chat") {
+      ensureChatLoaded();
     }
     if (name === "guide") {
       renderGuideUi();
@@ -11147,6 +11160,392 @@
       showToast("Правила сохранены");
     } catch {
       /* toast already shown */
+    }
+  });
+
+  /* ---------- Chat tab ---------- */
+  let chatScope = "mine"; // mine | public
+  let chatRooms = [];
+  let chatActiveRoomId = null;
+  let chatMessages = [];
+  let chatRoomsDirty = true;
+  let chatLoading = false;
+
+  function escapeChat(s) {
+    return escapeHtml(String(s || ""));
+  }
+
+  function chatRoomTitle(room) {
+    if (!room) return "Чат";
+    return room.title || room.name || `Чат #${room.id}`;
+  }
+
+  function chatTypeLabel(type) {
+    if (type === "dm") return "ЛС";
+    if (type === "group") return "Группа";
+    if (type === "public") return "Общий";
+    return type || "";
+  }
+
+  function formatChatTime(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return "";
+    return d.toLocaleString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  async function ensureChatLoaded() {
+    if (!authToken) {
+      showToast("Войди, чтобы открыть чат");
+      return;
+    }
+    await loadPlayersDirectory();
+    await refreshChatRooms();
+  }
+
+  async function refreshChatRooms({ keepSelection = false } = {}) {
+    if (!authToken || chatLoading) return;
+    chatLoading = true;
+    try {
+      const data = await api(`/api/chat/rooms?scope=${chatScope === "public" ? "public" : "mine"}`);
+      chatRooms = Array.isArray(data.rooms) ? data.rooms : [];
+      chatRoomsDirty = false;
+      if (keepSelection && chatActiveRoomId) {
+        const still = chatRooms.find((r) => Number(r.id) === Number(chatActiveRoomId));
+        if (!still) chatActiveRoomId = null;
+      }
+      renderChatRoomList();
+      if (chatActiveRoomId) {
+        const room = chatRooms.find((r) => Number(r.id) === Number(chatActiveRoomId));
+        renderChatMain(room || null);
+      } else {
+        renderChatMain(null);
+      }
+    } catch (err) {
+      showToast(err.message || "Не удалось загрузить чаты");
+    } finally {
+      chatLoading = false;
+    }
+  }
+
+  function renderChatRoomList() {
+    const list = document.getElementById("chat-room-list");
+    const empty = document.getElementById("chat-room-empty");
+    if (!list) return;
+    list.innerHTML = "";
+    if (!chatRooms.length) {
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    chatRooms.forEach((room) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `chat-room${Number(room.id) === Number(chatActiveRoomId) ? " is-active" : ""}`;
+      btn.setAttribute("role", "listitem");
+      btn.dataset.roomId = String(room.id);
+      const preview = room.lastMessage
+        ? `${room.lastMessage.authorNick}: ${room.lastMessage.text}`
+        : chatScope === "public" && !room.joined
+          ? "Нажми, чтобы вступить"
+          : "Нет сообщений";
+      btn.innerHTML = `<span class="chat-room__name">${escapeChat(chatRoomTitle(room))}</span>
+        <span class="chat-room__meta">${escapeChat(chatTypeLabel(room.type))} · ${escapeChat(preview)}</span>`;
+      list.appendChild(btn);
+    });
+  }
+
+  function renderChatMessages() {
+    const box = document.getElementById("chat-messages");
+    if (!box) return;
+    const myId = Number(authUser?.id);
+    box.innerHTML = "";
+    chatMessages.forEach((msg) => {
+      const mine = myId && Number(msg.userId) === myId;
+      const el = document.createElement("article");
+      el.className = `chat-msg${mine ? " is-mine" : ""}`;
+      el.dataset.msgId = String(msg.id);
+      const src =
+        msg.source === "mod"
+          ? `<span class="chat-msg__source">игра</span>`
+          : "";
+      el.innerHTML = `<div class="chat-msg__meta">
+          <span class="chat-msg__nick">${escapeChat(msg.authorNick)}</span>
+          <span>${escapeChat(formatChatTime(msg.createdAt))}</span>
+          ${src}
+        </div>
+        <div class="chat-msg__body">${escapeChat(msg.text)}</div>`;
+      box.appendChild(el);
+    });
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function renderChatMain(room) {
+    const title = document.getElementById("chat-main-title");
+    const joinBtn = document.getElementById("chat-join-btn");
+    const form = document.getElementById("chat-compose");
+    if (!room) {
+      if (title) title.textContent = "Выбери чат";
+      if (joinBtn) joinBtn.hidden = true;
+      if (form) form.hidden = true;
+      chatMessages = [];
+      renderChatMessages();
+      return;
+    }
+    if (title) title.textContent = chatRoomTitle(room);
+    const needJoin = room.type === "public" && !room.joined;
+    if (joinBtn) joinBtn.hidden = !needJoin;
+    if (form) form.hidden = needJoin;
+    if (needJoin) {
+      chatMessages = [];
+      renderChatMessages();
+    }
+  }
+
+  async function openChatRoom(roomId) {
+    const id = Number(roomId);
+    const room = chatRooms.find((r) => Number(r.id) === id);
+    if (!room) return;
+    if (chatActiveRoomId && socket) {
+      socket.emit("chat:leave", { roomId: chatActiveRoomId });
+    }
+    chatActiveRoomId = id;
+    renderChatRoomList();
+    renderChatMain(room);
+    if (socket) socket.emit("chat:join", { roomId: id });
+    if (room.type === "public" && !room.joined) return;
+    try {
+      const data = await api(`/api/chat/rooms/${id}/messages?limit=100`);
+      chatMessages = Array.isArray(data.messages) ? data.messages : [];
+      renderChatMessages();
+    } catch (err) {
+      showToast(err.message || "Не удалось загрузить сообщения");
+    }
+  }
+
+  function onChatSocketMessage(payload) {
+    const roomId = Number(payload?.roomId);
+    const message = payload?.message;
+    if (!roomId || !message) return;
+    const room = chatRooms.find((r) => Number(r.id) === roomId);
+    if (room) room.lastMessage = message;
+    if (Number(chatActiveRoomId) === roomId) {
+      if (!chatMessages.some((m) => Number(m.id) === Number(message.id))) {
+        chatMessages.push(message);
+        renderChatMessages();
+      }
+    }
+    renderChatRoomList();
+  }
+
+  function syncChatCreateTypeUi() {
+    const type =
+      document.querySelector('input[name="chat-create-type"]:checked')?.value ||
+      "dm";
+    const nameBlock = document.getElementById("chat-create-name-block");
+    const membersBlock = document.getElementById("chat-create-members-block");
+    const nameInput = document.getElementById("chat-create-name");
+    if (nameBlock) nameBlock.hidden = type === "dm";
+    if (membersBlock) membersBlock.hidden = type === "public";
+    if (nameInput) {
+      nameInput.required = type !== "dm";
+      if (type === "dm") nameInput.value = "";
+    }
+    renderChatCreateMembers(type);
+  }
+
+  function renderChatCreateMembers(type) {
+    const box = document.getElementById("chat-create-members");
+    const filterEl = document.getElementById("chat-create-members-filter");
+    if (!box) return;
+    const q = String(filterEl?.value || "")
+      .trim()
+      .toLowerCase();
+    const myId = Number(authUser?.id);
+    const users = (directoryUsers || []).filter((u) => Number(u.id) !== myId);
+    const filtered = users.filter((u) => {
+      if (!q) return true;
+      const nick = String(u.mcNick || u.siteNick || "").toLowerCase();
+      return nick.includes(q);
+    });
+    box.innerHTML = "";
+    if (!filtered.length) {
+      box.innerHTML = `<p class="chat-room-empty">Никого не найдено</p>`;
+      return;
+    }
+    filtered.forEach((u) => {
+      const label = document.createElement("label");
+      label.className = "chat-member-row";
+      const input = document.createElement("input");
+      input.type = type === "dm" ? "radio" : "checkbox";
+      input.name = "chat-create-member";
+      input.value = String(u.id);
+      const span = document.createElement("span");
+      span.textContent =
+        String(u.siteNick || u.mcNick || `id ${u.id}`).trim() || `id ${u.id}`;
+      if (u.mcNick && u.siteNick && u.siteNick !== u.mcNick) {
+        span.textContent += ` (${u.mcNick})`;
+      }
+      label.append(input, span);
+      box.appendChild(label);
+    });
+  }
+
+  function openChatCreateModal() {
+    const err = document.getElementById("chat-create-error");
+    if (err) {
+      err.hidden = true;
+      err.textContent = "";
+    }
+    const nameInput = document.getElementById("chat-create-name");
+    const filterEl = document.getElementById("chat-create-members-filter");
+    if (nameInput) nameInput.value = "";
+    if (filterEl) filterEl.value = "";
+    const dmRadio = document.querySelector('input[name="chat-create-type"][value="dm"]');
+    if (dmRadio) dmRadio.checked = true;
+    syncChatCreateTypeUi();
+    openStudioModal("chat-create-modal");
+  }
+
+  function closeChatCreateModal() {
+    closeStudioModal("chat-create-modal");
+  }
+
+  document.getElementById("chat-scope-tabs")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-chat-scope]");
+    if (!btn) return;
+    chatScope = btn.getAttribute("data-chat-scope") === "public" ? "public" : "mine";
+    document.querySelectorAll("#chat-scope-tabs [data-chat-scope]").forEach((el) => {
+      el.classList.toggle("is-active", el === btn);
+    });
+    chatActiveRoomId = null;
+    refreshChatRooms();
+  });
+
+  document.getElementById("chat-room-list")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".chat-room[data-room-id]");
+    if (!btn) return;
+    openChatRoom(btn.getAttribute("data-room-id"));
+  });
+
+  document.getElementById("chat-create-btn")?.addEventListener("click", async () => {
+    if (!authToken) {
+      showToast("Войди, чтобы создать чат");
+      return;
+    }
+    await loadPlayersDirectory();
+    openChatCreateModal();
+  });
+
+  document.getElementById("chat-create-modal-close")?.addEventListener("click", closeChatCreateModal);
+  document.getElementById("chat-create-cancel")?.addEventListener("click", closeChatCreateModal);
+
+  document.querySelectorAll('input[name="chat-create-type"]').forEach((el) => {
+    el.addEventListener("change", syncChatCreateTypeUi);
+  });
+
+  document.getElementById("chat-create-members-filter")?.addEventListener("input", () => {
+    const type =
+      document.querySelector('input[name="chat-create-type"]:checked')?.value ||
+      "dm";
+    renderChatCreateMembers(type);
+  });
+
+  document.getElementById("chat-create-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const err = document.getElementById("chat-create-error");
+    const setErr = (msg) => {
+      if (!err) return;
+      err.textContent = msg || "";
+      err.hidden = !msg;
+    };
+    setErr("");
+    const type =
+      document.querySelector('input[name="chat-create-type"]:checked')?.value ||
+      "dm";
+    const name = String(document.getElementById("chat-create-name")?.value || "").trim();
+    const memberIds = [
+      ...document.querySelectorAll('input[name="chat-create-member"]:checked'),
+    ].map((el) => Number(el.value));
+    if (type === "dm" && memberIds.length !== 1) {
+      setErr("Выбери одного пользователя для личных сообщений");
+      return;
+    }
+    if ((type === "group" || type === "public") && !name) {
+      setErr("Укажи название чата");
+      return;
+    }
+    try {
+      const data = await api("/api/chat/rooms", {
+        method: "POST",
+        body: JSON.stringify({ type, name, memberIds }),
+      });
+      closeChatCreateModal();
+      if (type === "public") {
+        chatScope = "public";
+        document.querySelectorAll("#chat-scope-tabs [data-chat-scope]").forEach((el) => {
+          el.classList.toggle(
+            "is-active",
+            el.getAttribute("data-chat-scope") === "public"
+          );
+        });
+      } else {
+        chatScope = "mine";
+        document.querySelectorAll("#chat-scope-tabs [data-chat-scope]").forEach((el) => {
+          el.classList.toggle(
+            "is-active",
+            el.getAttribute("data-chat-scope") === "mine"
+          );
+        });
+      }
+      await refreshChatRooms();
+      if (data?.room?.id) await openChatRoom(data.room.id);
+      showToast("Чат создан");
+    } catch (ex) {
+      setErr(ex.message || "Не удалось создать чат");
+    }
+  });
+
+  document.getElementById("chat-join-btn")?.addEventListener("click", async () => {
+    if (!chatActiveRoomId) return;
+    try {
+      const data = await api(`/api/chat/rooms/${chatActiveRoomId}/join`, {
+        method: "POST",
+        body: "{}",
+      });
+      if (data?.room) {
+        const idx = chatRooms.findIndex((r) => Number(r.id) === Number(data.room.id));
+        if (idx >= 0) chatRooms[idx] = data.room;
+        else chatRooms.push(data.room);
+      }
+      await openChatRoom(chatActiveRoomId);
+      showToast("Ты в чате");
+    } catch (err) {
+      showToast(err.message || "Не удалось вступить");
+    }
+  });
+
+  document.getElementById("chat-compose")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("chat-compose-input");
+    const text = String(input?.value || "").trim();
+    if (!text || !chatActiveRoomId) return;
+    try {
+      const data = await api(`/api/chat/rooms/${chatActiveRoomId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      });
+      if (input) input.value = "";
+      if (data?.message) {
+        onChatSocketMessage({ roomId: chatActiveRoomId, message: data.message });
+      }
+    } catch (err) {
+      showToast(err.message || "Не удалось отправить");
     }
   });
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=93" />
+  <link rel="stylesheet" href="styles.css?v=96" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -34,6 +34,7 @@
           </button>
           <button type="button" class="main-tabs__btn" data-main-tab="patch">Патч-ноут</button>
           <button type="button" class="main-tabs__btn" data-main-tab="orders">Заказы</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="chat">Чат</button>
           <button type="button" class="main-tabs__btn" data-main-tab="guide">Инструкция</button>
         </nav>
 
@@ -282,6 +283,38 @@
                   <button type="button" class="mc-btn mc-btn--ghost studio-review-delete" id="orders-delete-btn" hidden>Удалить</button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div class="main-tab-panel" data-main-panel="chat" id="main-panel-chat" hidden>
+            <div class="chat-workspace" id="chat-workspace">
+              <aside class="chat-sidebar" aria-label="Список чатов">
+                <nav class="chat-scope-tabs" id="chat-scope-tabs" aria-label="Тип чатов">
+                  <button type="button" class="chat-scope-tabs__btn is-active" data-chat-scope="mine">Мои чаты</button>
+                  <button type="button" class="chat-scope-tabs__btn" data-chat-scope="public">Общие чаты</button>
+                </nav>
+                <div class="chat-room-list" id="chat-room-list" role="list"></div>
+                <p class="chat-room-empty" id="chat-room-empty" hidden>Пока нет чатов</p>
+                <button type="button" class="mc-btn chat-create-btn" id="chat-create-btn">Создать чат</button>
+              </aside>
+              <section class="chat-main" aria-label="Переписка">
+                <header class="chat-main__head" id="chat-main-head">
+                  <h2 class="chat-main__title" id="chat-main-title">Выбери чат</h2>
+                  <button type="button" class="mc-btn mc-btn--compact mc-btn--ghost" id="chat-join-btn" hidden>Вступить</button>
+                </header>
+                <div class="chat-messages" id="chat-messages" role="log" aria-live="polite"></div>
+                <form class="chat-compose" id="chat-compose" hidden>
+                  <input
+                    class="field-input chat-compose__input"
+                    id="chat-compose-input"
+                    type="text"
+                    maxlength="1000"
+                    placeholder="Сообщение…"
+                    autocomplete="off"
+                  />
+                  <button type="submit" class="mc-btn" id="chat-compose-send">Отправить</button>
+                </form>
+              </section>
             </div>
           </div>
 
@@ -1694,6 +1727,50 @@
     </div>
   </div>
 
+  <div class="auth-modal ui-layer" id="chat-create-modal" hidden>
+    <div class="popup-shell studio-modal-shell">
+      <button type="button" class="popup-close studio-modal__close" id="chat-create-modal-close" aria-label="Закрыть">×</button>
+      <div class="auth-modal__panel studio-modal__panel studio-modal__panel--wide" role="dialog" aria-modal="true" aria-labelledby="chat-create-modal-title">
+        <div class="auth-modal__head">
+          <h2 class="auth-modal__title" id="chat-create-modal-title">Создать чат</h2>
+        </div>
+        <form class="studio-modal__form" id="chat-create-form" novalidate>
+          <div class="field-block" id="chat-create-name-block">
+            <label class="field-label" for="chat-create-name">Название</label>
+            <input class="field-input" id="chat-create-name" type="text" maxlength="64" autocomplete="off" />
+          </div>
+          <div class="field-block">
+            <span class="field-label">Тип</span>
+            <div class="chat-type-grid" role="radiogroup" aria-label="Тип чата">
+              <label class="chat-type-option">
+                <input type="radio" name="chat-create-type" value="dm" checked />
+                <span>Личные сообщения</span>
+              </label>
+              <label class="chat-type-option">
+                <input type="radio" name="chat-create-type" value="group" />
+                <span>Групповой чат</span>
+              </label>
+              <label class="chat-type-option">
+                <input type="radio" name="chat-create-type" value="public" />
+                <span>Общий чат</span>
+              </label>
+            </div>
+          </div>
+          <div class="field-block" id="chat-create-members-block">
+            <label class="field-label" for="chat-create-members-filter">Участники</label>
+            <input class="field-input" id="chat-create-members-filter" type="search" placeholder="Поиск по нику…" autocomplete="off" />
+            <div class="chat-members-pick" id="chat-create-members" role="group" aria-label="Список пользователей"></div>
+          </div>
+          <p class="field-error" id="chat-create-error" hidden></p>
+          <div class="studio-modal__actions">
+            <button type="button" class="mc-btn mc-btn--ghost" id="chat-create-cancel">Отмена</button>
+            <button type="submit" class="mc-btn" id="chat-create-submit">Создать</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div class="auth-modal ui-layer" id="studio-folder-modal" hidden>
     <div class="popup-shell studio-modal-shell">
       <button type="button" class="popup-close studio-modal__close" id="studio-folder-modal-close" aria-label="Закрыть">×</button>
@@ -1932,6 +2009,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=95"></script>
+  <script src="script.js?v=96"></script>
 </body>
 </html>

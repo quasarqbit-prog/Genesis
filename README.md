@@ -57,6 +57,23 @@ MOD_API_KEY=длинный_секретный_ключ
 
 Сервисный аккаунт Google для этого не нужен: папка должна быть доступна по ссылке.
 
+## Чаты (сайт + мод)
+Вкладки **Мои чаты** (ЛС + группы, только по добавлению) и **Общие чаты** (вступление свободное).
+
+Мод (заголовок `x-mod-key`, в query/body — `nick` игрока):
+
+| Метод | Путь | Назначение |
+|-------|------|------------|
+| GET | `/api/mc/chat/rooms?nick=&scope=mine\|public` | Список чатов |
+| POST | `/api/mc/chat/rooms` | Создать `{ nick, type, name?, memberIds?\|memberNicks? }` |
+| POST | `/api/mc/chat/rooms/:id/join` | Вступить в общий `{ nick }` |
+| GET | `/api/mc/chat/rooms/:id/messages?nick=&after=` | История |
+| POST | `/api/mc/chat/messages` | Отправить `{ nick, roomId, text }` |
+| GET | `/api/mc/chat/sync?nick=&after=` | Новые сообщения во всех чатах игрока |
+| GET | `/api/mc/chat/directory` | Список ников для создания |
+
+Сайт → мод: мод периодически дергает `sync`. Мод → сайт: `POST .../messages` (сразу видно на сайте через Socket.io).
+
 ## API
 | Метод | Путь | Описание |
 |-------|------|----------|
