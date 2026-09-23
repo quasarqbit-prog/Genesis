@@ -333,6 +333,19 @@ function setupChatRoutes({
     );
     const message = serializeMessage(rows[0]);
     io.to(`chat:${room.id}`).emit("chat:message", { roomId: room.id, message });
+    try {
+      const [members] = await pool.execute(
+        `SELECT user_id FROM chat_members WHERE room_id = :roomId`,
+        { roomId: room.id }
+      );
+      for (const m of members) {
+        const uid = Number(m.user_id);
+        if (!Number.isFinite(uid)) continue;
+        io.to(`user:${uid}`).emit("chat:message", { roomId: room.id, message });
+      }
+    } catch (err) {
+      console.warn("chat member notify:", err.message);
+    }
     io.emit("chat:rooms-updated", { roomId: room.id });
     return message;
   }

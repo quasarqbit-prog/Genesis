@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=96" />
+  <link rel="stylesheet" href="styles.css?v=97" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -34,7 +34,9 @@
           </button>
           <button type="button" class="main-tabs__btn" data-main-tab="patch">Патч-ноут</button>
           <button type="button" class="main-tabs__btn" data-main-tab="orders">Заказы</button>
-          <button type="button" class="main-tabs__btn" data-main-tab="chat">Чат</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="chat">
+            Чат<span class="main-tabs__badge" id="chat-tab-badge" hidden>!</span>
+          </button>
           <button type="button" class="main-tabs__btn" data-main-tab="guide">Инструкция</button>
         </nav>
 
@@ -361,6 +363,7 @@
             Раса<span class="hub-tab-star" id="hub-race-star" hidden aria-hidden="true">★</span>
           </button>
           <button type="button" class="hub-nav__btn" data-hub-tab="sound">Звук</button>
+          <button type="button" class="hub-nav__btn" data-hub-tab="chat">Чат</button>
         </nav>
 
         <div class="hub-body">
@@ -616,6 +619,35 @@
                   <button type="button" class="sound-order-btn" data-sound-order="reverse" data-tip="Снизу вверх" aria-label="Снизу вверх">↑</button>
                   <button type="button" class="sound-order-btn" data-sound-order="shuffle" data-tip="Случайный порядок" aria-label="Случайный порядок">⟳</button>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="hub-view" id="hub-view-chat" data-hub-view="chat" hidden>
+            <div class="chat-settings" id="chat-settings">
+              <div class="sound-block">
+                <p class="sound-block__title">Уведомления</p>
+                <button type="button" class="sound-master-toggle is-on" id="chat-notify-all" aria-pressed="true">Все уведомления: Вкл</button>
+                <button type="button" class="sound-master-toggle" id="chat-notify-public" aria-pressed="false">Общие чаты: Выкл</button>
+                <button type="button" class="sound-master-toggle is-on" id="chat-notify-personal" aria-pressed="true">Личные чаты: Вкл</button>
+              </div>
+
+              <div class="hub-sep" aria-hidden="true"></div>
+
+              <div class="sound-block">
+                <p class="sound-block__title">Мои чаты</p>
+                <p class="field-hint">Точечно выключить уведомления</p>
+                <div class="chat-settings-rooms" id="chat-settings-mine"></div>
+                <p class="chat-room-empty" id="chat-settings-mine-empty" hidden>Нет личных чатов</p>
+              </div>
+
+              <div class="hub-sep" aria-hidden="true"></div>
+
+              <div class="sound-block">
+                <p class="sound-block__title">Общие чаты</p>
+                <p class="field-hint">Точечно выключить уведомления</p>
+                <div class="chat-settings-rooms" id="chat-settings-public"></div>
+                <p class="chat-room-empty" id="chat-settings-public-empty" hidden>Нет общих чатов</p>
               </div>
             </div>
           </section>
@@ -2009,6 +2041,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=96"></script>
+  <script src="script.js?v=97"></script>
 </body>
 </html>

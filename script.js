@@ -1679,6 +1679,7 @@
       view.hidden = !match;
     });
     if (name === "sound") renderSoundSettingsUi();
+    if (name === "chat") renderChatSettingsUi();
   }
 
   /* ---------- Sound / music ---------- */
@@ -11164,12 +11165,96 @@
   });
 
   /* ---------- Chat tab ---------- */
+  const CHAT_NOTIFY_PREFS_KEY = "genesis_chat_notify_prefs_v1";
   let chatScope = "mine"; // mine | public
   let chatRooms = [];
   let chatActiveRoomId = null;
   let chatMessages = [];
   let chatRoomsDirty = true;
   let chatLoading = false;
+  /** @type {Map<number, any>} */
+  const chatRoomsById = new Map();
+  /** @type {Set<number>} */
+  const chatUnreadRoomIds = new Set();
+  /** @type {Set<number>} */
+  const chatSeenMsgIds = new Set();
+  let chatNotifyPrefs = {
+    all: true,
+    public: false,
+    personal: true,
+    mutedRooms: {},
+  };
+  let chatSettingsMine = [];
+  let chatSettingsPublic = [];
+
+  function loadChatNotifyPrefs() {
+    try {
+      const raw = localStorage.getItem(CHAT_NOTIFY_PREFS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      chatNotifyPrefs = {
+        all: parsed.all !== false,
+        public: Boolean(parsed.public),
+        personal: parsed.personal !== false,
+        mutedRooms:
+          parsed.mutedRooms && typeof parsed.mutedRooms === "object"
+            ? { ...parsed.mutedRooms }
+            : {},
+      };
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function saveChatNotifyPrefs() {
+    try {
+      localStorage.setItem(CHAT_NOTIFY_PREFS_KEY, JSON.stringify(chatNotifyPrefs));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function isChatRoomMuted(roomId) {
+    return Boolean(chatNotifyPrefs.mutedRooms[String(roomId)]);
+  }
+
+  function setChatRoomMuted(roomId, muted) {
+    const key = String(roomId);
+    if (muted) chatNotifyPrefs.mutedRooms[key] = true;
+    else delete chatNotifyPrefs.mutedRooms[key];
+    saveChatNotifyPrefs();
+  }
+
+  function shouldNotifyChatMessage(room, message) {
+    if (!chatNotifyPrefs.all) return false;
+    if (!room || !message) return false;
+    const myId = Number(authUser?.id);
+    if (myId && Number(message.userId) === myId) return false;
+    if (isChatRoomMuted(room.id)) return false;
+    const type = String(room.type || "");
+    if (type === "public") {
+      if (!chatNotifyPrefs.public) return false;
+    } else {
+      // dm + group = личные
+      if (!chatNotifyPrefs.personal) return false;
+    }
+    const chatTabOpen = Boolean(
+      document.querySelector('.main-tab-panel[data-main-panel="chat"].is-active')
+    );
+    if (chatTabOpen && Number(chatActiveRoomId) === Number(room.id)) return false;
+    return true;
+  }
+
+  function updateChatTabBadge() {
+    const badge = document.getElementById("chat-tab-badge");
+    if (badge) badge.hidden = chatUnreadRoomIds.size === 0;
+  }
+
+  function rememberChatRoom(room) {
+    if (!room?.id) return;
+    chatRoomsById.set(Number(room.id), room);
+  }
 
   function escapeChat(s) {
     return escapeHtml(String(s || ""));
@@ -11199,6 +11284,102 @@
     });
   }
 
+  function setChatNotifyToggleUi(btn, on, labelOn, labelOff) {
+    if (!btn) return;
+    btn.classList.toggle("is-on", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.textContent = on ? labelOn : labelOff;
+  }
+
+  function renderChatSettingsRoomList(hostId, emptyId, rooms) {
+    const host = document.getElementById(hostId);
+    const empty = document.getElementById(emptyId);
+    if (!host) return;
+    host.innerHTML = "";
+    if (!rooms.length) {
+      if (empty) empty.hidden = false;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    rooms.forEach((room) => {
+      const row = document.createElement("div");
+      row.className = "chat-settings-room";
+      const name = document.createElement("span");
+      name.className = "chat-settings-room__name";
+      name.textContent = chatRoomTitle(room);
+      const muteBtn = document.createElement("button");
+      muteBtn.type = "button";
+      const muted = isChatRoomMuted(room.id);
+      muteBtn.className = `chat-settings-room__mute${muted ? "" : " is-on"}`;
+      muteBtn.dataset.roomId = String(room.id);
+      muteBtn.textContent = muted ? "Выкл" : "Вкл";
+      muteBtn.setAttribute("aria-pressed", muted ? "false" : "true");
+      muteBtn.title = muted ? "Уведомления выключены" : "Уведомления включены";
+      row.append(name, muteBtn);
+      host.appendChild(row);
+    });
+  }
+
+  async function renderChatSettingsUi() {
+    loadChatNotifyPrefs();
+    setChatNotifyToggleUi(
+      document.getElementById("chat-notify-all"),
+      chatNotifyPrefs.all,
+      "Все уведомления: Вкл",
+      "Все уведомления: Выкл"
+    );
+    setChatNotifyToggleUi(
+      document.getElementById("chat-notify-public"),
+      chatNotifyPrefs.public,
+      "Общие чаты: Вкл",
+      "Общие чаты: Выкл"
+    );
+    setChatNotifyToggleUi(
+      document.getElementById("chat-notify-personal"),
+      chatNotifyPrefs.personal,
+      "Личные чаты: Вкл",
+      "Личные чаты: Выкл"
+    );
+
+    if (!authToken) {
+      chatSettingsMine = [];
+      chatSettingsPublic = [];
+      renderChatSettingsRoomList("chat-settings-mine", "chat-settings-mine-empty", []);
+      renderChatSettingsRoomList(
+        "chat-settings-public",
+        "chat-settings-public-empty",
+        []
+      );
+      return;
+    }
+
+    try {
+      const [mineData, publicData] = await Promise.all([
+        api("/api/chat/rooms?scope=mine"),
+        api("/api/chat/rooms?scope=public"),
+      ]);
+      chatSettingsMine = Array.isArray(mineData.rooms) ? mineData.rooms : [];
+      chatSettingsPublic = (Array.isArray(publicData.rooms) ? publicData.rooms : []).filter(
+        (r) => r.joined
+      );
+      chatSettingsMine.forEach(rememberChatRoom);
+      chatSettingsPublic.forEach(rememberChatRoom);
+    } catch (err) {
+      console.warn("chat settings rooms:", err.message);
+    }
+
+    renderChatSettingsRoomList(
+      "chat-settings-mine",
+      "chat-settings-mine-empty",
+      chatSettingsMine
+    );
+    renderChatSettingsRoomList(
+      "chat-settings-public",
+      "chat-settings-public-empty",
+      chatSettingsPublic
+    );
+  }
+
   async function ensureChatLoaded() {
     if (!authToken) {
       showToast("Войди, чтобы открыть чат");
@@ -11214,6 +11395,7 @@
     try {
       const data = await api(`/api/chat/rooms?scope=${chatScope === "public" ? "public" : "mine"}`);
       chatRooms = Array.isArray(data.rooms) ? data.rooms : [];
+      chatRooms.forEach(rememberChatRoom);
       chatRoomsDirty = false;
       if (keepSelection && chatActiveRoomId) {
         const still = chatRooms.find((r) => Number(r.id) === Number(chatActiveRoomId));
@@ -11246,7 +11428,8 @@
     chatRooms.forEach((room) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = `chat-room${Number(room.id) === Number(chatActiveRoomId) ? " is-active" : ""}`;
+      const unread = chatUnreadRoomIds.has(Number(room.id));
+      btn.className = `chat-room${Number(room.id) === Number(chatActiveRoomId) ? " is-active" : ""}${unread ? " is-unread" : ""}`;
       btn.setAttribute("role", "listitem");
       btn.dataset.roomId = String(room.id);
       const preview = room.lastMessage
@@ -11254,7 +11437,7 @@
         : chatScope === "public" && !room.joined
           ? "Нажми, чтобы вступить"
           : "Нет сообщений";
-      btn.innerHTML = `<span class="chat-room__name">${escapeChat(chatRoomTitle(room))}</span>
+      btn.innerHTML = `<span class="chat-room__name">${escapeChat(chatRoomTitle(room))}${unread ? " !" : ""}</span>
         <span class="chat-room__meta">${escapeChat(chatTypeLabel(room.type))} · ${escapeChat(preview)}</span>`;
       list.appendChild(btn);
     });
@@ -11315,6 +11498,8 @@
       socket.emit("chat:leave", { roomId: chatActiveRoomId });
     }
     chatActiveRoomId = id;
+    chatUnreadRoomIds.delete(id);
+    updateChatTabBadge();
     renderChatRoomList();
     renderChatMain(room);
     if (socket) socket.emit("chat:join", { roomId: id });
@@ -11322,6 +11507,7 @@
     try {
       const data = await api(`/api/chat/rooms/${id}/messages?limit=100`);
       chatMessages = Array.isArray(data.messages) ? data.messages : [];
+      chatMessages.forEach((m) => chatSeenMsgIds.add(Number(m.id)));
       renderChatMessages();
     } catch (err) {
       showToast(err.message || "Не удалось загрузить сообщения");
@@ -11332,16 +11518,65 @@
     const roomId = Number(payload?.roomId);
     const message = payload?.message;
     if (!roomId || !message) return;
-    const room = chatRooms.find((r) => Number(r.id) === roomId);
-    if (room) room.lastMessage = message;
+    const msgId = Number(message.id);
+    if (Number.isFinite(msgId) && msgId > 0) {
+      if (chatSeenMsgIds.has(msgId)) {
+        // already handled (user: + chat: duplicate)
+        if (Number(chatActiveRoomId) === roomId) {
+          /* still ok */
+        }
+        return;
+      }
+      chatSeenMsgIds.add(msgId);
+      if (chatSeenMsgIds.size > 400) {
+        const keep = [...chatSeenMsgIds].slice(-200);
+        chatSeenMsgIds.clear();
+        keep.forEach((id) => chatSeenMsgIds.add(id));
+      }
+    }
+
+    let room =
+      chatRooms.find((r) => Number(r.id) === roomId) ||
+      chatRoomsById.get(roomId) ||
+      null;
+    if (room) {
+      room.lastMessage = message;
+      rememberChatRoom(room);
+    } else {
+      room = {
+        id: roomId,
+        type: "group",
+        name: `Чат #${roomId}`,
+        title: `Чат #${roomId}`,
+        lastMessage: message,
+        joined: true,
+      };
+      rememberChatRoom(room);
+    }
+
     if (Number(chatActiveRoomId) === roomId) {
       if (!chatMessages.some((m) => Number(m.id) === Number(message.id))) {
         chatMessages.push(message);
         renderChatMessages();
       }
+      chatUnreadRoomIds.delete(roomId);
+    } else {
+      const myId = Number(authUser?.id);
+      if (!(myId && Number(message.userId) === myId)) {
+        chatUnreadRoomIds.add(roomId);
+      }
     }
+    updateChatTabBadge();
     renderChatRoomList();
+
+    if (shouldNotifyChatMessage(room, message)) {
+      const preview = String(message.text || "").slice(0, 80);
+      showToast(`${message.authorNick}: ${preview}`);
+    }
   }
+
+  loadChatNotifyPrefs();
+  updateChatTabBadge();
 
   function syncChatCreateTypeUi() {
     const type =
@@ -11444,6 +11679,36 @@
 
   document.getElementById("chat-create-modal-close")?.addEventListener("click", closeChatCreateModal);
   document.getElementById("chat-create-cancel")?.addEventListener("click", closeChatCreateModal);
+
+  document.getElementById("chat-notify-all")?.addEventListener("click", () => {
+    chatNotifyPrefs.all = !chatNotifyPrefs.all;
+    saveChatNotifyPrefs();
+    renderChatSettingsUi();
+  });
+  document.getElementById("chat-notify-public")?.addEventListener("click", () => {
+    chatNotifyPrefs.public = !chatNotifyPrefs.public;
+    saveChatNotifyPrefs();
+    renderChatSettingsUi();
+  });
+  document.getElementById("chat-notify-personal")?.addEventListener("click", () => {
+    chatNotifyPrefs.personal = !chatNotifyPrefs.personal;
+    saveChatNotifyPrefs();
+    renderChatSettingsUi();
+  });
+  document.getElementById("chat-settings-mine")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".chat-settings-room__mute[data-room-id]");
+    if (!btn) return;
+    const id = btn.getAttribute("data-room-id");
+    setChatRoomMuted(id, !isChatRoomMuted(id));
+    renderChatSettingsUi();
+  });
+  document.getElementById("chat-settings-public")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".chat-settings-room__mute[data-room-id]");
+    if (!btn) return;
+    const id = btn.getAttribute("data-room-id");
+    setChatRoomMuted(id, !isChatRoomMuted(id));
+    renderChatSettingsUi();
+  });
 
   document.querySelectorAll('input[name="chat-create-type"]').forEach((el) => {
     el.addEventListener("change", syncChatCreateTypeUi);
