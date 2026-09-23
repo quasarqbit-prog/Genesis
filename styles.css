@@ -2301,6 +2301,11 @@ h3,
   overflow: hidden;
 }
 
+.orders-grid > .studio-tile:has(.orders-tile-visual--skin):hover {
+  overflow: visible;
+  z-index: 4;
+}
+
 .orders-grid > .studio-tile .catalog-card__visual {
   flex: 0 0 96px;
   width: 100%;
