@@ -6543,7 +6543,7 @@
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=88`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=89`);
     return ordersPreviewMod;
   }
 
@@ -6656,7 +6656,7 @@
             objUrl: assets.skinModel,
             textureUrl: skinUrl,
             yaw: Math.PI,
-            yOffset: 0.18,
+            yOffset: -0.06,
             cropFeet: true,
             mode: "button",
             lookHost: skinCanvas.closest(".orders-type-card") || skinCanvas,

@@ -25,13 +25,19 @@ function disposeObject(root) {
   });
 }
 
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+/**
+ * @param {number} cropBlend 0 = full body, 1 = feet cropped
+ */
 function fitCamera(
   camera,
   object,
   canvas,
-  { yOffset = 0, xOffset = 0, cropFeet = false, mode = "button" } = {}
+  { yOffset = 0, xOffset = 0, cropBlend = 0, mode = "button" } = {}
 ) {
-  // Reset layout from previous fits (needed when toggling cropFeet)
   object.position.set(0, 0, 0);
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
@@ -43,33 +49,41 @@ function fitCamera(
   const maxDim = Math.max(size.x, size.y, size.z, 0.001);
   const aspect = canvas.width / Math.max(canvas.height, 1);
   const fov = camera.fov * (Math.PI / 180);
+  const baseDist = maxDim / (2 * Math.tan(fov / 2));
 
-  if (mode === "install" || (!cropFeet && mode !== "button")) {
-    // Full body with padding so head + feet fit
-    let dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.22;
+  if (mode === "button") {
+    // Head fully visible; only feet clipped by frame overflow
+    let dist = baseDist * 0.9;
+    if (aspect < 1) dist *= 0.95;
+    object.position.y -= size.y * 0.04;
+    camera.position.set(0, dist * 0.05, dist * 0.98);
+    camera.lookAt(0, -size.y * 0.02, 0);
+    camera.near = Math.max(0.01, dist / 100);
+    camera.far = dist * 20;
+  } else if (mode === "install") {
+    let dist = baseDist * 1.22;
     if (aspect < 1) dist *= 1.05;
     camera.position.set(0, dist * 0.06, dist * 1.02);
     camera.lookAt(0, size.y * 0.02, 0);
     camera.near = Math.max(0.01, dist / 100);
     camera.far = dist * 20;
-  } else if (mode === "button") {
-    // Type "Кнопка": raised bust crop, fills frame from the top
-    let dist = maxDim / (2 * Math.tan(fov / 2));
-    if (aspect < 1) dist /= aspect;
-    dist *= 0.52;
-    object.position.y += size.y * 0.12;
-    camera.position.set(0, dist * 0.08, dist * 0.9);
-    camera.lookAt(0, size.y * 0.08, 0);
-    camera.near = Math.max(0.01, dist / 100);
-    camera.far = dist * 20;
   } else {
-    // Type "Анкета": crop feet (expand via setCropFeet)
-    let dist = maxDim / (2 * Math.tan(fov / 2));
-    if (aspect < 1) dist /= aspect;
-    dist *= 0.72;
-    object.position.y -= size.y * 0.08;
-    camera.position.set(0, dist * 0.14, dist * 0.88);
-    camera.lookAt(0, size.y * 0.16, 0);
+    // Anketa: blend cropped ↔ full body
+    const t = Math.max(0, Math.min(1, cropBlend));
+    let distCrop = baseDist * 0.78;
+    let distFull = baseDist * 1.08;
+    if (aspect < 1) {
+      distCrop /= aspect;
+      distFull /= aspect;
+    }
+    const dist = lerp(distFull, distCrop, t);
+    object.position.y -= size.y * lerp(0, 0.06, t);
+    camera.position.set(
+      0,
+      dist * lerp(0.05, 0.12, t),
+      dist * lerp(1.0, 0.88, t)
+    );
+    camera.lookAt(0, size.y * lerp(0.02, 0.14, t), 0);
     camera.near = Math.max(0.01, dist / 100);
     camera.far = dist * 20;
   }
@@ -168,15 +182,16 @@ export async function mountOrdersPreview(canvas, opts) {
   const xOffset = Number.isFinite(opts.xOffset) ? Number(opts.xOffset) : 0;
   let cropFeet =
     opts.cropFeet != null ? Boolean(opts.cropFeet) : mode !== "install";
+  let cropBlend = cropFeet ? 1 : 0;
+  let cropTarget = cropBlend;
   root.rotation.y = baseYaw;
 
-  const applyFit = () => {
-    const framingMode = !cropFeet && mode === "anketa" ? "install" : mode;
+  const applyFit = (blend = cropBlend) => {
     fitCamera(camera, root, canvas, {
       yOffset,
       xOffset,
-      cropFeet,
-      mode: framingMode,
+      cropBlend: blend,
+      mode,
     });
   };
   applyFit();
@@ -261,6 +276,12 @@ export async function mountOrdersPreview(canvas, opts) {
     if (!alive) return;
     frame = requestAnimationFrame(tick);
 
+    if (mode === "anketa" && Math.abs(cropBlend - cropTarget) > 0.0008) {
+      cropBlend += (cropTarget - cropBlend) * 0.14;
+      if (Math.abs(cropBlend - cropTarget) < 0.002) cropBlend = cropTarget;
+      applyFit(cropBlend);
+    }
+
     if (mode === "install") {
       lookPitch += (0 - lookPitch) * 0.12;
       root.rotation.y = baseYaw + lookYaw;
@@ -291,9 +312,12 @@ export async function mountOrdersPreview(canvas, opts) {
     mode,
     setCropFeet(next) {
       const value = Boolean(next);
-      if (value === cropFeet) return;
       cropFeet = value;
-      applyFit();
+      cropTarget = value ? 1 : 0;
+      if (mode !== "anketa") {
+        cropBlend = cropTarget;
+        applyFit(cropBlend);
+      }
     },
     stop() {
       alive = false;

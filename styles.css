@@ -1896,10 +1896,14 @@ h3,
 }
 
 .orders-tile-canvas {
-  width: 100%;
-  height: 100%;
+  width: 72px;
+  height: 96px;
   display: block;
   image-rendering: auto;
+  flex: 0 0 auto;
+  transform-origin: center bottom;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  transform: scale(1) translateY(0);
 }
 
 .orders-tile-visual--skin {
@@ -1910,12 +1914,19 @@ h3,
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  transition: overflow 0s linear 0.32s;
 }
 
 .studio-tile:hover .orders-tile-visual--skin,
 .orders-tile-visual--skin.is-skin-full {
   overflow: visible;
   z-index: 4;
+  transition: overflow 0s;
+}
+
+.studio-tile:hover .orders-tile-visual--skin .orders-tile-canvas,
+.orders-tile-visual--skin.is-skin-full .orders-tile-canvas {
+  transform: scale(1.42) translateY(-10px);
 }
 
 .orders-detail-skins {
@@ -2319,6 +2330,11 @@ h3,
 .orders-grid > .studio-tile .orders-tile-visual--skin.is-skin-full {
   overflow: visible;
   max-height: none;
+}
+
+.orders-grid > .studio-tile .orders-tile-canvas {
+  width: 72px;
+  height: 96px;
 }
 
 .orders-preview-card {
