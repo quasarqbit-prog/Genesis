@@ -1902,6 +1902,47 @@ h3,
   image-rendering: auto;
 }
 
+.orders-tile-visual--skin {
+  overflow: hidden;
+  align-self: stretch;
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.studio-tile:hover .orders-tile-visual--skin,
+.orders-tile-visual--skin.is-skin-full {
+  overflow: visible;
+  z-index: 4;
+}
+
+.orders-detail-skins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 0 0 8px;
+}
+
+.orders-detail-skin {
+  width: 140px;
+  height: 220px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(8, 4, 16, 0.45);
+  border: 2px solid rgba(107, 90, 138, 0.4);
+  overflow: visible;
+}
+
+.orders-detail-skin__canvas {
+  width: 140px;
+  height: 220px;
+  display: block;
+  image-rendering: auto;
+}
+
 .orders-empty {
   margin: 0;
   padding: 24px 14px;

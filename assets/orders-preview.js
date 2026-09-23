@@ -25,7 +25,9 @@ function disposeObject(root) {
   });
 }
 
-function fitCamera(camera, object, canvas, yOffset = 0, xOffset = 0) {
+function fitCamera(camera, object, canvas, { yOffset = 0, xOffset = 0, cropFeet = false } = {}) {
+  // Reset layout from previous fits
+  object.position.set(0, 0, 0);
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
@@ -36,13 +38,21 @@ function fitCamera(camera, object, canvas, yOffset = 0, xOffset = 0) {
   const maxDim = Math.max(size.x, size.y, size.z, 0.001);
   const aspect = canvas.width / Math.max(canvas.height, 1);
   const fov = camera.fov * (Math.PI / 180);
-  let dist = (maxDim / (2 * Math.tan(fov / 2))) * 0.92;
-  if (aspect < 1) dist *= 0.92;
+  let dist = maxDim / (2 * Math.tan(fov / 2));
+  if (aspect < 1) dist /= aspect;
 
-  camera.position.set(0, dist * 0.08, dist * 0.95);
+  if (cropFeet) {
+    dist *= 0.72;
+    object.position.y -= size.y * 0.08;
+    camera.position.set(0, dist * 0.14, dist * 0.88);
+    camera.lookAt(0, size.y * 0.16, 0);
+  } else {
+    dist *= 1.08;
+    camera.position.set(0, dist * 0.04, dist * 0.98);
+    camera.lookAt(0, 0, 0);
+  }
   camera.near = Math.max(0.01, dist / 100);
   camera.far = dist * 20;
-  camera.lookAt(0, size.y * 0.05 + yOffset * 0.3, 0);
   camera.updateProjectionMatrix();
 }
 
@@ -56,7 +66,15 @@ export function stopOrdersPreview(canvas) {
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ objUrl: string, textureUrl: string, yaw?: number, yOffset?: number, xOffset?: number }} opts
+ * @param {{
+ *   objUrl: string,
+ *   textureUrl: string,
+ *   yaw?: number,
+ *   yOffset?: number,
+ *   xOffset?: number,
+ *   cropFeet?: boolean,
+ *   lookHost?: Element | null,
+ * }} opts
  */
 export async function mountOrdersPreview(canvas, opts) {
   if (!canvas || !opts?.objUrl || !opts?.textureUrl) return null;
@@ -115,10 +133,16 @@ export async function mountOrdersPreview(canvas, opts) {
   const baseYaw = Number.isFinite(opts.yaw) ? Number(opts.yaw) : Math.PI;
   const yOffset = Number.isFinite(opts.yOffset) ? Number(opts.yOffset) : 0;
   const xOffset = Number.isFinite(opts.xOffset) ? Number(opts.xOffset) : 0;
+  let cropFeet = Boolean(opts.cropFeet);
   root.rotation.y = baseYaw;
-  fitCamera(camera, root, canvas, yOffset, xOffset);
+  fitCamera(camera, root, canvas, { yOffset, xOffset, cropFeet });
 
-  const host = canvas.closest(".orders-type-card") || canvas.parentElement || canvas;
+  const host =
+    opts.lookHost ||
+    canvas.closest(".orders-type-card") ||
+    canvas.closest(".studio-tile") ||
+    canvas.parentElement ||
+    canvas;
   let hovering = false;
   let pointerX = 0;
   let pointerY = 0;
@@ -153,7 +177,6 @@ export async function mountOrdersPreview(canvas, opts) {
     frame = requestAnimationFrame(tick);
 
     if (hovering) {
-      // Inverted X so model looks toward the cursor (facing camera)
       targetYaw = -pointerX * 0.85;
       targetPitch = Math.max(-0.35, Math.min(0.4, -pointerY * 0.55));
     } else {
@@ -171,6 +194,12 @@ export async function mountOrdersPreview(canvas, opts) {
   tick();
 
   const handle = {
+    setCropFeet(next) {
+      const value = Boolean(next);
+      if (value === cropFeet) return;
+      cropFeet = value;
+      fitCamera(camera, root, canvas, { yOffset, xOffset, cropFeet });
+    },
     stop() {
       alive = false;
       cancelAnimationFrame(frame);

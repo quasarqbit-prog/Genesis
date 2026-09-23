@@ -6433,6 +6433,9 @@
   let ordersPreviewSkinUrl = null;
   /** @type {Map<number, HTMLCanvasElement>} */
   const ordersTilePreviewCanvases = new Map();
+  /** @type {Map<number, { setCropFeet?: (v: boolean) => void, stop?: () => void }>} */
+  const ordersTilePreviewHandles = new Map();
+  const ordersDetailPreviewCanvases = new Set();
   /** @type {Set<number>} */
   const ordersDismissedIds = new Set();
   let ordersReviewStatusFilter = "all";
@@ -6542,13 +6545,41 @@
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=84`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=85`);
     return ordersPreviewMod;
   }
 
   async function disposeOrdersTilePreviews() {
+    const handles = [...ordersTilePreviewHandles.values()];
+    ordersTilePreviewHandles.clear();
     const canvases = [...ordersTilePreviewCanvases.values()];
     ordersTilePreviewCanvases.clear();
+    handles.forEach((h) => {
+      try {
+        h?.stop?.();
+      } catch (_) {
+        /* ignore */
+      }
+    });
+    try {
+      const mod = ordersPreviewMod || (await ensureOrdersPreviewMod().catch(() => null));
+      if (mod?.stopOrdersPreview) {
+        canvases.forEach((c) => {
+          try {
+            mod.stopOrdersPreview(c);
+          } catch (_) {
+            /* ignore */
+          }
+        });
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  async function disposeOrdersDetailPreviews() {
+    const canvases = [...ordersDetailPreviewCanvases];
+    ordersDetailPreviewCanvases.clear();
     try {
       const mod = ordersPreviewMod || (await ensureOrdersPreviewMod().catch(() => null));
       if (mod?.stopOrdersPreview) {
@@ -6567,6 +6598,7 @@
 
   async function disposeOrdersPreviews() {
     await disposeOrdersTilePreviews();
+    await disposeOrdersDetailPreviews();
     const skinCanvas = document.getElementById("orders-skin-preview");
     const modelCanvas = document.getElementById("orders-model-preview");
     try {
@@ -6646,35 +6678,74 @@
     ordersPreviewsReady = true;
   }
 
-  async function mountOrderTileSkinPreview(canvas, textureUrl, orderId) {
-    if (!canvas || !textureUrl) return;
+  async function mountOrderTileSkinPreview(canvas, textureUrl, orderId, { cropFeet = true, lookHost = null } = {}) {
+    if (!canvas || !textureUrl) return null;
     try {
       const assets = await ensureOrdersSkinAssets();
       const mod = await ensureOrdersPreviewMod();
-      await mod.mountOrdersPreview(canvas, {
+      const handle = await mod.mountOrdersPreview(canvas, {
         objUrl: assets.skinModel,
         textureUrl,
         yaw: Math.PI,
-        yOffset: -0.28,
+        yOffset: 0,
+        cropFeet,
+        lookHost,
       });
       ordersTilePreviewCanvases.set(Number(orderId), canvas);
+      if (handle) ordersTilePreviewHandles.set(Number(orderId), handle);
+      return handle;
     } catch (err) {
       console.warn("orders tile preview", err);
+      return null;
     }
+  }
+
+  function collectOrderSkinUrls(order) {
+    const refs = Array.isArray(order?.refs) ? order.refs : [];
+    const results = Array.isArray(order?.results) ? order.results : [];
+    const urls = [];
+    const push = (f) => {
+      const path = f?.path || f?.dataUrl;
+      if (!path || urls.includes(path)) return;
+      urls.push(path);
+    };
+    refs.forEach((f) => {
+      if (String(f.role || "").toLowerCase() === "skin") push(f);
+    });
+    if (String(order?.kind || "") === "skin") {
+      results.forEach((f) => {
+        if (isOrderImageFile(f)) push(f);
+      });
+      if (!urls.length) {
+        refs.forEach((f) => {
+          if (isOrderImageFile(f)) push(f);
+        });
+      }
+    } else {
+      results.forEach((f) => {
+        if (String(f.role || "").toLowerCase() === "skin" || isOrderImageFile(f)) push(f);
+      });
+    }
+    return urls;
   }
 
   function fillOrderTileVisual(visual, order) {
     const cover = orderCoverInfo(order);
     visual.innerHTML = "";
+    visual.classList.remove("orders-tile-visual--skin", "is-skin-full");
     if (cover.type === "skin3d" && cover.textureUrl) {
+      visual.classList.add("orders-tile-visual--skin");
       const canvas = document.createElement("canvas");
       canvas.className = "orders-tile-canvas";
       canvas.width = 96;
       canvas.height = 128;
       canvas.setAttribute("aria-hidden", "true");
       visual.appendChild(canvas);
-      mountOrderTileSkinPreview(canvas, cover.textureUrl, order.id);
-      return;
+      mountOrderTileSkinPreview(canvas, cover.textureUrl, order.id, {
+        cropFeet: true,
+        lookHost: visual.closest(".studio-tile") || visual,
+      });
+      return true;
     }
     const img = document.createElement("img");
     img.className =
@@ -6683,6 +6754,37 @@
     img.alt = "";
     img.draggable = false;
     visual.appendChild(img);
+    return false;
+  }
+
+  async function mountOrdersDetailSkinPreviews(host, urls) {
+    if (!host || !urls?.length) return;
+    const assets = await ensureOrdersSkinAssets();
+    const mod = await ensureOrdersPreviewMod();
+    for (const url of urls.slice(0, 6)) {
+      const wrap = document.createElement("div");
+      wrap.className = "orders-detail-skin";
+      const canvas = document.createElement("canvas");
+      canvas.className = "orders-detail-skin__canvas";
+      canvas.width = 140;
+      canvas.height = 220;
+      canvas.setAttribute("aria-hidden", "true");
+      wrap.appendChild(canvas);
+      host.appendChild(wrap);
+      ordersDetailPreviewCanvases.add(canvas);
+      try {
+        await mod.mountOrdersPreview(canvas, {
+          objUrl: assets.skinModel,
+          textureUrl: url,
+          yaw: Math.PI,
+          yOffset: 0,
+          cropFeet: false,
+          lookHost: wrap,
+        });
+      } catch (err) {
+        console.warn("orders detail skin", err);
+      }
+    }
   }
 
   async function onOrdersTabShown() {
@@ -7076,7 +7178,8 @@
     wrap.hidden = !anyVisible;
   }
 
-  function renderOrdersDetail() {
+  async function renderOrdersDetail() {
+    await disposeOrdersDetailPreviews();
     const order = getOpenOrder();
     const body = document.getElementById("orders-detail-body");
     const title = document.getElementById("orders-detail-title");
@@ -7103,6 +7206,18 @@
       ${queueBit}
     `;
     body.appendChild(meta);
+
+    const skinUrls = collectOrderSkinUrls(order);
+    if (skinUrls.length) {
+      const skinTitle = document.createElement("h3");
+      skinTitle.className = "orders-detail__section-title";
+      skinTitle.textContent = "Превью на модели";
+      body.appendChild(skinTitle);
+      const skinRow = document.createElement("div");
+      skinRow.className = "orders-detail-skins";
+      body.appendChild(skinRow);
+      void mountOrdersDetailSkinPreviews(skinRow, skinUrls);
+    }
 
     const st = String(order.status || "pending");
     const soft = Boolean(order.deletedAt);
@@ -7217,11 +7332,22 @@
 
     const visual = document.createElement("div");
     visual.className = "catalog-card__visual";
-    fillOrderTileVisual(visual, order);
+    const hasSkin = fillOrderTileVisual(visual, order);
     if (!order.deletedAt) {
       appendOrderStar(visual, order.status, order.reason, order.queueNo);
     }
     btn.appendChild(visual);
+
+    if (hasSkin) {
+      btn.addEventListener("pointerenter", () => {
+        visual.classList.add("is-skin-full");
+        ordersTilePreviewHandles.get(Number(order.id))?.setCropFeet?.(false);
+      });
+      btn.addEventListener("pointerleave", () => {
+        visual.classList.remove("is-skin-full");
+        ordersTilePreviewHandles.get(Number(order.id))?.setCropFeet?.(true);
+      });
+    }
 
     const stack = document.createElement("div");
     stack.className = "studio-tile__label-stack catalog-card__label";
