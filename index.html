@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=92" />
+  <link rel="stylesheet" href="styles.css?v=93" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -513,6 +513,24 @@
                   rows="5"
                   placeholder="Пример: новый биом, портал, крафт…"
                 ></textarea>
+              </div>
+
+              <div class="hub-race-extra" aria-label="Дополнительные блоки">
+                <div class="hub-race-extra__sep" aria-hidden="true"></div>
+                <p class="hub-race-extra__title">Дополнительные блоки</p>
+                <p class="field-hint hub-race-extra__hint">Текст, рецепт или файл — как в анкете механики</p>
+                <div class="field-block studio-blocks-field hub-race-blocks-field">
+                  <div class="studio-blocks" id="hub-race-blocks-list"></div>
+                  <div class="race-blocks-add">
+                    <button type="button" class="mc-btn mc-btn--compact mc-btn--ghost" id="hub-race-block-add-btn">+ Создать блок</button>
+                    <div class="race-blocks-menu" id="hub-race-block-type-menu" hidden role="menu">
+                      <button type="button" class="race-blocks-menu__btn" data-hub-race-block-type="text" role="menuitem">Текст</button>
+                      <button type="button" class="race-blocks-menu__btn" data-hub-race-block-type="craft" role="menuitem">Рецепт крафта</button>
+                      <button type="button" class="race-blocks-menu__btn" data-hub-race-block-type="file" role="menuitem">Загрузка контента</button>
+                    </div>
+                  </div>
+                  <input id="hub-race-block-file-input" type="file" hidden />
+                </div>
               </div>
 
               <p class="field-error" id="hub-race-error" hidden></p>
@@ -1915,6 +1933,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=92"></script>
+  <script src="script.js?v=93"></script>
 </body>
 </html>

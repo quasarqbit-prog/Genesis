@@ -911,13 +911,22 @@
 
   function userRaceInfo(user) {
     const race = user?.race && typeof user.race === "object" ? user.race : {};
+    const form =
+      user?.form && typeof user.form === "object"
+        ? user.form
+        : race;
     return {
       raceName: userRaceName(user),
-      origin: String(race.origin || "").trim(),
-      abilities: String(race.abilities || "").trim(),
-      traits: String(race.traits || "").trim(),
-      useful: String(race.useful || "").trim(),
-      mechanics: String(race.mechanics || "").trim(),
+      origin: String(race.origin || form.origin || "").trim(),
+      abilities: String(race.abilities || form.abilities || "").trim(),
+      traits: String(race.traits || form.traits || "").trim(),
+      useful: String(race.useful || form.useful || "").trim(),
+      mechanics: String(race.mechanics || form.mechanics || "").trim(),
+      blocks: Array.isArray(form.blocks)
+        ? form.blocks
+        : Array.isArray(race.blocks)
+          ? race.blocks
+          : [],
     };
   }
 
@@ -930,8 +939,7 @@
       ["Польза для других", race.useful],
       ["Механики", race.mechanics],
     ].filter(([, text]) => text);
-    if (!rows.length) return "";
-    return rows
+    const main = rows
       .map(
         ([label, text]) =>
           `<div class="user-profile-race__block"><div class="user-profile-race__label">${escapeHtml(
@@ -941,6 +949,39 @@
           )}</div></div>`
       )
       .join("");
+    const extraBlocks = Array.isArray(race.blocks) ? race.blocks : [];
+    const extra = extraBlocks
+      .map((b) => {
+        if (!b || typeof b !== "object") return "";
+        const title = escapeHtml(
+          b.title ||
+            (b.type === "text" ? "Текст" : b.type === "craft" ? "Рецепт" : "Файл")
+        );
+        if (b.type === "text" && b.body) {
+          return `<div class="user-profile-race__block"><div class="user-profile-race__label">${title}</div><div class="user-profile-race__text">${escapeHtml(
+            String(b.body)
+          )}</div></div>`;
+        }
+        if (b.type === "file" && b.fileName) {
+          return `<div class="user-profile-race__block"><div class="user-profile-race__label">${title}</div><div class="user-profile-race__text">${escapeHtml(
+            String(b.fileName)
+          )}</div></div>`;
+        }
+        if (b.type === "craft") {
+          return `<div class="user-profile-race__block"><div class="user-profile-race__label">${title}</div><div class="user-profile-race__text">Рецепт (${escapeHtml(
+            String(b.mode || "3x3")
+          )})</div></div>`;
+        }
+        return "";
+      })
+      .join("");
+    if (!main && !extra) return "";
+    return (
+      main +
+      (extra
+        ? `<div class="user-profile-race__sep" aria-hidden="true"></div>${extra}`
+        : "")
+    );
   }
 
   let profileViewUser = null;
@@ -3956,6 +3997,12 @@
     ["hub-race-mechanics", "mechanics"],
   ];
 
+  /** @type {any[]} */
+  let hubRaceBlocks = [];
+  /** @type {Map<string, {name:string,ext:string,bytes:Uint8Array,size:number,dataUrl?:string}>} */
+  const hubRaceBlockFiles = new Map();
+  let hubRaceBlockFileTargetId = null;
+
   function fillHubRaceFields() {
     const form =
       profileCache?.form && typeof profileCache.form === "object"
@@ -3965,6 +4012,22 @@
       const el = document.getElementById(elId);
       if (el) el.value = String(form[key] || "");
     });
+    hubRaceBlockFiles.clear();
+    hubRaceBlocks = typeof cloneStudioBlocks === "function"
+      ? cloneStudioBlocks(form.blocks)
+      : [];
+    hubRaceBlocks.forEach((b) => {
+      if (b.type === "file" && b.dataUrl) {
+        hubRaceBlockFiles.set(b.id, {
+          name: b.fileName || "file",
+          ext: b.ext || "",
+          bytes: new Uint8Array(0),
+          size: Number(b.size) || 0,
+          dataUrl: b.dataUrl,
+        });
+      }
+    });
+    if (typeof renderHubRaceBlocks === "function") renderHubRaceBlocks();
     setHubFieldError("hub-race-error", "");
   }
 
@@ -3976,6 +4039,12 @@
         .trim();
     });
     form.nick = String(authUser?.mcNick || profileCache?.form?.nick || "").trim();
+    form.blocks =
+      typeof serializeBlocksMeta === "function"
+        ? serializeBlocksMeta(hubRaceBlocks, hubRaceBlockFiles)
+        : Array.isArray(hubRaceBlocks)
+          ? hubRaceBlocks
+          : [];
     return form;
   }
 
@@ -6613,7 +6682,7 @@
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=92`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=93`);
     return ordersPreviewMod;
   }
 
@@ -9106,10 +9175,10 @@
     }).filter(Boolean);
   }
 
-  function serializeStudioBlocksMeta(blocks) {
+  function serializeBlocksMeta(blocks, filesMap = studioBlockFiles) {
     return cloneStudioBlocks(blocks).map((b) => {
       if (b.type === "file") {
-        const stored = studioBlockFiles.get(b.id);
+        const stored = filesMap.get(b.id);
         return {
           ...b,
           dataUrl: stored?.dataUrl || b.dataUrl || "",
@@ -9117,6 +9186,10 @@
       }
       return b;
     });
+  }
+
+  function serializeStudioBlocksMeta(blocks) {
+    return serializeBlocksMeta(blocks, studioBlockFiles);
   }
 
   function migrateItemBodyToBlocks(item) {
@@ -9131,6 +9204,7 @@
 
   function syncStudioCraftLegend(block, legendEl) {
     if (!legendEl) return;
+    const readOnly = Boolean(getBlocksCtx().readOnly());
     if (!block.legend || typeof block.legend !== "object") block.legend = {};
     const cells = Array.isArray(block.cells) ? block.cells : [];
     const seen = new Set(cells.filter(Boolean));
@@ -9150,8 +9224,8 @@
       nameInp.placeholder = `Название предмета для «${sym}»`;
       nameInp.maxLength = 64;
       nameInp.value = block.legend[sym] || "";
-      nameInp.disabled = studioEditReadOnly;
-      nameInp.readOnly = studioEditReadOnly;
+      nameInp.disabled = readOnly;
+      nameInp.readOnly = readOnly;
       nameInp.addEventListener("input", () => {
         block.legend[sym] = nameInp.value;
       });
@@ -9161,6 +9235,8 @@
   }
 
   function renderStudioBlockCraft(block, bodyEl) {
+    const ctx = getBlocksCtx();
+    const readOnly = Boolean(ctx.readOnly());
     const mode = normalizeCraftMode(block.mode || "3x3");
     block.mode = mode === "none" ? "3x3" : mode;
 
@@ -9177,9 +9253,9 @@
       btn.className = `craft-tab${block.mode === m ? " is-active" : ""}`;
       btn.dataset.craft = m;
       btn.textContent = label;
-      btn.disabled = studioEditReadOnly;
+      btn.disabled = readOnly;
       btn.addEventListener("click", () => {
-        if (studioEditReadOnly) return;
+        if (readOnly) return;
         const prev = block.mode;
         block.mode = m;
         if (m === "2x2" || m === "3x3") {
@@ -9189,7 +9265,7 @@
           for (let i = 0; i < Math.min(count, prevCells.length); i += 1) next[i] = prevCells[i] || "";
           block.cells = next;
         }
-        if (prev !== m) renderStudioBlocks();
+        if (prev !== m) ctx.rerender();
       });
       tabs.appendChild(btn);
     });
@@ -9205,8 +9281,8 @@
       inp.maxLength = 64;
       inp.placeholder = "Например: железная руда";
       inp.value = block.smeltItem || "";
-      inp.disabled = studioEditReadOnly;
-      inp.readOnly = studioEditReadOnly;
+      inp.disabled = readOnly;
+      inp.readOnly = readOnly;
       inp.addEventListener("input", () => {
         block.smeltItem = inp.value;
       });
@@ -9236,8 +9312,8 @@
       inp.type = "text";
       inp.maxLength = 1;
       inp.value = val || "";
-      inp.disabled = studioEditReadOnly;
-      inp.readOnly = studioEditReadOnly;
+      inp.disabled = readOnly;
+      inp.readOnly = readOnly;
       inp.addEventListener("input", () => {
         const ch = inp.value.slice(-1).toUpperCase();
         inp.value = ch;
@@ -9252,12 +9328,38 @@
     bodyEl.appendChild(legend);
   }
 
+  /** Active content-blocks editor context (studio modal or hub race form) */
+  let blocksCtx = null;
+
+  function getBlocksCtx() {
+    return (
+      blocksCtx || {
+        listId: "studio-blocks-list",
+        getBlocks: () => studioEditBlocks,
+        setBlocks: (next) => {
+          studioEditBlocks = next;
+        },
+        filesMap: studioBlockFiles,
+        readOnly: () => studioEditReadOnly,
+        fileInputId: "studio-block-file-input",
+        setFileTarget: (id) => {
+          studioBlockFileTargetId = id;
+        },
+        rerender: () => renderStudioBlocks(),
+      }
+    );
+  }
+
   function renderStudioBlocks() {
-    const list = document.getElementById("studio-blocks-list");
+    const ctx = getBlocksCtx();
+    const list = document.getElementById(ctx.listId);
     if (!list) return;
     list.innerHTML = "";
+    const readOnly = Boolean(ctx.readOnly());
+    const blocks = ctx.getBlocks();
+    const filesMap = ctx.filesMap;
 
-    studioEditBlocks.forEach((block, index) => {
+    blocks.forEach((block) => {
       const card = document.createElement("section");
       card.className = "race-block";
       card.dataset.blockId = block.id;
@@ -9271,7 +9373,7 @@
       title.value =
         block.title ||
         (block.type === "text" ? "Текст" : block.type === "craft" ? "Рецепт" : "Файл");
-      title.disabled = studioEditReadOnly;
+      title.disabled = readOnly;
       title.addEventListener("input", () => {
         block.title = title.value;
       });
@@ -9280,11 +9382,11 @@
       del.className = "race-block__del";
       del.textContent = "×";
       del.title = "Удалить блок";
-      del.hidden = studioEditReadOnly;
+      del.hidden = readOnly;
       del.addEventListener("click", () => {
-        studioBlockFiles.delete(block.id);
-        studioEditBlocks = studioEditBlocks.filter((b) => b.id !== block.id);
-        renderStudioBlocks();
+        filesMap.delete(block.id);
+        ctx.setBlocks(blocks.filter((b) => b.id !== block.id));
+        ctx.rerender();
       });
       head.append(title, del);
       card.appendChild(head);
@@ -9296,7 +9398,7 @@
         const toolbar = document.createElement("div");
         toolbar.className = "patch-md-toolbar";
         toolbar.setAttribute("role", "toolbar");
-        toolbar.hidden = studioEditReadOnly;
+        toolbar.hidden = readOnly;
         [
           ["bold", "B", "Жирный"],
           ["italic", "I", "Курсив"],
@@ -9319,13 +9421,13 @@
         ta.rows = 5;
         ta.placeholder = "Опишите контент…";
         ta.value = block.body || "";
-        ta.readOnly = studioEditReadOnly;
+        ta.readOnly = readOnly;
         ta.addEventListener("input", () => {
           block.body = ta.value;
           autosizeArea(ta);
         });
         toolbar.addEventListener("click", (e) => {
-          if (studioEditReadOnly) return;
+          if (readOnly) return;
           const btn = e.target.closest("[data-md]");
           if (!btn) return;
           applyMdToSelection(btn.getAttribute("data-md"), ta);
@@ -9342,7 +9444,7 @@
         hint.textContent = `Текстура, звук, модель, схематика или любой файл · до ${formatBytes(STUDIO_BLOCK_FILE_MAX)}`;
         const fileRow = document.createElement("div");
         fileRow.className = "race-block__file-row";
-        const hasBytes = studioBlockFiles.has(block.id) || Boolean(block.dataUrl);
+        const hasBytes = filesMap.has(block.id) || Boolean(block.dataUrl);
         if (block.fileName) {
           const name = document.createElement("div");
           name.className = "race-block__file-name";
@@ -9351,34 +9453,34 @@
             : `${block.fileName} · нужно выбрать файл снова`;
           if (!hasBytes) name.classList.add("is-missing");
           fileRow.appendChild(name);
-          if (!studioEditReadOnly) {
+          if (!readOnly) {
             const clear = document.createElement("button");
             clear.type = "button";
             clear.className = "mc-btn mc-btn--compact mc-btn--ghost";
             clear.textContent = hasBytes ? "Убрать" : "Выбрать";
             clear.addEventListener("click", () => {
               if (hasBytes) {
-                studioBlockFiles.delete(block.id);
+                filesMap.delete(block.id);
                 block.fileName = "";
                 block.ext = "";
                 block.size = 0;
                 block.dataUrl = "";
-                renderStudioBlocks();
+                ctx.rerender();
               } else {
-                studioBlockFileTargetId = block.id;
-                document.getElementById("studio-block-file-input")?.click();
+                ctx.setFileTarget(block.id);
+                document.getElementById(ctx.fileInputId)?.click();
               }
             });
             fileRow.appendChild(clear);
           }
-        } else if (!studioEditReadOnly) {
+        } else if (!readOnly) {
           const pick = document.createElement("button");
           pick.type = "button";
           pick.className = "mc-btn mc-btn--compact";
           pick.textContent = "Выбрать файл";
           pick.addEventListener("click", () => {
-            studioBlockFileTargetId = block.id;
-            document.getElementById("studio-block-file-input")?.click();
+            ctx.setFileTarget(block.id);
+            document.getElementById(ctx.fileInputId)?.click();
           });
           fileRow.appendChild(pick);
         } else {
@@ -9395,9 +9497,36 @@
     });
   }
 
+  function renderHubRaceBlocks() {
+    blocksCtx = {
+      listId: "hub-race-blocks-list",
+      getBlocks: () => hubRaceBlocks,
+      setBlocks: (next) => {
+        hubRaceBlocks = next;
+      },
+      filesMap: hubRaceBlockFiles,
+      readOnly: () => false,
+      fileInputId: "hub-race-block-file-input",
+      setFileTarget: (id) => {
+        hubRaceBlockFileTargetId = id;
+      },
+      rerender: () => renderHubRaceBlocks(),
+    };
+    try {
+      renderStudioBlocks();
+    } finally {
+      blocksCtx = null;
+    }
+  }
+
   function addStudioBlock(type) {
     studioEditBlocks.push(createStudioBlock(type));
     renderStudioBlocks();
+  }
+
+  function addHubRaceBlock(type) {
+    hubRaceBlocks.push(createStudioBlock(type));
+    renderHubRaceBlocks();
   }
 
   function bytesToDataUrl(bytes, mime) {
@@ -9456,6 +9585,55 @@
     block.size = file.size;
     block.dataUrl = dataUrl;
     renderStudioBlocks();
+    showToast("Файл добавлен");
+  });
+
+  document.getElementById("hub-race-block-add-btn")?.addEventListener("click", () => {
+    const menu = document.getElementById("hub-race-block-type-menu");
+    if (!menu) return;
+    menu.hidden = !menu.hidden;
+  });
+
+  document.getElementById("hub-race-block-type-menu")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-hub-race-block-type]");
+    if (!btn) return;
+    addHubRaceBlock(btn.getAttribute("data-hub-race-block-type"));
+    document.getElementById("hub-race-block-type-menu").hidden = true;
+  });
+
+  document.addEventListener("click", (e) => {
+    const menu = document.getElementById("hub-race-block-type-menu");
+    const addBtn = document.getElementById("hub-race-block-add-btn");
+    if (!menu || menu.hidden) return;
+    if (menu.contains(e.target) || addBtn?.contains(e.target)) return;
+    menu.hidden = true;
+  });
+
+  document.getElementById("hub-race-block-file-input")?.addEventListener("change", async (e) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    input.value = "";
+    const block = hubRaceBlocks.find((b) => b.id === hubRaceBlockFileTargetId);
+    hubRaceBlockFileTargetId = null;
+    if (!file || !block || block.type !== "file") return;
+    if (file.size > STUDIO_BLOCK_FILE_MAX) {
+      showToast(`Файл слишком большой (до ${formatBytes(STUDIO_BLOCK_FILE_MAX)})`);
+      return;
+    }
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const dataUrl = bytesToDataUrl(bytes, file.type || "application/octet-stream");
+    hubRaceBlockFiles.set(block.id, {
+      name: file.name,
+      ext: extFromName(file.name),
+      bytes,
+      size: file.size,
+      dataUrl,
+    });
+    block.fileName = file.name;
+    block.ext = extFromName(file.name);
+    block.size = file.size;
+    block.dataUrl = dataUrl;
+    renderHubRaceBlocks();
     showToast("Файл добавлен");
   });
 

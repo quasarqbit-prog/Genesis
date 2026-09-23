@@ -304,6 +304,7 @@ function toPublicUser(rowOrUser) {
     traits: String(form.traits || "").trim(),
     useful: String(form.useful || "").trim(),
     mechanics: String(form.mechanics || "").trim(),
+    blocks: Array.isArray(form.blocks) ? form.blocks : [],
   };
   return {
     id: rowOrUser.id,
@@ -2427,6 +2428,11 @@ app.put("/api/users/:id/profile", authMiddleware, async (req, res) => {
       traits: String(formIn.traits ?? prevForm.traits ?? "").trim(),
       useful: String(formIn.useful ?? prevForm.useful ?? "").trim(),
       mechanics: String(formIn.mechanics ?? prevForm.mechanics ?? "").trim(),
+      blocks: Array.isArray(formIn.blocks)
+        ? formIn.blocks
+        : Array.isArray(prevForm.blocks)
+          ? prevForm.blocks
+          : [],
     };
     const registered =
       req.body?.registered !== undefined
@@ -3085,6 +3091,7 @@ app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
         traits: String(raceSrc.traits || "").trim().slice(0, 4000),
         useful: String(raceSrc.useful || "").trim().slice(0, 4000),
         mechanics: String(raceSrc.mechanics || "").trim().slice(0, 4000),
+        blocks: Array.isArray(raceSrc.blocks) ? raceSrc.blocks : [],
       };
       if (!race.raceName || !race.origin || !race.abilities || !race.useful) {
         return res.status(400).json({ error: "Заполни обязательные поля расы" });
