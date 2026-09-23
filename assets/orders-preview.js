@@ -55,9 +55,9 @@ function fitCamera(
     // Head fully visible; only feet clipped by frame overflow
     let dist = baseDist * 0.9;
     if (aspect < 1) dist *= 0.95;
-    object.position.y -= size.y * 0.04;
+    object.position.y -= size.y * 0.1;
     camera.position.set(0, dist * 0.05, dist * 0.98);
-    camera.lookAt(0, -size.y * 0.02, 0);
+    camera.lookAt(0, -size.y * 0.05, 0);
     camera.near = Math.max(0.01, dist / 100);
     camera.far = dist * 20;
   } else if (mode === "install") {
