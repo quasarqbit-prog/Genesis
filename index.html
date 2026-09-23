@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=80" />
+  <link rel="stylesheet" href="styles.css?v=83" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -34,6 +34,7 @@
           </button>
           <button type="button" class="main-tabs__btn" data-main-tab="patch">Патч-ноут</button>
           <button type="button" class="main-tabs__btn" data-main-tab="orders">Заказы</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="guide">Инструкция</button>
         </nav>
 
         <div class="main-tab-panels" id="main-tab-panels">
@@ -56,6 +57,7 @@
                     <button type="button" class="studio-kind-switch__btn is-active" data-studio-kind="all">Все</button>
                     <button type="button" class="studio-kind-switch__btn" data-studio-kind="folder">Контент</button>
                     <button type="button" class="studio-kind-switch__btn" data-studio-kind="race">Расы</button>
+                    <button type="button" class="studio-kind-switch__btn" data-studio-kind="hidden">Скрытые</button>
                   </div>
                   <label class="studio-sort-label" for="studio-review-sort">
                     Сортировка
@@ -80,6 +82,7 @@
                 <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-reject">Отклонить</button>
                 <button type="button" class="mc-btn" id="studio-review-approve">Одобрить</button>
                 <button type="button" class="mc-btn" id="studio-review-added" hidden>Добавлено</button>
+                <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-hide" hidden>Скрыть</button>
                 <button type="button" class="mc-btn mc-btn--ghost studio-review-delete" id="studio-review-delete" hidden>Удалить</button>
               </div>
             </div>
@@ -184,30 +187,82 @@
 
           <div class="main-tab-panel" data-main-panel="orders" id="main-panel-orders" hidden>
             <div class="orders-workspace" id="orders-workspace">
-              <nav class="orders-subtabs" id="orders-subtabs" aria-label="Разделы заказов">
-                <button type="button" class="orders-subtabs__btn is-active" data-orders-tab="create">Заказать</button>
-                <button type="button" class="orders-subtabs__btn" data-orders-tab="list">Анкеты</button>
+              <nav class="orders-subtabs" id="orders-subtabs" hidden aria-label="Разделы заказов">
+                <button type="button" class="orders-subtabs__btn is-active" data-orders-tab="main">Заказы</button>
+                <button type="button" class="orders-subtabs__btn" data-orders-tab="review">Анкеты</button>
               </nav>
-              <div class="orders-create" id="orders-create-panel">
-                <div class="orders-type-grid" id="orders-type-grid">
-                  <button type="button" class="orders-type-card" id="orders-type-skin" data-order-kind="skin">
-                    <span class="orders-type-card__preview">
-                      <canvas class="orders-skin-canvas" id="orders-skin-preview" width="96" height="128" aria-hidden="true"></canvas>
-                    </span>
-                    <span class="orders-type-card__label">Скин</span>
-                  </button>
-                  <button type="button" class="orders-type-card" id="orders-type-model" data-order-kind="model">
-                    <span class="orders-type-card__preview">
-                      <canvas class="orders-model-canvas" id="orders-model-preview" width="96" height="128" aria-hidden="true"></canvas>
-                    </span>
-                    <span class="orders-type-card__label">Модель</span>
-                  </button>
+
+              <div id="orders-main-panel">
+                <div class="orders-type-frame" id="orders-type-frame">
+                  <div class="orders-type-grid" id="orders-type-grid">
+                    <button type="button" class="orders-type-card" id="orders-type-skin" data-order-kind="skin">
+                      <span class="orders-type-card__preview">
+                        <canvas class="orders-skin-canvas" id="orders-skin-preview" width="96" height="128" aria-hidden="true"></canvas>
+                      </span>
+                      <span class="orders-type-card__label">Скин</span>
+                    </button>
+                    <button type="button" class="orders-type-card" id="orders-type-model" data-order-kind="model">
+                      <span class="orders-type-card__preview orders-type-card__preview--model">
+                        <canvas class="orders-model-canvas" id="orders-model-preview" width="96" height="128" aria-hidden="true"></canvas>
+                      </span>
+                      <span class="orders-type-card__label">Модель</span>
+                    </button>
+                    <button type="button" class="orders-type-card" id="orders-type-build" data-order-kind="build">
+                      <span class="orders-type-card__preview orders-type-card__preview--empty" aria-hidden="true"></span>
+                      <span class="orders-type-card__label">Постройка</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="orders-board" id="orders-board">
+                  <section class="orders-board__section" id="orders-ready-section">
+                    <h3 class="orders-board__title">Готовые</h3>
+                    <div class="orders-grid" id="orders-ready-grid" role="list"></div>
+                    <p class="orders-empty" id="orders-ready-empty" hidden>Пока нет готовых</p>
+                  </section>
+                  <div class="orders-board__sep" aria-hidden="true"></div>
+                  <section class="orders-board__section" id="orders-active-section">
+                    <h3 class="orders-board__title">В работе</h3>
+                    <div class="orders-grid" id="orders-active-grid" role="list"></div>
+                    <p class="orders-empty" id="orders-active-empty" hidden>Нет активных заказов</p>
+                  </section>
                 </div>
               </div>
-              <div class="orders-list-panel" id="orders-list-panel" hidden>
-                <div class="orders-grid" id="orders-grid" role="list"></div>
-                <p class="orders-empty" id="orders-empty" hidden>Пока нет заказов</p>
+
+              <div id="orders-review-panel" hidden>
+                <div class="studio-review-toolbar" id="orders-review-toolbar">
+                  <div class="studio-review-filters" role="group" aria-label="Статус заказов">
+                    <button type="button" class="studio-filter-btn is-active" data-orders-status="all">Все</button>
+                    <button type="button" class="studio-filter-btn" data-orders-status="pending">На рассмотрении</button>
+                    <button type="button" class="studio-filter-btn" data-orders-status="rejected">Отклонены</button>
+                    <button type="button" class="studio-filter-btn" data-orders-status="approved">Приняты</button>
+                    <button type="button" class="studio-filter-btn" data-orders-status="ready">Готовые</button>
+                    <button type="button" class="studio-filter-btn" data-orders-hidden>Скрытые</button>
+                  </div>
+                  <div class="studio-review-toolbar__row">
+                    <div class="studio-kind-switch" role="group" aria-label="Тип заказов">
+                      <button type="button" class="studio-kind-switch__btn is-active" data-orders-kind="all">Все</button>
+                      <button type="button" class="studio-kind-switch__btn" data-orders-kind="skin">Скин</button>
+                      <button type="button" class="studio-kind-switch__btn" data-orders-kind="model">Модель</button>
+                      <button type="button" class="studio-kind-switch__btn" data-orders-kind="build">Постройка</button>
+                    </div>
+                    <label class="studio-sort-label" for="orders-review-sort">
+                      Сортировка
+                      <select class="studio-sort-select" id="orders-review-sort">
+                        <option value="date-desc">Сначала новые</option>
+                        <option value="date-asc">Сначала старые</option>
+                        <option value="name-asc">Тип А→Я</option>
+                        <option value="name-desc">Тип Я→А</option>
+                        <option value="nick-asc">Ник А→Я</option>
+                        <option value="nick-desc">Ник Я→А</option>
+                        <option value="status">По статусу</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <div class="orders-grid" id="orders-review-grid" role="list"></div>
+                <p class="orders-empty" id="orders-review-empty" hidden></p>
               </div>
+
               <div class="orders-detail" id="orders-detail" hidden>
                 <header class="orders-detail__bar">
                   <button type="button" class="orders-detail__back" id="orders-detail-back">← Назад</button>
@@ -215,14 +270,26 @@
                 </header>
                 <div class="orders-detail__body" id="orders-detail-body"></div>
                 <div class="orders-detail__actions" id="orders-detail-actions" hidden>
+                  <button type="button" class="mc-btn" id="orders-download-btn" hidden>Скачать</button>
+                  <button type="button" class="mc-btn" id="orders-owner-save-btn" hidden>Сохранить</button>
+                  <button type="button" class="mc-btn" id="orders-owner-submit-btn" hidden>Отправить</button>
                   <button type="button" class="mc-btn mc-btn--ghost" id="orders-reject-btn">Отклонить</button>
                   <button type="button" class="mc-btn" id="orders-approve-btn">Принять</button>
                   <label class="mc-btn orders-attach-btn" id="orders-attach-label" hidden>
                     Прикрепить скины
                     <input id="orders-attach-input" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" multiple hidden />
                   </label>
+                  <button type="button" class="mc-btn mc-btn--ghost" id="orders-hide-btn" hidden>Скрыть</button>
+                  <button type="button" class="mc-btn mc-btn--ghost studio-review-delete" id="orders-delete-btn" hidden>Удалить</button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div class="main-tab-panel main-tab-panel--scroll" data-main-panel="guide" id="main-panel-guide" hidden>
+            <div class="guide-workspace" id="guide-workspace">
+              <nav class="guide-role-tabs" id="guide-role-tabs" aria-label="Роли"></nav>
+              <article class="guide-body" id="guide-body"></article>
             </div>
           </div>
         </div>
@@ -526,6 +593,7 @@
               </div>
               <input id="user-profile-avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
               <div class="user-profile-card__nick" id="user-profile-nick">—</div>
+              <span class="role-badge role-badge--user" id="user-profile-role" hidden></span>
               <div class="user-profile-card__meta" id="user-profile-meta"></div>
               <div class="user-profile-card__id" id="user-profile-id">id —</div>
               <div class="user-profile-identity-edit" id="user-profile-identity-edit" hidden>
@@ -795,6 +863,7 @@
     </div>
     <div class="presence-mini__text">
       <div class="presence-mini__nick" id="presence-mini-nick">—</div>
+      <span class="role-badge role-badge--user" id="presence-mini-role" hidden></span>
       <div class="presence-mini__race" id="presence-mini-race" hidden></div>
       <div class="presence-mini__id" id="presence-mini-id">id —</div>
     </div>
@@ -1638,6 +1707,7 @@
   <div class="studio-ctx" id="studio-folder-menu" hidden>
     <button type="button" class="studio-ctx__btn" data-studio-act="edit">Редактировать</button>
     <button type="button" class="studio-ctx__btn" data-studio-act="send">Отправить</button>
+    <button type="button" class="studio-ctx__btn" data-studio-act="restore" hidden>Восстановить</button>
     <button type="button" class="studio-ctx__btn studio-ctx__btn--danger" data-studio-act="delete">Удалить</button>
   </div>
 
@@ -1788,7 +1858,9 @@
 
   <div class="studio-ctx" id="orders-item-menu" hidden>
     <button type="button" class="studio-ctx__btn" data-orders-act="open">Открыть</button>
-    <button type="button" class="studio-ctx__btn" data-orders-act="download" hidden>Скачать скины</button>
+    <button type="button" class="studio-ctx__btn" data-orders-act="download" hidden>Скачать</button>
+    <button type="button" class="studio-ctx__btn" data-orders-act="restore" hidden>Восстановить</button>
+    <button type="button" class="studio-ctx__btn studio-ctx__btn--danger" data-orders-act="soft-delete" hidden>Удалить</button>
   </div>
 
   <div class="patch-editor" id="patch-editor" hidden>
@@ -1841,6 +1913,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=80"></script>
+  <script src="script.js?v=83"></script>
 </body>
 </html>

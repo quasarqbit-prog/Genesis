@@ -524,7 +524,7 @@ async function ensureSchema() {
       id INT UNSIGNED NOT NULL AUTO_INCREMENT,
       submitter_id INT UNSIGNED NOT NULL,
       submitter_mc_nick VARCHAR(16) NOT NULL,
-      kind ENUM('skin', 'model') NOT NULL,
+      kind ENUM('skin', 'model', 'build') NOT NULL,
       description TEXT NOT NULL,
       refs_json JSON NULL,
       results_json JSON NULL,
@@ -545,6 +545,52 @@ async function ensureSchema() {
         ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  if (!(await columnExists("studio_submissions", "hidden"))) {
+    await pool.query(
+      `ALTER TABLE studio_submissions
+       ADD COLUMN hidden TINYINT(1) NOT NULL DEFAULT 0`
+    );
+  }
+  if (!(await columnExists("studio_submissions", "deleted_at"))) {
+    await pool.query(
+      `ALTER TABLE studio_submissions
+       ADD COLUMN deleted_at TIMESTAMP NULL`
+    );
+  }
+  if (!(await columnExists("studio_submissions", "queue_no"))) {
+    await pool.query(
+      `ALTER TABLE studio_submissions
+       ADD COLUMN queue_no INT UNSIGNED NULL`
+    );
+  }
+
+  if (!(await columnExists("orders", "hidden"))) {
+    await pool.query(
+      `ALTER TABLE orders
+       ADD COLUMN hidden TINYINT(1) NOT NULL DEFAULT 0`
+    );
+  }
+  if (!(await columnExists("orders", "deleted_at"))) {
+    await pool.query(
+      `ALTER TABLE orders
+       ADD COLUMN deleted_at TIMESTAMP NULL`
+    );
+  }
+  if (!(await columnExists("orders", "queue_no"))) {
+    await pool.query(
+      `ALTER TABLE orders
+       ADD COLUMN queue_no INT UNSIGNED NULL`
+    );
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE orders
+       MODIFY COLUMN kind ENUM('skin', 'model', 'build') NOT NULL`
+    );
+  } catch (err) {
+    console.warn("orders kind enum migrate:", err.message);
+  }
 }
 
 async function ensureFounderIdZero(founderId) {
@@ -2904,6 +2950,56 @@ app.get("/api/music/file/:id", (req, res) => {
   proxyGdriveFile(String(req.params.id || ""), req, res);
 });
 
+
+function purgeAtFromDeletedAt(deletedAt) {
+  if (!deletedAt) return null;
+  const t = new Date(deletedAt).getTime();
+  if (!Number.isFinite(t)) return null;
+  return new Date(t + 24 * 60 * 60 * 1000).toISOString();
+}
+
+function assertQueueTable(table) {
+  if (table !== "orders" && table !== "studio_submissions") {
+    throw new Error("Invalid queue table");
+  }
+}
+
+async function nextQueueNo(table) {
+  assertQueueTable(table);
+  const [rows] = await pool.execute(
+    `SELECT COALESCE(MAX(queue_no), 0) + 1 AS next_no
+     FROM ${table}
+     WHERE status = 'approved' AND deleted_at IS NULL`
+  );
+  return Math.max(1, Number(rows[0]?.next_no) || 1);
+}
+
+async function renumberQueue(table) {
+  assertQueueTable(table);
+  const [rows] = await pool.execute(
+    `SELECT id FROM ${table}
+     WHERE status = 'approved' AND deleted_at IS NULL
+     ORDER BY queue_no ASC, id ASC`
+  );
+  let n = 1;
+  for (const row of rows) {
+    await pool.execute(
+      `UPDATE ${table} SET queue_no = :n WHERE id = :id`,
+      { n, id: Number(row.id) }
+    );
+    n += 1;
+  }
+}
+
+async function purgeSoftDeleted(table) {
+  assertQueueTable(table);
+  await pool.execute(
+    `DELETE FROM ${table}
+     WHERE deleted_at IS NOT NULL
+       AND deleted_at < (NOW() - INTERVAL 24 HOUR)`
+  );
+}
+
 function mapStudioSubmissionRow(row) {
   let payload = row.payload_json;
   if (typeof payload === "string") {
@@ -2941,6 +3037,10 @@ function mapStudioSubmissionRow(row) {
     reviewedAt: row.reviewed_at || null,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
+    hidden: Number(row.hidden) === 1,
+    deletedAt: row.deleted_at || null,
+    queueNo: row.queue_no != null ? Number(row.queue_no) : null,
+    purgeAt: purgeAtFromDeletedAt(row.deleted_at),
   };
 }
 
@@ -3064,6 +3164,7 @@ app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
 
 app.get("/api/studio/submissions/mine", authMiddleware, async (req, res) => {
   try {
+    await purgeSoftDeleted("studio_submissions");
     const [rows] = await pool.execute(
       `SELECT s.*
        FROM studio_submissions s
@@ -3074,6 +3175,7 @@ app.get("/api/studio/submissions/mine", authMiddleware, async (req, res) => {
          GROUP BY client_folder_id
        ) latest ON latest.max_id = s.id
        WHERE s.submitter_id = :uid
+         AND (s.deleted_at IS NULL OR s.deleted_at >= (NOW() - INTERVAL 24 HOUR))
        ORDER BY s.updated_at DESC`,
       { uid: req.user.id }
     );
@@ -3087,18 +3189,26 @@ app.get("/api/studio/submissions/mine", authMiddleware, async (req, res) => {
   }
 });
 
-app.get("/api/studio/submissions", staffMiddleware, async (_req, res) => {
+app.get("/api/studio/submissions", staffMiddleware, async (req, res) => {
   try {
+    await purgeSoftDeleted("studio_submissions");
+    const showHidden =
+      String(req.query.showHidden || "") === "1" ||
+      String(req.query.hidden || "") === "1";
     const [rows] = await pool.execute(
       `SELECT s.*
        FROM studio_submissions s
        INNER JOIN (
          SELECT submitter_id, client_folder_id, MAX(id) AS max_id
          FROM studio_submissions
+         WHERE deleted_at IS NULL
          GROUP BY submitter_id, client_folder_id
        ) latest ON latest.max_id = s.id
+       WHERE s.deleted_at IS NULL
+         AND (${showHidden ? "s.hidden = 1" : "s.hidden = 0"})
        ORDER BY
          FIELD(s.status, 'pending', 'approved', 'rejected', 'added'),
+         s.queue_no ASC,
          s.updated_at DESC
        LIMIT 500`
     );
@@ -3139,6 +3249,7 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
     if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
 
     const wantsPayload = req.body?.payload && typeof req.body.payload === "object";
+    const hasHidden = Object.prototype.hasOwnProperty.call(req.body || {}, "hidden");
     if (wantsPayload) {
       await assertFounderActor(req);
       await pool.execute(
@@ -3146,6 +3257,15 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
          SET payload_json = :payloadJson
          WHERE id = :id`,
         { id, payloadJson: JSON.stringify(req.body.payload) }
+      );
+    }
+
+    if (hasHidden) {
+      await assertFounderActor(req);
+      const hidden = req.body.hidden ? 1 : 0;
+      await pool.execute(
+        `UPDATE studio_submissions SET hidden = :hidden WHERE id = :id`,
+        { id, hidden }
       );
     }
 
@@ -3162,22 +3282,33 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
       if (status === "added" && current !== "approved" && current !== "added") {
         return res.status(400).json({ error: "Сначала одобрите анкету" });
       }
+      let queueNo = rows[0].queue_no != null ? Number(rows[0].queue_no) : null;
+      if (status === "approved") {
+        queueNo = await nextQueueNo("studio_submissions");
+      } else if (status === "rejected" || status === "added") {
+        queueNo = null;
+      }
       await pool.execute(
         `UPDATE studio_submissions
          SET status = :status,
              reason = :reason,
              reviewed_by = :reviewedBy,
-             reviewed_at = CURRENT_TIMESTAMP
+             reviewed_at = CURRENT_TIMESTAMP,
+             queue_no = :queueNo
          WHERE id = :id`,
         {
           id,
           status,
           reason: status === "rejected" ? reason : rows[0].reason || null,
           reviewedBy: req.user.id,
+          queueNo,
         }
       );
-    } else if (!wantsPayload) {
-      return res.status(400).json({ error: "Нужен status или payload" });
+      if (status === "rejected" || status === "added") {
+        await renumberQueue("studio_submissions");
+      }
+    } else if (!wantsPayload && !hasHidden) {
+      return res.status(400).json({ error: "Нужен status, payload или hidden" });
     }
 
     const [next] = await pool.execute(
@@ -3202,16 +3333,84 @@ app.delete("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
     );
     if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
     const status = String(rows[0].status || "");
-    if (status !== "rejected" && status !== "added" && status !== "approved") {
+    if (status !== "rejected") {
       return res.status(400).json({
-        error: "Удалить можно только отклонённые, одобренные или добавленные анкеты",
+        error: "Удалить можно только отклонённые анкеты",
       });
     }
     await pool.execute(`DELETE FROM studio_submissions WHERE id = :id`, { id });
+    await renumberQueue("studio_submissions");
     return res.json({ ok: true, id });
   } catch (err) {
     console.error("studio delete:", err);
     return res.status(500).json({ error: "Не удалось удалить анкету" });
+  }
+});
+
+app.post("/api/studio/submissions/:id/soft-delete", authMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(
+      `SELECT * FROM studio_submissions WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    await refreshUserRole(req);
+    const isOwner = Number(rows[0].submitter_id) === Number(req.user.id);
+    const isFounder = req.user?.role === "founder";
+    if (!isOwner && !isFounder) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    if (rows[0].deleted_at) {
+      return res.json({ ok: true, submission: mapStudioSubmissionRow(rows[0]) });
+    }
+    await pool.execute(
+      `UPDATE studio_submissions
+       SET deleted_at = CURRENT_TIMESTAMP, queue_no = NULL
+       WHERE id = :id`,
+      { id }
+    );
+    await renumberQueue("studio_submissions");
+    const [next] = await pool.execute(
+      `SELECT * FROM studio_submissions WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    return res.json({ ok: true, submission: mapStudioSubmissionRow(next[0]) });
+  } catch (err) {
+    console.error("studio soft-delete:", err);
+    return res.status(500).json({ error: "Не удалось удалить анкету" });
+  }
+});
+
+app.post("/api/studio/submissions/:id/restore", authMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(
+      `SELECT * FROM studio_submissions WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    if (Number(rows[0].submitter_id) !== Number(req.user.id)) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    if (!rows[0].deleted_at) {
+      return res.status(400).json({ error: "Анкета не удалена" });
+    }
+    const deletedAt = new Date(rows[0].deleted_at).getTime();
+    if (!Number.isFinite(deletedAt) || Date.now() - deletedAt > 24 * 60 * 60 * 1000) {
+      return res.status(410).json({ error: "Срок восстановления истёк" });
+    }
+    // Keep deleted_at so admin queue never sees it again; client restores local draft.
+    return res.json({
+      ok: true,
+      localOnly: true,
+      submission: mapStudioSubmissionRow(rows[0]),
+    });
+  } catch (err) {
+    console.error("studio restore:", err);
+    return res.status(500).json({ error: "Не удалось восстановить анкету" });
   }
 });
 
@@ -3244,6 +3443,10 @@ function mapOrderRow(row) {
     reviewedAt: row.reviewed_at || null,
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
+    hidden: Number(row.hidden) === 1,
+    deletedAt: row.deleted_at || null,
+    queueNo: row.queue_no != null ? Number(row.queue_no) : null,
+    purgeAt: purgeAtFromDeletedAt(row.deleted_at),
   };
 }
 
@@ -3314,7 +3517,9 @@ app.get("/api/orders/assets", (_req, res) => {
 
 app.post("/api/orders", authMiddleware, async (req, res) => {
   try {
-    const kind = String(req.body?.kind || "").trim() === "model" ? "model" : "skin";
+    const kindRaw = String(req.body?.kind || "").trim();
+    const kind =
+      kindRaw === "model" ? "model" : kindRaw === "build" ? "build" : "skin";
     const description = String(req.body?.description || "").trim().slice(0, 4000);
     if (!description) {
       return res.status(400).json({ error: "Опишите заказ" });
@@ -3364,8 +3569,13 @@ app.post("/api/orders", authMiddleware, async (req, res) => {
 
 app.get("/api/orders/mine", authMiddleware, async (req, res) => {
   try {
+    await purgeSoftDeleted("orders");
     const [rows] = await pool.execute(
-      `SELECT * FROM orders WHERE submitter_id = :uid ORDER BY updated_at DESC LIMIT 200`,
+      `SELECT * FROM orders
+       WHERE submitter_id = :uid
+         AND (deleted_at IS NULL OR deleted_at >= (NOW() - INTERVAL 24 HOUR))
+       ORDER BY updated_at DESC
+       LIMIT 200`,
       { uid: req.user.id }
     );
     return res.json({ ok: true, orders: rows.map(mapOrderRow) });
@@ -3381,9 +3591,18 @@ app.get("/api/orders", authMiddleware, async (req, res) => {
     if (req.user?.role !== "founder") {
       return res.status(403).json({ error: "Только основатель" });
     }
+    await purgeSoftDeleted("orders");
+    const showHidden =
+      String(req.query.showHidden || "") === "1" ||
+      String(req.query.hidden || "") === "1";
     const [rows] = await pool.execute(
       `SELECT * FROM orders
-       ORDER BY FIELD(status, 'pending', 'approved', 'ready', 'rejected'), updated_at DESC
+       WHERE deleted_at IS NULL
+         AND status IN ('pending', 'approved', 'rejected', 'ready')
+         AND (${showHidden ? "hidden = 1" : "hidden = 0"})
+       ORDER BY FIELD(status, 'pending', 'approved', 'ready', 'rejected'),
+                queue_no ASC,
+                updated_at DESC
        LIMIT 500`
     );
     return res.json({ ok: true, orders: rows.map(mapOrderRow) });
@@ -3413,37 +3632,109 @@ app.get("/api/orders/:id", authMiddleware, async (req, res) => {
 
 app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
   try {
-    await assertFounderActor(req);
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
-    const status = String(req.body?.status || "").trim();
-    if (!["rejected", "approved", "ready"].includes(status)) {
-      return res.status(400).json({ error: "Некорректный статус" });
-    }
-    const reason = String(req.body?.reason || "").trim().slice(0, 2000);
-    if (status === "rejected" && !reason) {
-      return res.status(400).json({ error: "Укажите причину отклонения" });
-    }
     const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
     if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
-    const current = String(rows[0].status || "pending");
-    if (status === "ready" && current !== "approved" && current !== "ready") {
-      return res.status(400).json({ error: "Сначала примите заказ" });
+    await refreshUserRole(req);
+    const isOwner = Number(rows[0].submitter_id) === Number(req.user.id);
+    const isFounder = req.user?.role === "founder";
+    if (!isOwner && !isFounder) {
+      return res.status(403).json({ error: "Нет доступа" });
     }
-    await pool.execute(
-      `UPDATE orders
-       SET status = :status,
-           reason = :reason,
-           reviewed_by = :reviewedBy,
-           reviewed_at = CURRENT_TIMESTAMP
-       WHERE id = :id`,
-      {
-        id,
-        status,
-        reason: status === "rejected" ? reason : rows[0].reason || null,
-        reviewedBy: req.user.id,
+
+    const hasHidden = Object.prototype.hasOwnProperty.call(req.body || {}, "hidden");
+    const status = String(req.body?.status || "").trim();
+    const hasDescription = Object.prototype.hasOwnProperty.call(req.body || {}, "description");
+    const hasRefs = Array.isArray(req.body?.refs);
+
+    // Owner resubmit / edit while pending or rejected
+    if (isOwner && !isFounder && (hasDescription || hasRefs || status === "pending")) {
+      const current = String(rows[0].status || "pending");
+      if (current !== "pending" && current !== "rejected") {
+        return res.status(400).json({ error: "Редактировать можно только ожидающие или отклонённые" });
       }
-    );
+      const description = hasDescription
+        ? String(req.body.description || "").trim().slice(0, 4000)
+        : String(rows[0].description || "");
+      if (!description) {
+        return res.status(400).json({ error: "Опишите заказ" });
+      }
+      let refsJson = rows[0].refs_json;
+      if (hasRefs) {
+        const refs = await saveOrderFiles(id, "refs", req.body.refs);
+        const prev = parseJsonField(rows[0].refs_json, []);
+        refsJson = JSON.stringify([...prev, ...refs].slice(0, 24));
+      }
+      await pool.execute(
+        `UPDATE orders
+         SET description = :description,
+             refs_json = :refsJson,
+             status = 'pending',
+             reason = NULL,
+             reviewed_by = NULL,
+             reviewed_at = NULL,
+             queue_no = NULL
+         WHERE id = :id`,
+        { id, description, refsJson }
+      );
+      const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+      return res.json({ ok: true, order: mapOrderRow(next[0]) });
+    }
+
+    if (!isFounder) {
+      return res.status(403).json({ error: "Только основатель" });
+    }
+
+    if (hasHidden) {
+      const hidden = req.body.hidden ? 1 : 0;
+      await pool.execute(`UPDATE orders SET hidden = :hidden WHERE id = :id`, {
+        id,
+        hidden,
+      });
+    }
+
+    if (status) {
+      if (!["rejected", "approved", "ready"].includes(status)) {
+        return res.status(400).json({ error: "Некорректный статус" });
+      }
+      const reason = String(req.body?.reason || "").trim().slice(0, 2000);
+      if (status === "rejected" && !reason) {
+        return res.status(400).json({ error: "Укажите причину отклонения" });
+      }
+      const current = String(rows[0].status || "pending");
+      if (status === "ready" && current !== "approved" && current !== "ready") {
+        return res.status(400).json({ error: "Сначала примите заказ" });
+      }
+      let queueNo = rows[0].queue_no != null ? Number(rows[0].queue_no) : null;
+      if (status === "approved") {
+        queueNo = await nextQueueNo("orders");
+      } else if (status === "rejected" || status === "ready") {
+        queueNo = null;
+      }
+      await pool.execute(
+        `UPDATE orders
+         SET status = :status,
+             reason = :reason,
+             reviewed_by = :reviewedBy,
+             reviewed_at = CURRENT_TIMESTAMP,
+             queue_no = :queueNo
+         WHERE id = :id`,
+        {
+          id,
+          status,
+          reason: status === "rejected" ? reason : rows[0].reason || null,
+          reviewedBy: req.user.id,
+          queueNo,
+        }
+      );
+      if (status === "rejected" || status === "ready") {
+        await renumberQueue("orders");
+      }
+    } else if (!hasHidden) {
+      return res.status(400).json({ error: "Нужен status или hidden" });
+    }
+
     const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
     return res.json({ ok: true, order: mapOrderRow(next[0]) });
   } catch (err) {
@@ -3479,7 +3770,8 @@ app.post("/api/orders/:id/results", authMiddleware, async (req, res) => {
        SET results_json = :resultsJson,
            status = 'ready',
            reviewed_by = :reviewedBy,
-           reviewed_at = CURRENT_TIMESTAMP
+           reviewed_at = CURRENT_TIMESTAMP,
+           queue_no = NULL
        WHERE id = :id`,
       {
         id,
@@ -3487,12 +3779,94 @@ app.post("/api/orders/:id/results", authMiddleware, async (req, res) => {
         reviewedBy: req.user.id,
       }
     );
+    await renumberQueue("orders");
     const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
     return res.json({ ok: true, order: mapOrderRow(next[0]) });
   } catch (err) {
     console.error("orders results:", err);
     const status = err.status || 500;
     return res.status(status).json({ error: err.message || "Не удалось прикрепить файлы" });
+  }
+});
+
+
+app.delete("/api/orders/:id", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(
+      `SELECT id, status FROM orders WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    if (String(rows[0].status || "") !== "rejected") {
+      return res.status(400).json({ error: "Удалить можно только отклонённые заказы" });
+    }
+    await pool.execute(`DELETE FROM orders WHERE id = :id`, { id });
+    await renumberQueue("orders");
+    return res.json({ ok: true, id });
+  } catch (err) {
+    console.error("orders delete:", err);
+    const status = err.status || 500;
+    return res.status(status).json({ error: err.message || "Не удалось удалить заказ" });
+  }
+});
+
+app.post("/api/orders/:id/soft-delete", authMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    await refreshUserRole(req);
+    const isOwner = Number(rows[0].submitter_id) === Number(req.user.id);
+    const isFounder = req.user?.role === "founder";
+    if (!isOwner && !isFounder) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    if (rows[0].deleted_at) {
+      return res.json({ ok: true, order: mapOrderRow(rows[0]) });
+    }
+    await pool.execute(
+      `UPDATE orders
+       SET deleted_at = CURRENT_TIMESTAMP, queue_no = NULL
+       WHERE id = :id`,
+      { id }
+    );
+    await renumberQueue("orders");
+    const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    return res.json({ ok: true, order: mapOrderRow(next[0]) });
+  } catch (err) {
+    console.error("orders soft-delete:", err);
+    return res.status(500).json({ error: "Не удалось удалить заказ" });
+  }
+});
+
+app.post("/api/orders/:id/restore", authMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    if (Number(rows[0].submitter_id) !== Number(req.user.id)) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    if (!rows[0].deleted_at) {
+      return res.status(400).json({ error: "Заказ не удалён" });
+    }
+    const deletedAt = new Date(rows[0].deleted_at).getTime();
+    if (!Number.isFinite(deletedAt) || Date.now() - deletedAt > 24 * 60 * 60 * 1000) {
+      return res.status(410).json({ error: "Срок восстановления истёк" });
+    }
+    return res.json({
+      ok: true,
+      localOnly: true,
+      order: mapOrderRow(rows[0]),
+    });
+  } catch (err) {
+    console.error("orders restore:", err);
+    return res.status(500).json({ error: "Не удалось восстановить заказ" });
   }
 });
 
@@ -3545,6 +3919,8 @@ app.get("/api/users/:id/published", authMiddleware, async (req, res) => {
        ) latest ON latest.max_id = s.id
        WHERE s.submitter_id = :uid
          AND s.status IN ('approved', 'added')
+         AND s.deleted_at IS NULL
+         AND s.hidden = 0
        ORDER BY s.updated_at DESC`,
       { uid: userId }
     );

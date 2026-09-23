@@ -367,7 +367,7 @@
   let studioOpenReviewId = null;
   let studioEditReadOnly = false;
   let studioReviewStatusFilter = "all"; // all | pending | rejected | approved | added
-  let studioReviewKindFilter = "all"; // all | folder | race
+  let studioReviewKindFilter = "all"; // all | folder | race | hidden
   let studioReviewSort = "date-desc";
 
   async function api(path, options = {}) {
@@ -952,6 +952,45 @@
     return String(authUser?.role || "") === "founder";
   }
 
+  function roleBadgeMeta(role) {
+    switch (role) {
+      case "founder":
+        return { label: "Основатель", cls: "role-badge--founder" };
+      case "admin":
+        return { label: "Админ", cls: "role-badge--admin" };
+      case "helper":
+        return { label: "Помощник", cls: "role-badge--helper" };
+      default:
+        return { label: "Пользователь", cls: "role-badge--user" };
+    }
+  }
+
+  function normalizeGuideRole(role) {
+    const r = String(role || "").toLowerCase();
+    if (r === "founder" || r === "admin" || r === "helper") return r;
+    return "user";
+  }
+
+  function ensureRoleBadgeEl(id, afterEl) {
+    let el = document.getElementById(id);
+    if (el) return el;
+    if (!afterEl || !afterEl.parentNode) return null;
+    el = document.createElement("span");
+    el.id = id;
+    el.className = "role-badge role-badge--user";
+    el.hidden = true;
+    afterEl.insertAdjacentElement("afterend", el);
+    return el;
+  }
+
+  function fillRoleBadge(el, role) {
+    if (!el) return;
+    const meta = roleBadgeMeta(normalizeGuideRole(role));
+    el.className = `role-badge ${meta.cls}`;
+    el.textContent = meta.label;
+    el.hidden = false;
+  }
+
   function canFounderEditUser(user) {
     if (!isFounderViewer() || !user) return false;
     const viewerId = Number(authUser?.id);
@@ -1254,6 +1293,8 @@
     const raceEl = document.getElementById("presence-mini-race");
     const idEl = document.getElementById("presence-mini-id");
     if (nickEl) nickEl.textContent = nick;
+    const roleEl = ensureRoleBadgeEl("presence-mini-role", nickEl);
+    fillRoleBadge(roleEl, user.role);
     if (raceEl) {
       raceEl.textContent = raceName;
       raceEl.hidden = !raceName;
@@ -1296,6 +1337,8 @@
       const metaEl = document.getElementById("user-profile-meta");
       const idEl = document.getElementById("user-profile-id");
       if (nickEl) nickEl.textContent = nick;
+      const roleEl = ensureRoleBadgeEl("user-profile-role", nickEl);
+      fillRoleBadge(roleEl, user.role);
       if (metaEl) {
         metaEl.textContent =
           mcNick && mcNick !== nick ? `игра: ${mcNick}` : "";
@@ -2771,6 +2814,295 @@
     }
   }
 
+  let guideActiveRole = "user";
+
+  const GUIDE_CONTENT = {
+    user: {
+      label: "Игрок",
+      sections: [
+        {
+          title: "Регистрация и вход",
+          paragraphs: [
+            "Чтобы пользоваться сайтом, зарегистрируйтесь или войдите через экран авторизации.",
+            "После входа доступны студия, заказы, профиль и остальные разделы.",
+          ],
+          items: [
+            "Ник на сайте и игровой ник можно задать в профиле.",
+            "Сохраняйте пароль: без входа часть функций недоступна.",
+          ],
+        },
+        {
+          title: "Профиль",
+          paragraphs: [
+            "Откройте свой аватар слева в полоске игроков — откроются настройки и профиль.",
+            "В профиле видны ник, id, раса и одобренный контент.",
+          ],
+          items: [
+            "Вкладка «Профиль» — ник, аватар, мета.",
+            "Вкладка «Раса» — одобренная расовая анкета.",
+            "Вкладка «Контент» — опубликованные папки и файлы.",
+          ],
+        },
+        {
+          title: "Раса",
+          paragraphs: [
+            "Расовая анкета заполняется в студии и проходит модерацию.",
+            "После одобрения раса отображается в профиле и в мини-карточке игрока.",
+          ],
+        },
+        {
+          title: "Студия",
+          paragraphs: [
+            "Студия — место для создания контента: папки, файлы и анкеты.",
+          ],
+          subsections: [
+            {
+              title: "Папки и файлы",
+              items: [
+                "Создавайте папки и загружайте материалы в свои проекты.",
+                "Организуйте контент так, чтобы модераторам было удобно проверять.",
+              ],
+            },
+            {
+              title: "Анкеты и отправка",
+              items: [
+                "Заполните анкету по выбранному типу контента.",
+                "Отправьте на проверку — статус появится в студии.",
+              ],
+            },
+            {
+              title: "Звёзды",
+              items: [
+                "Звезда у пункта показывает готовность или статус проверки.",
+                "Следите за подсказками у звёзд — они поясняют текущее состояние.",
+              ],
+            },
+          ],
+        },
+        {
+          title: "Заказы",
+          paragraphs: [
+            "Во вкладке «Заказы» можно заказать скин или модель.",
+          ],
+          items: [
+            "Выберите тип: скин или модель, заполните форму и отправьте.",
+            "В списке анкет видны ваши заказы и их статусы (ожидание, принято, отклонено).",
+            "После принятия заказа следите за обновлениями в карточке заказа.",
+          ],
+        },
+        {
+          title: "Правила",
+          paragraphs: [
+            "Раздел «Правила» содержит правила сервера и сайта. Читайте их перед игрой и публикацией контента.",
+          ],
+        },
+        {
+          title: "Сервер и мод",
+          paragraphs: [
+            "Во вкладке «Сервер» — информация о подключении, версии и моде.",
+            "Скачивайте актуальный мод оттуда, если он доступен для вашей роли.",
+          ],
+        },
+        {
+          title: "Патч-ноут",
+          paragraphs: [
+            "Патч-ноут — журнал обновлений сервера и сайта. Читайте записи, чтобы знать, что изменилось.",
+          ],
+        },
+        {
+          title: "Компендиум",
+          paragraphs: [
+            "Компендиум — справочник вселенной Genesis. Откройте вкладку и листайте книгу на экране.",
+          ],
+        },
+      ],
+    },
+    helper: {
+      label: "Помощник",
+      sections: [
+        {
+          title: "Права помощника",
+          paragraphs: [
+            "Помощник видит расширенные разделы студии и панели персонала с ограниченными правами.",
+          ],
+          items: [
+            "Доступна staff-панель, но не все команды и действия — только разрешённые роли.",
+            "Можно помогать с проверкой контента в рамках выданных прав.",
+            "Нельзя менять роли, банить как админ или править правила/патчи основателя.",
+          ],
+        },
+        {
+          title: "Студия и заказы",
+          paragraphs: [
+            "Помогайте игрокам с анкетами и заказами: подсказывайте статусы и корректное оформление.",
+            "Действия модерации выполняйте только если они доступны в интерфейсе вашей роли.",
+          ],
+        },
+        {
+          title: "Поведение",
+          items: [
+            "Будьте вежливы и опирайтесь на правила раздела «Правила».",
+            "Спорные случаи передавайте админу или основателю.",
+          ],
+        },
+      ],
+    },
+    admin: {
+      label: "Админ",
+      sections: [
+        {
+          title: "Администрирование",
+          paragraphs: [
+            "Админ управляет доступом игроков и модерацией поверх прав помощника.",
+          ],
+          items: [
+            "Выдача и снятие прав (permissions) в рамках доступных команд.",
+            "Баны и наказания через staff-панель / консоль, если команда доступна.",
+            "Проверка студии и заказов наравне со staff-функциями.",
+          ],
+        },
+        {
+          title: "Ограничения",
+          paragraphs: [
+            "Редактирование правил, патч-ноута, загрузка мода и финальное approve/reject/added в полном объёме — зона основателя, если иное не выдано отдельно.",
+          ],
+        },
+      ],
+    },
+    founder: {
+      label: "Основатель",
+      sections: [
+        {
+          title: "Полный доступ",
+          paragraphs: [
+            "Основатель имеет все возможности игрока, помощника и админа плюс управление контентом платформы.",
+          ],
+        },
+        {
+          title: "Проверка студии",
+          items: [
+            "Approve — одобрить анкету.",
+            "Reject — отклонить с причиной при необходимости.",
+            "Added — отметить как добавленное на сервер / в каталог.",
+          ],
+        },
+        {
+          title: "Заказы",
+          paragraphs: [
+            "Просмотр и ревью заказов: принять, отклонить, прикрепить готовые скины.",
+          ],
+        },
+        {
+          title: "Правила, мод, патчи",
+          items: [
+            "Редактирование разделов правил.",
+            "Загрузка и обновление мода на вкладке «Сервер».",
+            "Создание и правка записей патч-ноута.",
+          ],
+        },
+        {
+          title: "Профили",
+          paragraphs: [
+            "Можно редактировать чужие профили и расы (кроме своего аккаунта в режиме founder-edit).",
+          ],
+        },
+      ],
+    },
+  };
+
+  function guideRolesForViewer() {
+    if (!authToken || !authUser) return ["user"];
+    const role = normalizeGuideRole(authUser.role);
+    if (role === "founder") return ["user", "helper", "admin", "founder"];
+    if (role === "admin") return ["user", "helper", "admin"];
+    if (role === "helper") return ["user", "helper"];
+    return ["user"];
+  }
+
+  function renderGuideSection(section) {
+    const wrap = document.createElement("section");
+    wrap.className = "guide-section";
+
+    const h2 = document.createElement("h2");
+    h2.textContent = section.title || "";
+    wrap.appendChild(h2);
+
+    (section.paragraphs || []).forEach((text) => {
+      const p = document.createElement("p");
+      p.textContent = text;
+      wrap.appendChild(p);
+    });
+
+    if (section.items?.length) {
+      const ul = document.createElement("ul");
+      section.items.forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        ul.appendChild(li);
+      });
+      wrap.appendChild(ul);
+    }
+
+    (section.subsections || []).forEach((sub) => {
+      const h3 = document.createElement("h3");
+      h3.textContent = sub.title || "";
+      wrap.appendChild(h3);
+      (sub.paragraphs || []).forEach((text) => {
+        const p = document.createElement("p");
+        p.textContent = text;
+        wrap.appendChild(p);
+      });
+      if (sub.items?.length) {
+        const ul = document.createElement("ul");
+        sub.items.forEach((item) => {
+          const li = document.createElement("li");
+          li.textContent = item;
+          ul.appendChild(li);
+        });
+        wrap.appendChild(ul);
+      }
+    });
+
+    return wrap;
+  }
+
+  function renderGuideUi() {
+    const tabsEl = document.getElementById("guide-role-tabs");
+    const bodyEl = document.getElementById("guide-body");
+    if (!tabsEl || !bodyEl) return;
+
+    const roles = guideRolesForViewer();
+    if (!roles.includes(guideActiveRole)) {
+      guideActiveRole = roles[0] || "user";
+    }
+
+    tabsEl.replaceChildren();
+    const showTabs = roles.length > 1;
+    tabsEl.hidden = !showTabs;
+
+    if (showTabs) {
+      roles.forEach((role) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "guide-role-tabs__btn";
+        btn.classList.toggle("is-active", role === guideActiveRole);
+        btn.setAttribute("data-guide-role", role);
+        btn.textContent = GUIDE_CONTENT[role]?.label || roleBadgeMeta(role).label;
+        btn.addEventListener("click", () => {
+          guideActiveRole = role;
+          renderGuideUi();
+        });
+        tabsEl.appendChild(btn);
+      });
+    }
+
+    const pack = GUIDE_CONTENT[guideActiveRole] || GUIDE_CONTENT.user;
+    bodyEl.replaceChildren();
+    (pack.sections || []).forEach((section) => {
+      bodyEl.appendChild(renderGuideSection(section));
+    });
+  }
+
   function setMainTab(tab) {
     const name = String(tab || "studio");
     const prevPanel = document.querySelector(".main-tab-panel.is-active");
@@ -2820,6 +3152,9 @@
     }
     if (name === "orders") {
       onOrdersTabShown();
+    }
+    if (name === "guide") {
+      renderGuideUi();
     }
   }
 
@@ -4745,6 +5080,9 @@
               submissionStatus: f.submissionStatus ? String(f.submissionStatus) : null,
               submissionReason: f.submissionReason != null ? String(f.submissionReason) : "",
               submissionVersion: Math.max(1, Number(f.submissionVersion) || 1),
+              queueNo: f.queueNo != null ? Number(f.queueNo) : null,
+              softDeletedAt: f.softDeletedAt != null ? Number(f.softDeletedAt) : null,
+              softDeletedUntil: f.softDeletedUntil != null ? Number(f.softDeletedUntil) : null,
               items: Array.isArray(f.items)
                 ? f.items.map((it) => ({
                     id: String(it.id || studioUid("item")),
@@ -4910,7 +5248,18 @@
   function showStudioFolderMenu(folderId, clientX, clientY) {
     hideStudioItemMenu();
     studioCtxFolderId = folderId;
-    placeStudioMenu(document.getElementById("studio-folder-menu"), clientX, clientY);
+    const menu = document.getElementById("studio-folder-menu");
+    const folder = getStudioFolder(folderId);
+    const soft = Boolean(folder?.softDeletedAt);
+    const restoreBtn = menu?.querySelector('[data-studio-act="restore"]');
+    const sendBtn = menu?.querySelector('[data-studio-act="send"]');
+    const deleteBtn = menu?.querySelector('[data-studio-act="delete"]');
+    const editBtn = menu?.querySelector('[data-studio-act="edit"]');
+    if (restoreBtn) restoreBtn.hidden = !soft;
+    if (sendBtn) sendBtn.hidden = soft;
+    if (deleteBtn) deleteBtn.hidden = soft;
+    if (editBtn) editBtn.hidden = soft;
+    placeStudioMenu(menu, clientX, clientY);
   }
 
   function showStudioItemMenu(itemId, clientX, clientY) {
@@ -4935,7 +5284,7 @@
     return "";
   }
 
-  function appendStudioStar(host, status, reason) {
+  function appendStudioStar(host, status, reason, queueNo = null) {
     if (!host || !status) return;
     const tip = studioStatusTip(status, reason);
     if (!tip) return;
@@ -4950,6 +5299,14 @@
     });
     star.addEventListener("pointerdown", (e) => e.stopPropagation());
     host.appendChild(star);
+    const qn = Number(queueNo);
+    if (Number.isFinite(qn) && qn > 0) {
+      const badge = document.createElement("span");
+      badge.className = "studio-tile__queue";
+      badge.textContent = String(qn);
+      badge.setAttribute("aria-label", `Очередь ${qn}`);
+      host.appendChild(badge);
+    }
   }
 
   function updateStudioSubtabsUi() {
@@ -4972,6 +5329,7 @@
     const approveBtn = document.getElementById("studio-review-approve");
     const addedBtn = document.getElementById("studio-review-added");
     const deleteBtn = document.getElementById("studio-review-delete");
+    const hideBtn = document.getElementById("studio-review-hide");
     if (!wrap) return;
     if (studioTab !== "review" || !sub) {
       wrap.hidden = true;
@@ -4986,9 +5344,13 @@
       addedBtn.disabled = st === "added";
       addedBtn.textContent = "Добавлено";
     }
+    if (hideBtn) {
+      const canHide = st === "added" || st === "approved";
+      hideBtn.hidden = !canHide;
+      hideBtn.textContent = sub.hidden ? "Показать" : "Скрыть";
+    }
     if (deleteBtn) {
-      deleteBtn.hidden =
-        st !== "rejected" && st !== "added" && st !== "approved";
+      deleteBtn.hidden = st !== "rejected";
     }
   }
 
@@ -5079,33 +5441,85 @@
       const race = list.find(
         (s) => s.kind === "race" || s.clientFolderId === "race"
       );
-      raceSubmissionStatus = race ? String(race.status || "pending") : null;
-      raceSubmissionReason = race ? String(race.reason || "") : "";
+      if (race?.deletedAt) {
+        raceSubmissionStatus = null;
+        raceSubmissionReason = "";
+      } else {
+        raceSubmissionStatus = race ? String(race.status || "pending") : null;
+        raceSubmissionReason = race ? String(race.reason || "") : "";
+      }
       updateHubRaceStarUi();
 
       loadStudioDoc();
       let changed = false;
+      const seenFolderIds = new Set();
       list.forEach((sub) => {
         if (sub.kind === "race" || sub.clientFolderId === "race") return;
         const folder = studioDoc.folders.find((f) => f.id === sub.clientFolderId);
         if (!folder) return;
+        seenFolderIds.add(folder.id);
+
+        if (sub.deletedAt) {
+          // Soft-deleted on server: only keep gray state if folder still linked
+          if (folder.submissionId && Number(folder.submissionId) === Number(sub.id)) {
+            const deletedMs = Date.parse(sub.deletedAt) || Date.now();
+            const purgeMs = sub.purgeAt
+              ? Date.parse(sub.purgeAt) || deletedMs + 86400000
+              : deletedMs + 86400000;
+            if (
+              folder.softDeletedAt !== deletedMs ||
+              folder.softDeletedUntil !== purgeMs ||
+              folder.submissionStatus !== String(sub.status || "pending")
+            ) {
+              folder.softDeletedAt = deletedMs;
+              folder.softDeletedUntil = purgeMs;
+              folder.submissionStatus = String(sub.status || "pending");
+              folder.submissionReason = String(sub.reason || "");
+              folder.queueNo = null;
+              changed = true;
+            }
+          }
+          // If submissionId was cleared (local restore), ignore deleted server row
+          return;
+        }
+
         const nextId = Number(sub.id) || null;
         const nextStatus = String(sub.status || "pending");
         const nextReason = String(sub.reason || "");
         const nextVersion = Math.max(1, Number(sub.version) || 1);
+        const nextQueue = sub.queueNo != null ? Number(sub.queueNo) : null;
         if (
           folder.submissionId !== nextId ||
           folder.submissionStatus !== nextStatus ||
           folder.submissionReason !== nextReason ||
-          folder.submissionVersion !== nextVersion
+          folder.submissionVersion !== nextVersion ||
+          folder.queueNo !== nextQueue ||
+          folder.softDeletedAt != null
         ) {
           folder.submissionId = nextId;
           folder.submissionStatus = nextStatus;
           folder.submissionReason = nextReason;
           folder.submissionVersion = nextVersion;
+          folder.queueNo = nextQueue;
+          folder.softDeletedAt = null;
+          folder.softDeletedUntil = null;
           changed = true;
         }
       });
+
+      // Hard-purged or missing: clear submission fields on linked folders
+      studioDoc.folders.forEach((folder) => {
+        if (!folder.submissionId) return;
+        if (seenFolderIds.has(folder.id)) return;
+        folder.submissionId = null;
+        folder.submissionStatus = null;
+        folder.submissionReason = "";
+        folder.queueNo = null;
+        folder.softDeletedAt = null;
+        folder.softDeletedUntil = null;
+        changed = true;
+      });
+
       if (changed) saveStudioDoc();
     } catch (_) {
       /* ignore offline / unauthorized */
@@ -5118,7 +5532,11 @@
       return;
     }
     try {
-      const data = await api("/api/studio/submissions");
+      const path =
+        studioReviewKindFilter === "hidden"
+          ? "/api/studio/submissions?showHidden=1"
+          : "/api/studio/submissions";
+      const data = await api(path);
       studioReviewList = Array.isArray(data?.submissions) ? data.submissions : [];
     } catch (err) {
       studioReviewList = [];
@@ -5358,7 +5776,7 @@
               <span class="studio-tile__sub"></span>
             </span>
           `;
-          appendStudioStar(btn, s.status || "pending", s.reason);
+          appendStudioStar(btn, s.status || "pending", s.reason, s.queueNo);
           btn.querySelector(".studio-tile__name").textContent =
             s.folderName ||
             (s.version > 1
@@ -5455,11 +5873,18 @@
       plus.addEventListener("click", () => openStudioFolderModal());
       grid.appendChild(plus);
 
-      studioDoc.folders.forEach((f) => {
+      const foldersSorted = [...studioDoc.folders].sort((a, b) => {
+        const aSoft = a.softDeletedAt ? 1 : 0;
+        const bSoft = b.softDeletedAt ? 1 : 0;
+        if (aSoft !== bSoft) return aSoft - bSoft;
+        return (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0);
+      });
+      foldersSorted.forEach((f) => {
         const color = normalizeStudioColor(f.color);
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "studio-tile studio-tile--folder catalog-card";
+        if (f.softDeletedAt) btn.classList.add("studio-tile--soft-deleted");
         btn.setAttribute("role", "listitem");
         btn.style.setProperty("--section-accent", color);
         btn.innerHTML = `
@@ -5467,16 +5892,32 @@
             <span class="catalog-card__shadow"></span>
             <img class="catalog-card__img" src="assets/folder.png" alt="" draggable="false" />
           </span>
-          <span class="catalog-card__label"></span>
+          <span class="catalog-card__label studio-tile__label-stack">
+            <span class="studio-tile__name"></span>
+            <span class="studio-tile__sub"></span>
+          </span>
         `;
-        if (f.submissionStatus) {
-          appendStudioStar(btn, f.submissionStatus, f.submissionReason);
+        const nameEl = btn.querySelector(".studio-tile__name");
+        const subEl = btn.querySelector(".studio-tile__sub");
+        if (nameEl) {
+          nameEl.textContent = studioVersionLabel(f.name, f.submissionVersion);
         }
-        btn.querySelector(".catalog-card__label").textContent = studioVersionLabel(
-          f.name,
-          f.submissionVersion
-        );
+        if (subEl) {
+          if (f.softDeletedAt) {
+            const until = f.softDeletedUntil || f.softDeletedAt + 86400000;
+            const left = Math.max(0, until - Date.now());
+            const hrs = Math.ceil(left / 3600000);
+            subEl.textContent = hrs > 0 ? `Удалено · ещё ~${hrs}ч` : "Скоро очистится";
+          } else {
+            subEl.textContent = "";
+            subEl.hidden = true;
+          }
+        }
+        if (f.submissionStatus && !f.softDeletedAt) {
+          appendStudioStar(btn, f.submissionStatus, f.submissionReason, f.queueNo);
+        }
         btn.addEventListener("click", () => {
+          if (f.softDeletedAt) return;
           hideStudioMenus();
           studioOpenFolderId = f.id;
           renderStudio();
@@ -5599,6 +6040,9 @@
           submissionStatus: null,
           submissionReason: "",
           submissionVersion: 1,
+          queueNo: null,
+          softDeletedAt: null,
+          softDeletedUntil: null,
           items: [],
         });
       }
@@ -5607,7 +6051,7 @@
       renderStudio();
     });
 
-    document.getElementById("studio-folder-menu")?.addEventListener("click", (e) => {
+    document.getElementById("studio-folder-menu")?.addEventListener("click", async (e) => {
       const actBtn = e.target.closest("[data-studio-act]");
       if (!actBtn) return;
       const act = actBtn.getAttribute("data-studio-act");
@@ -5625,9 +6069,65 @@
         submitStudioFolder(folderId);
         return;
       }
+      if (act === "restore") {
+        if (!folder.softDeletedAt || !folder.submissionId) {
+          folder.softDeletedAt = null;
+          folder.softDeletedUntil = null;
+          folder.submissionId = null;
+          folder.submissionStatus = null;
+          folder.submissionReason = "";
+          folder.queueNo = null;
+          saveStudioDoc();
+          renderStudio();
+          showToast("Восстановлено как черновик");
+          return;
+        }
+        try {
+          await api(`/api/studio/submissions/${folder.submissionId}/restore`, {
+            method: "POST",
+          });
+          folder.softDeletedAt = null;
+          folder.softDeletedUntil = null;
+          folder.submissionId = null;
+          folder.submissionStatus = null;
+          folder.submissionReason = "";
+          folder.queueNo = null;
+          saveStudioDoc();
+          showToast("Восстановлено как черновик");
+          renderStudio();
+        } catch (err) {
+          showToast(err.message || "Не удалось восстановить");
+        }
+        return;
+      }
       if (act === "delete") {
         const ok = window.confirm(`Удалить папку «${folder.name}» целиком?`);
         if (!ok) return;
+        if (folder.submissionId && authToken) {
+          try {
+            const data = await api(
+              `/api/studio/submissions/${folder.submissionId}/soft-delete`,
+              { method: "POST" }
+            );
+            const sub = data?.submission;
+            const deletedMs = sub?.deletedAt
+              ? Date.parse(sub.deletedAt) || Date.now()
+              : Date.now();
+            const purgeMs = sub?.purgeAt
+              ? Date.parse(sub.purgeAt) || deletedMs + 86400000
+              : deletedMs + 86400000;
+            folder.softDeletedAt = deletedMs;
+            folder.softDeletedUntil = purgeMs;
+            folder.queueNo = null;
+            saveStudioDoc();
+            showToast("Папка удалена — можно восстановить в течение 24ч");
+            renderStudio();
+            return;
+          } catch (err) {
+            showToast(err.message || "Не удалось удалить на сервере");
+            return;
+          }
+        }
         studioDoc.folders = studioDoc.folders.filter((x) => x.id !== folderId);
         if (studioOpenFolderId === folderId) studioOpenFolderId = null;
         saveStudioDoc();
@@ -5825,8 +6325,8 @@
       if (!studioOpenReviewId) return;
       const sub = getOpenReviewSubmission();
       const st = String(sub?.status || "");
-      if (st !== "rejected" && st !== "added" && st !== "approved") {
-        showToast("Удалить можно только отклонённые, одобренные или добавленные");
+      if (st !== "rejected") {
+        showToast("Удалить можно только отклонённые анкеты");
         return;
       }
       const isRace = isRaceSubmission(sub);
@@ -5851,7 +6351,37 @@
       }
     });
 
-    document.getElementById("studio-review-toolbar")?.addEventListener("click", (e) => {
+    document.getElementById("studio-review-hide")?.addEventListener("click", async () => {
+      if (!studioOpenReviewId) return;
+      const sub = getOpenReviewSubmission();
+      if (!sub) return;
+      const st = String(sub.status || "");
+      if (st !== "approved" && st !== "added") {
+        showToast("Скрыть можно только одобренные или добавленные");
+        return;
+      }
+      const nextHidden = !sub.hidden;
+      try {
+        await patchStudioSubmission(studioOpenReviewId, { hidden: nextHidden });
+        showToast(nextHidden ? "Скрыто" : "Показано");
+        if (nextHidden && studioReviewKindFilter !== "hidden") {
+          studioReviewList = studioReviewList.filter(
+            (s) => Number(s.id) !== Number(studioOpenReviewId)
+          );
+          studioOpenReviewId = null;
+        } else if (!nextHidden && studioReviewKindFilter === "hidden") {
+          studioReviewList = studioReviewList.filter(
+            (s) => Number(s.id) !== Number(studioOpenReviewId)
+          );
+          studioOpenReviewId = null;
+        }
+        renderStudio();
+      } catch (err) {
+        showToast(err.message || "Не удалось обновить");
+      }
+    });
+
+    document.getElementById("studio-review-toolbar")?.addEventListener("click", async (e) => {
       const statusBtn = e.target.closest("[data-studio-status]");
       if (statusBtn) {
         studioReviewStatusFilter = statusBtn.getAttribute("data-studio-status") || "all";
@@ -5860,7 +6390,13 @@
       }
       const kindBtn = e.target.closest("[data-studio-kind]");
       if (kindBtn) {
-        studioReviewKindFilter = kindBtn.getAttribute("data-studio-kind") || "all";
+        const next = kindBtn.getAttribute("data-studio-kind") || "all";
+        const prevHidden = studioReviewKindFilter === "hidden";
+        studioReviewKindFilter = next;
+        const nextHidden = next === "hidden";
+        if (prevHidden !== nextHidden) {
+          await loadStudioReviewList();
+        }
         renderStudio();
       }
     });
@@ -5876,12 +6412,13 @@
   renderStudio();
 
   /* ─── Orders (Заказы) ─── */
-  let ordersTab = "create";
+  let ordersTab = "main"; // main | review
   let ordersList = [];
+  let ordersReviewList = [];
   let ordersOpenId = null;
   let ordersCtxId = null;
   let ordersFormKind = "skin";
-  /** @type {{ name: string, dataUrl: string }[]} */
+  /** @type {{ name: string, dataUrl: string, role?: string }[]} */
   let ordersFormRefs = [];
   let ordersSkinUrls = [];
   let ordersAssets = {
@@ -5894,6 +6431,16 @@
   let ordersPreviewMod = null;
   let ordersPreviewsReady = false;
   let ordersPreviewSkinUrl = null;
+  /** @type {Map<number, HTMLCanvasElement>} */
+  const ordersTilePreviewCanvases = new Map();
+  /** @type {Set<number>} */
+  const ordersDismissedIds = new Set();
+  let ordersReviewStatusFilter = "all";
+  let ordersReviewKindFilter = "all";
+  let ordersReviewSort = "date-desc";
+  let ordersShowHidden = false;
+  /** @type {{ name: string, dataUrl: string, role?: string }[]} */
+  let ordersOwnerExtraRefs = [];
 
   function isOrdersFounder() {
     return Boolean(authToken && isFounderViewer());
@@ -5911,7 +6458,7 @@
     return "";
   }
 
-  function appendOrderStar(host, status, reason) {
+  function appendOrderStar(host, status, reason, queueNo = null) {
     if (!host || !status) return;
     const tip = orderStatusTip(status, reason);
     if (!tip) return;
@@ -5927,15 +6474,95 @@
     });
     star.addEventListener("pointerdown", (e) => e.stopPropagation());
     host.appendChild(star);
+    const qn = Number(queueNo);
+    if (status === "approved" && Number.isFinite(qn) && qn > 0) {
+      const badge = document.createElement("span");
+      badge.className = "studio-tile__queue";
+      badge.textContent = String(qn);
+      badge.setAttribute("aria-label", `Очередь ${qn}`);
+      host.appendChild(badge);
+    }
+  }
+
+  function kindLabel(kind) {
+    if (kind === "model") return "Модель";
+    if (kind === "build") return "Постройка";
+    return "Скин";
+  }
+
+  function kindAccent(kind) {
+    if (kind === "model") return "#c4a0ff";
+    if (kind === "build") return "#fbbf24";
+    return "#7dd3fc";
+  }
+
+  function isOrderImageFile(f) {
+    if (!f) return false;
+    const src = f.path || f.dataUrl || "";
+    return Boolean(src) && /\.(png|jpe?g|webp)$/i.test(f.name || f.path || src);
+  }
+
+  function orderCoverInfo(order) {
+    const kind = String(order?.kind || "skin");
+    const refs = Array.isArray(order?.refs) ? order.refs : [];
+    const results = Array.isArray(order?.results) ? order.results : [];
+    const st = String(order?.status || "");
+
+    if (kind === "skin") {
+      if (st === "ready" && results.length) {
+        const first = results.find((r) => r?.path) || results[0];
+        if (first?.path) return { type: "skin3d", textureUrl: first.path };
+      }
+      const skinRef =
+        refs.find((r) => r.role === "skin") ||
+        refs.find((r) => /skin|скин/i.test(String(r.name || "")));
+      if (skinRef?.path) return { type: "skin3d", textureUrl: skinRef.path };
+      const img = refs.find(isOrderImageFile);
+      if (img?.path) return { type: "image", coverUrl: img.path };
+      return { type: "race" };
+    }
+
+    const img = refs.find(isOrderImageFile);
+    if (img?.path) return { type: "image", coverUrl: img.path };
+    return { type: "race" };
+  }
+
+  function formatPurgeLeft(purgeAt) {
+    const t = Date.parse(purgeAt || 0);
+    if (!Number.isFinite(t)) return "24ч";
+    const left = Math.max(0, t - Date.now());
+    const hrs = Math.ceil(left / 3600000);
+    if (hrs <= 0) return "скоро";
+    return `~${hrs}ч`;
   }
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=80`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=83`);
     return ordersPreviewMod;
   }
 
+  async function disposeOrdersTilePreviews() {
+    const canvases = [...ordersTilePreviewCanvases.values()];
+    ordersTilePreviewCanvases.clear();
+    try {
+      const mod = ordersPreviewMod || (await ensureOrdersPreviewMod().catch(() => null));
+      if (mod?.stopOrdersPreview) {
+        canvases.forEach((c) => {
+          try {
+            mod.stopOrdersPreview(c);
+          } catch (_) {
+            /* ignore */
+          }
+        });
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
   async function disposeOrdersPreviews() {
+    await disposeOrdersTilePreviews();
     const skinCanvas = document.getElementById("orders-skin-preview");
     const modelCanvas = document.getElementById("orders-model-preview");
     try {
@@ -5990,37 +6617,103 @@
     const tasks = [];
     if (skinCanvas && skinUrl) {
       tasks.push(
-        mod.mountOrdersPreview(skinCanvas, {
-          objUrl: assets.skinModel,
-          textureUrl: skinUrl,
-          yaw: Math.PI,
-          yOffset: -0.28,
-        }).catch((err) => console.warn("orders skin preview", err))
+        mod
+          .mountOrdersPreview(skinCanvas, {
+            objUrl: assets.skinModel,
+            textureUrl: skinUrl,
+            yaw: Math.PI,
+            yOffset: -0.28,
+          })
+          .catch((err) => console.warn("orders skin preview", err))
       );
     }
     if (modelCanvas) {
       tasks.push(
-        mod.mountOrdersPreview(modelCanvas, {
-          objUrl: assets.costumeModel,
-          textureUrl: assets.modelTexture,
-          yaw: Math.PI,
-        }).catch((err) => console.warn("orders model preview", err))
+        mod
+          .mountOrdersPreview(modelCanvas, {
+            objUrl: assets.costumeModel,
+            textureUrl: assets.modelTexture,
+            yaw: Math.PI,
+          })
+          .catch((err) => console.warn("orders model preview", err))
       );
     }
     await Promise.all(tasks);
     ordersPreviewsReady = true;
   }
 
-  async function onOrdersTabShown() {
-    if (ordersTab === "create") {
-      await loadOrdersPreviews();
+  async function mountOrderTileSkinPreview(canvas, textureUrl, orderId) {
+    if (!canvas || !textureUrl) return;
+    try {
+      const assets = await ensureOrdersSkinAssets();
+      const mod = await ensureOrdersPreviewMod();
+      await mod.mountOrdersPreview(canvas, {
+        objUrl: assets.skinModel,
+        textureUrl,
+        yaw: Math.PI,
+        yOffset: -0.28,
+      });
+      ordersTilePreviewCanvases.set(Number(orderId), canvas);
+    } catch (err) {
+      console.warn("orders tile preview", err);
     }
-    if (ordersTab === "list") {
-      await loadOrdersList();
+  }
+
+  function fillOrderTileVisual(visual, order) {
+    const cover = orderCoverInfo(order);
+    visual.innerHTML = "";
+    if (cover.type === "skin3d" && cover.textureUrl) {
+      const canvas = document.createElement("canvas");
+      canvas.className = "orders-tile-canvas";
+      canvas.width = 96;
+      canvas.height = 128;
+      canvas.setAttribute("aria-hidden", "true");
+      visual.appendChild(canvas);
+      mountOrderTileSkinPreview(canvas, cover.textureUrl, order.id);
+      return;
+    }
+    const img = document.createElement("img");
+    img.className =
+      cover.type === "image" ? "orders-cover-img" : "catalog-card__img orders-cover-img";
+    img.src = cover.type === "image" ? cover.coverUrl : "assets/race.png";
+    img.alt = "";
+    img.draggable = false;
+    visual.appendChild(img);
+  }
+
+  async function onOrdersTabShown() {
+    updateOrdersSubtabsUi();
+    if (ordersTab === "main") {
+      await loadOrdersPreviews();
+      if (authToken) await loadOrdersMine();
+      renderOrdersUi();
+    } else if (ordersTab === "review" && isOrdersFounder()) {
+      await disposeOrdersPreviews();
+      await loadOrdersReview();
       renderOrdersUi();
     } else {
+      ordersTab = "main";
+      await loadOrdersPreviews();
+      if (authToken) await loadOrdersMine();
       renderOrdersUi();
     }
+  }
+
+  function updateOrdersSubtabsUi() {
+    const tabs = document.getElementById("orders-subtabs");
+    if (!tabs) return;
+    const founder = isOrdersFounder();
+    tabs.hidden = !founder;
+    if (!founder && ordersTab === "review") {
+      ordersTab = "main";
+      ordersOpenId = null;
+    }
+    tabs.querySelectorAll("[data-orders-tab]").forEach((btn) => {
+      btn.classList.toggle(
+        "is-active",
+        btn.getAttribute("data-orders-tab") === ordersTab
+      );
+    });
   }
 
   function hideOrdersItemMenu() {
@@ -6029,18 +6722,24 @@
     ordersCtxId = null;
   }
 
-  function showOrdersItemMenu(orderId, clientX, clientY) {
-    const order = ordersList.find((o) => Number(o.id) === Number(orderId));
+  function showOrdersItemMenu(orderId, clientX, clientY, listSource) {
+    const list = listSource || ordersList;
+    const order = list.find((o) => Number(o.id) === Number(orderId));
     const menu = document.getElementById("orders-item-menu");
     if (!menu || !order) return;
     ordersCtxId = Number(orderId);
+    const soft = Boolean(order.deletedAt);
+    const ready =
+      String(order.status) === "ready" &&
+      Array.isArray(order.results) &&
+      order.results.length > 0;
     const dl = menu.querySelector('[data-orders-act="download"]');
-    if (dl) {
-      const ready =
-        String(order.status) === "ready" &&
-        Array.isArray(order.results) &&
-        order.results.length > 0;
-      dl.hidden = !ready;
+    const restoreBtn = menu.querySelector('[data-orders-act="restore"]');
+    const softBtn = menu.querySelector('[data-orders-act="soft-delete"]');
+    if (dl) dl.hidden = !ready || soft;
+    if (restoreBtn) restoreBtn.hidden = !soft;
+    if (softBtn) {
+      softBtn.hidden = soft || String(order.status) === "ready";
     }
     placeStudioMenu(menu, clientX, clientY);
   }
@@ -6052,7 +6751,8 @@
     ordersFormRefs.forEach((file, idx) => {
       const chip = document.createElement("span");
       chip.className = "orders-ref-chip";
-      chip.textContent = file.name || `файл ${idx + 1}`;
+      const roleMark = file.role === "skin" ? " [скин]" : "";
+      chip.textContent = `${file.name || `файл ${idx + 1}`}${roleMark}`;
       const rm = document.createElement("button");
       rm.type = "button";
       rm.setAttribute("aria-label", "Убрать");
@@ -6072,24 +6772,33 @@
       showToast("Войдите, чтобы оформить заказ");
       return;
     }
-    ordersFormKind = kind === "model" ? "model" : "skin";
+    ordersFormKind = kind === "model" ? "model" : kind === "build" ? "build" : "skin";
     ordersFormRefs = [];
     const title = document.getElementById("orders-form-modal-title");
-    if (title) title.textContent = ordersFormKind === "model" ? "Заказ модели" : "Заказ скина";
+    if (title) {
+      title.textContent =
+        ordersFormKind === "model"
+          ? "Заказ модели"
+          : ordersFormKind === "build"
+            ? "Заказ постройки"
+            : "Заказ скина";
+    }
     const desc = document.getElementById("orders-form-desc");
     if (desc) {
       desc.value = "";
       desc.placeholder =
         ordersFormKind === "model"
           ? "Опишите костюмную модель: форма, детали, цвета, стиль…"
-          : "Опишите скин: внешность, одежда, цвета, стиль…";
+          : ordersFormKind === "build"
+            ? "Опишите постройку…"
+            : "Опишите скин: внешность, одежда, цвета, стиль…";
     }
     const refsBtn = document.getElementById("orders-form-refs-btn");
     if (refsBtn) {
       refsBtn.textContent =
-        ordersFormKind === "model"
-          ? "Прикрепить референсы"
-          : "Прикрепить референсы / скин";
+        ordersFormKind === "skin"
+          ? "Прикрепить референсы / скин"
+          : "Прикрепить референсы";
     }
     const err = document.getElementById("orders-form-error");
     if (err) {
@@ -6112,14 +6821,45 @@
     });
   }
 
-  async function filesToOrderPayload(fileList, max = 8) {
+  function probeImageSize(dataUrl) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () =>
+        resolve({ w: img.naturalWidth || 0, h: img.naturalHeight || 0 });
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  }
+
+  function isLikelySkinDimensions(w, h) {
+    if (!w || !h) return false;
+    if (w === 64 && (h === 32 || h === 64)) return true;
+    if (w === 128 && (h === 64 || h === 128)) return true;
+    if (w >= 64 && w % 64 === 0 && (h === w || h * 2 === w)) return true;
+    return false;
+  }
+
+  async function filesToOrderPayload(fileList, max = 8, { detectSkinRole = false } = {}) {
     const files = Array.from(fileList || []).slice(0, max);
     const out = [];
     for (const file of files) {
       if (!file || file.size > 4 * 1024 * 1024) continue;
       try {
         const dataUrl = await readFileAsDataUrl(file);
-        out.push({ name: file.name || "file.png", dataUrl });
+        const entry = { name: file.name || "file.png", dataUrl };
+        if (detectSkinRole) {
+          const isPng =
+            /\.png$/i.test(file.name || "") ||
+            /^data:image\/png/i.test(dataUrl);
+          if (isPng) {
+            const size = await probeImageSize(dataUrl);
+            entry.role =
+              size && isLikelySkinDimensions(size.w, size.h) ? "skin" : "ref";
+          } else {
+            entry.role = "ref";
+          }
+        }
+        out.push(entry);
       } catch {
         /* skip */
       }
@@ -6127,27 +6867,110 @@
     return out;
   }
 
-  async function loadOrdersList() {
+  async function loadOrdersMine() {
     if (!authToken) {
       ordersList = [];
       return;
     }
     try {
-      const path = isOrdersFounder() ? "/api/orders" : "/api/orders/mine";
-      const data = await api(path);
-      ordersList = Array.isArray(data?.orders) ? data.orders : [];
+      const data = await api("/api/orders/mine");
+      const raw = Array.isArray(data?.orders) ? data.orders : [];
+      ordersList = raw.filter((o) => {
+        const id = Number(o.id);
+        if (ordersDismissedIds.has(id) && o.deletedAt) return false;
+        return true;
+      });
     } catch (err) {
       ordersList = [];
       showToast(err.message || "Не удалось загрузить заказы");
     }
   }
 
-  function getOpenOrder() {
-    return ordersList.find((o) => Number(o.id) === Number(ordersOpenId)) || null;
+  async function loadOrdersReview() {
+    if (!isOrdersFounder()) {
+      ordersReviewList = [];
+      return;
+    }
+    try {
+      const path = ordersShowHidden ? "/api/orders?showHidden=1" : "/api/orders";
+      const data = await api(path);
+      ordersReviewList = Array.isArray(data?.orders) ? data.orders : [];
+    } catch (err) {
+      ordersReviewList = [];
+      showToast(err.message || "Не удалось загрузить анкеты заказов");
+    }
   }
 
-  function kindLabel(kind) {
-    return kind === "model" ? "Модель" : "Скин";
+  function getOpenOrder() {
+    const fromMine = ordersList.find((o) => Number(o.id) === Number(ordersOpenId));
+    if (fromMine) return fromMine;
+    return ordersReviewList.find((o) => Number(o.id) === Number(ordersOpenId)) || null;
+  }
+
+  function getFilteredSortedOrdersReview() {
+    const statusRank = { pending: 0, approved: 1, ready: 2, rejected: 3 };
+    let list = Array.isArray(ordersReviewList) ? [...ordersReviewList] : [];
+    if (ordersReviewStatusFilter !== "all") {
+      list = list.filter(
+        (o) => String(o.status || "pending") === ordersReviewStatusFilter
+      );
+    }
+    if (ordersReviewKindFilter !== "all") {
+      list = list.filter((o) => String(o.kind || "skin") === ordersReviewKindFilter);
+    }
+    const nameOf = (o) => kindLabel(o.kind).toLowerCase();
+    const nickOf = (o) => String(o.submitterMcNick || "").toLowerCase();
+    const timeOf = (o) => {
+      const t = Date.parse(o.updatedAt || o.createdAt || 0);
+      return Number.isFinite(t) ? t : 0;
+    };
+    list.sort((a, b) => {
+      switch (ordersReviewSort) {
+        case "date-asc":
+          return timeOf(a) - timeOf(b);
+        case "name-asc":
+          return nameOf(a).localeCompare(nameOf(b), "ru", { sensitivity: "base" });
+        case "name-desc":
+          return nameOf(b).localeCompare(nameOf(a), "ru", { sensitivity: "base" });
+        case "nick-asc":
+          return nickOf(a).localeCompare(nickOf(b), "ru", { sensitivity: "base" });
+        case "nick-desc":
+          return nickOf(b).localeCompare(nickOf(a), "ru", { sensitivity: "base" });
+        case "status": {
+          const d =
+            (statusRank[String(a.status || "pending")] ?? 9) -
+            (statusRank[String(b.status || "pending")] ?? 9);
+          if (d) return d;
+          return timeOf(b) - timeOf(a);
+        }
+        case "date-desc":
+        default:
+          return timeOf(b) - timeOf(a);
+      }
+    });
+    return list;
+  }
+
+  function updateOrdersReviewToolbarUi() {
+    const toolbar = document.getElementById("orders-review-toolbar");
+    if (!toolbar) return;
+    toolbar.querySelectorAll("[data-orders-status]").forEach((btn) => {
+      btn.classList.toggle(
+        "is-active",
+        !ordersShowHidden &&
+          btn.getAttribute("data-orders-status") === ordersReviewStatusFilter
+      );
+    });
+    const hiddenBtn = toolbar.querySelector("[data-orders-hidden]");
+    if (hiddenBtn) hiddenBtn.classList.toggle("is-active", ordersShowHidden);
+    toolbar.querySelectorAll("[data-orders-kind]").forEach((btn) => {
+      btn.classList.toggle(
+        "is-active",
+        btn.getAttribute("data-orders-kind") === ordersReviewKindFilter
+      );
+    });
+    const sort = document.getElementById("orders-review-sort");
+    if (sort && sort.value !== ordersReviewSort) sort.value = ordersReviewSort;
   }
 
   function renderOrdersFiles(files, emptyText) {
@@ -6189,18 +7012,71 @@
     const rejectBtn = document.getElementById("orders-reject-btn");
     const approveBtn = document.getElementById("orders-approve-btn");
     const attachLabel = document.getElementById("orders-attach-label");
+    const downloadBtn = document.getElementById("orders-download-btn");
+    const ownerSave = document.getElementById("orders-owner-save-btn");
+    const ownerSubmit = document.getElementById("orders-owner-submit-btn");
+    const hideBtn = document.getElementById("orders-hide-btn");
+    const deleteBtn = document.getElementById("orders-delete-btn");
     if (!wrap) return;
-    if (!order || !isOrdersFounder()) {
+    if (!order) {
       wrap.hidden = true;
       return;
     }
-    wrap.hidden = false;
     const st = String(order.status || "pending");
-    if (rejectBtn) rejectBtn.hidden = st === "rejected";
-    if (approveBtn) approveBtn.hidden = st === "approved" || st === "ready";
-    if (attachLabel) {
-      attachLabel.hidden = st !== "approved" && st !== "ready";
+    const soft = Boolean(order.deletedAt);
+    const isOwner =
+      authUser && Number(order.submitterId) === Number(authUser.id);
+    const founder = isOrdersFounder();
+    const reviewMode = ordersTab === "review" && founder;
+
+    wrap.hidden = false;
+
+    if (downloadBtn) {
+      downloadBtn.hidden = !(
+        st === "ready" &&
+        Array.isArray(order.results) &&
+        order.results.length > 0 &&
+        !soft
+      );
     }
+
+    const ownerEditable =
+      isOwner &&
+      !reviewMode &&
+      !soft &&
+      (st === "pending" || st === "rejected");
+    if (ownerSave) ownerSave.hidden = !ownerEditable;
+    if (ownerSubmit) ownerSubmit.hidden = !ownerEditable;
+
+    if (rejectBtn) rejectBtn.hidden = !reviewMode || soft || st === "rejected";
+    if (approveBtn) {
+      approveBtn.hidden =
+        !reviewMode || soft || st === "approved" || st === "ready";
+    }
+    if (attachLabel) {
+      attachLabel.hidden =
+        !reviewMode || soft || (st !== "approved" && st !== "ready");
+    }
+    if (hideBtn) {
+      const canHide = reviewMode && !soft && st === "ready";
+      hideBtn.hidden = !canHide;
+      hideBtn.textContent = order.hidden ? "Показать" : "Скрыть";
+    }
+    if (deleteBtn) {
+      deleteBtn.hidden = !reviewMode || soft || st !== "rejected";
+    }
+
+    const anyVisible = [
+      downloadBtn,
+      ownerSave,
+      ownerSubmit,
+      rejectBtn,
+      approveBtn,
+      attachLabel,
+      hideBtn,
+      deleteBtn,
+    ].some((el) => el && !el.hidden);
+    wrap.hidden = !anyVisible;
   }
 
   function renderOrdersDetail() {
@@ -6209,6 +7085,7 @@
     const title = document.getElementById("orders-detail-title");
     if (!body) return;
     body.innerHTML = "";
+    ordersOwnerExtraRefs = [];
     if (!order) {
       if (title) title.textContent = "";
       updateOrdersDetailActions(null);
@@ -6219,20 +7096,92 @@
     }
     const meta = document.createElement("div");
     meta.className = "orders-detail__meta";
+    const queueBit =
+      order.status === "approved" && order.queueNo != null
+        ? `<span>Очередь: №${order.queueNo}</span>`
+        : "";
     meta.innerHTML = `
       <span>Статус: ${orderStatusTip(order.status, order.reason) || order.status}</span>
       <span>ID: #${order.id}</span>
+      ${queueBit}
     `;
     body.appendChild(meta);
+
+    const st = String(order.status || "pending");
+    const soft = Boolean(order.deletedAt);
+    const isOwner =
+      authUser && Number(order.submitterId) === Number(authUser.id);
+    const founder = isOrdersFounder();
+    const reviewMode = ordersTab === "review" && founder;
+    const ownerEditable =
+      isOwner &&
+      !reviewMode &&
+      !soft &&
+      (st === "pending" || st === "rejected");
 
     const descTitle = document.createElement("h3");
     descTitle.className = "orders-detail__section-title";
     descTitle.textContent = "Описание";
     body.appendChild(descTitle);
-    const desc = document.createElement("p");
-    desc.className = "orders-detail__desc";
-    desc.textContent = order.description || "";
-    body.appendChild(desc);
+
+    if (ownerEditable) {
+      const area = document.createElement("textarea");
+      area.className = "field-area";
+      area.id = "orders-detail-desc";
+      area.rows = 5;
+      area.value = order.description || "";
+      body.appendChild(area);
+
+      const refsRow = document.createElement("div");
+      refsRow.className = "orders-refs-row";
+      const addRefs = document.createElement("button");
+      addRefs.type = "button";
+      addRefs.className = "mc-btn mc-btn--compact";
+      addRefs.textContent = "Добавить файлы";
+      const refsInput = document.createElement("input");
+      refsInput.type = "file";
+      refsInput.accept = "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp";
+      refsInput.multiple = true;
+      refsInput.hidden = true;
+      addRefs.addEventListener("click", () => refsInput.click());
+      const chips = document.createElement("div");
+      chips.className = "orders-refs-list";
+      chips.id = "orders-detail-refs-chips";
+      const renderOwnerChips = () => {
+        chips.innerHTML = "";
+        ordersOwnerExtraRefs.forEach((file, idx) => {
+          const chip = document.createElement("span");
+          chip.className = "orders-ref-chip";
+          chip.textContent = file.name || `файл ${idx + 1}`;
+          const rm = document.createElement("button");
+          rm.type = "button";
+          rm.textContent = "×";
+          rm.addEventListener("click", () => {
+            ordersOwnerExtraRefs.splice(idx, 1);
+            renderOwnerChips();
+          });
+          chip.appendChild(rm);
+          chips.appendChild(chip);
+        });
+      };
+      refsInput.addEventListener("change", async () => {
+        const added = await filesToOrderPayload(refsInput.files, 8, {
+          detectSkinRole: order.kind === "skin",
+        });
+        ordersOwnerExtraRefs = [...ordersOwnerExtraRefs, ...added].slice(0, 8);
+        refsInput.value = "";
+        renderOwnerChips();
+      });
+      refsRow.appendChild(addRefs);
+      refsRow.appendChild(refsInput);
+      body.appendChild(refsRow);
+      body.appendChild(chips);
+    } else {
+      const desc = document.createElement("p");
+      desc.className = "orders-detail__desc";
+      desc.textContent = order.description || "";
+      body.appendChild(desc);
+    }
 
     if (order.status === "rejected" && order.reason) {
       const rTitle = document.createElement("h3");
@@ -6253,106 +7202,185 @@
 
     const resTitle = document.createElement("h3");
     resTitle.className = "orders-detail__section-title";
-    resTitle.textContent = "Готовые скины";
+    resTitle.textContent =
+      order.kind === "model" ? "Готовые файлы" : "Готовые скины";
     body.appendChild(resTitle);
     body.appendChild(renderOrdersFiles(order.results, "Пока нет готовых файлов"));
 
     updateOrdersDetailActions(order);
   }
 
-  function renderOrdersGrid() {
-    const grid = document.getElementById("orders-grid");
-    const empty = document.getElementById("orders-empty");
-    if (!grid) return;
-    grid.innerHTML = "";
+  function createOrderTile(order, listSource) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "studio-tile catalog-card";
+    if (order.deletedAt) btn.classList.add("orders-tile--soft-deleted");
+    btn.setAttribute("role", "listitem");
+    btn.style.setProperty("--section-accent", kindAccent(order.kind));
+
+    const visual = document.createElement("div");
+    visual.className = "catalog-card__visual";
+    fillOrderTileVisual(visual, order);
+    if (!order.deletedAt) {
+      appendOrderStar(visual, order.status, order.reason, order.queueNo);
+    }
+    btn.appendChild(visual);
+
+    const stack = document.createElement("div");
+    stack.className = "studio-tile__label-stack catalog-card__label";
+    const name = document.createElement("span");
+    name.className = "studio-tile__name";
+    name.textContent = kindLabel(order.kind);
+    const sub = document.createElement("span");
+    sub.className = "studio-tile__sub";
+    if (order.deletedAt) {
+      sub.textContent = `Удалено · ещё ${formatPurgeLeft(order.purgeAt)}`;
+    } else if (isOrdersFounder() && ordersTab === "review") {
+      sub.textContent = order.submitterMcNick || "—";
+    } else {
+      sub.textContent = orderStatusTip(order.status, order.reason) || order.status;
+    }
+    stack.appendChild(name);
+    stack.appendChild(sub);
+    btn.appendChild(stack);
+
+    btn.addEventListener("click", () => {
+      if (order.deletedAt) return;
+      ordersOpenId = Number(order.id);
+      renderOrdersUi();
+    });
+    btn.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showOrdersItemMenu(order.id, e.clientX, e.clientY, listSource);
+    });
+    return btn;
+  }
+
+  async function renderOrdersBoard() {
+    await disposeOrdersTilePreviews();
+    const readyGrid = document.getElementById("orders-ready-grid");
+    const activeGrid = document.getElementById("orders-active-grid");
+    const readyEmpty = document.getElementById("orders-ready-empty");
+    const activeEmpty = document.getElementById("orders-active-empty");
+    if (!readyGrid || !activeGrid) return;
+    readyGrid.innerHTML = "";
+    activeGrid.innerHTML = "";
+
     if (!authToken) {
-      if (empty) {
-        empty.hidden = false;
-        empty.textContent = "Войдите, чтобы видеть заказы";
+      if (readyEmpty) {
+        readyEmpty.hidden = false;
+        readyEmpty.textContent = "Войдите, чтобы видеть заказы";
+      }
+      if (activeEmpty) {
+        activeEmpty.hidden = false;
+        activeEmpty.textContent = "Войдите, чтобы видеть заказы";
       }
       return;
     }
-    if (!ordersList.length) {
+
+    const ready = [];
+    const active = [];
+    const soft = [];
+    ordersList.forEach((o) => {
+      if (o.deletedAt) {
+        soft.push(o);
+        return;
+      }
+      if (String(o.status) === "ready") ready.push(o);
+      else active.push(o);
+    });
+    soft.sort((a, b) => {
+      const ta = Date.parse(a.deletedAt || 0) || 0;
+      const tb = Date.parse(b.deletedAt || 0) || 0;
+      return ta - tb;
+    });
+
+    if (readyEmpty) {
+      readyEmpty.hidden = ready.length > 0;
+      readyEmpty.textContent = "Пока нет готовых";
+    }
+    if (activeEmpty) {
+      activeEmpty.hidden = active.length + soft.length > 0;
+      activeEmpty.textContent = "Нет активных заказов";
+    }
+
+    ready.forEach((o) => readyGrid.appendChild(createOrderTile(o, ordersList)));
+    active.forEach((o) => activeGrid.appendChild(createOrderTile(o, ordersList)));
+    soft.forEach((o) => activeGrid.appendChild(createOrderTile(o, ordersList)));
+  }
+
+  async function renderOrdersReviewGrid() {
+    await disposeOrdersTilePreviews();
+    const grid = document.getElementById("orders-review-grid");
+    const empty = document.getElementById("orders-review-empty");
+    if (!grid) return;
+    grid.innerHTML = "";
+    updateOrdersReviewToolbarUi();
+    const filtered = getFilteredSortedOrdersReview();
+    if (!ordersReviewList.length) {
       if (empty) {
         empty.hidden = false;
-        empty.textContent = isOrdersFounder()
-          ? "Пока никто не отправил заказы"
-          : "Вы ещё не отправляли заказы";
+        empty.textContent = ordersShowHidden
+          ? "Нет скрытых заказов"
+          : "Пока никто не отправил заказы";
+      }
+      return;
+    }
+    if (!filtered.length) {
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = "Нет заказов по выбранным фильтрам";
       }
       return;
     }
     if (empty) empty.hidden = true;
-    ordersList.forEach((order) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "studio-tile";
-      btn.setAttribute("role", "listitem");
-      btn.style.setProperty(
-        "--section-accent",
-        order.kind === "model" ? "#c4a0ff" : "#7dd3fc"
-      );
-
-      const visual = document.createElement("div");
-      visual.className = "catalog-card__visual";
-      const mark = document.createElement("div");
-      mark.className = "studio-tile__folder-mark";
-      mark.textContent = order.kind === "model" ? "M" : "S";
-      visual.appendChild(mark);
-      appendOrderStar(visual, order.status, order.reason);
-      btn.appendChild(visual);
-
-      const stack = document.createElement("div");
-      stack.className = "studio-tile__label-stack";
-      const name = document.createElement("span");
-      name.className = "studio-tile__name";
-      name.textContent = kindLabel(order.kind);
-      const sub = document.createElement("span");
-      sub.className = "studio-tile__sub";
-      sub.textContent = isOrdersFounder()
-        ? order.submitterMcNick || "—"
-        : orderStatusTip(order.status, order.reason) || order.status;
-      stack.appendChild(name);
-      stack.appendChild(sub);
-      btn.appendChild(stack);
-
-      btn.addEventListener("click", () => {
-        ordersOpenId = Number(order.id);
-        renderOrdersUi();
-      });
-      btn.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        showOrdersItemMenu(order.id, e.clientX, e.clientY);
-      });
-      grid.appendChild(btn);
-    });
+    filtered.forEach((o) =>
+      grid.appendChild(createOrderTile(o, ordersReviewList))
+    );
   }
 
   function renderOrdersUi() {
-    const createPanel = document.getElementById("orders-create-panel");
-    const listPanel = document.getElementById("orders-list-panel");
+    updateOrdersSubtabsUi();
+    const mainPanel = document.getElementById("orders-main-panel");
+    const reviewPanel = document.getElementById("orders-review-panel");
     const detail = document.getElementById("orders-detail");
-    document.querySelectorAll("#orders-subtabs [data-orders-tab]").forEach((btn) => {
-      btn.classList.toggle("is-active", btn.getAttribute("data-orders-tab") === ordersTab);
-    });
+    const typeFrame = document.getElementById("orders-type-frame");
+    const board = document.getElementById("orders-board");
 
-    if (ordersTab === "create") {
-      if (createPanel) createPanel.hidden = false;
-      if (listPanel) listPanel.hidden = true;
-      if (detail) detail.hidden = true;
-      return;
-    }
-
-    if (createPanel) createPanel.hidden = true;
     if (ordersOpenId) {
-      if (listPanel) listPanel.hidden = true;
+      if (mainPanel) mainPanel.hidden = true;
+      if (reviewPanel) reviewPanel.hidden = true;
       if (detail) detail.hidden = false;
       renderOrdersDetail();
       return;
     }
+
     if (detail) detail.hidden = true;
-    if (listPanel) listPanel.hidden = false;
-    renderOrdersGrid();
+
+    if (ordersTab === "review" && isOrdersFounder()) {
+      if (mainPanel) mainPanel.hidden = true;
+      if (reviewPanel) reviewPanel.hidden = false;
+      renderOrdersReviewGrid();
+      return;
+    }
+
+    if (reviewPanel) reviewPanel.hidden = true;
+    if (mainPanel) mainPanel.hidden = false;
+    if (typeFrame) typeFrame.hidden = false;
+    if (board) board.hidden = false;
+    renderOrdersBoard();
+  }
+
+  function upsertOrderInLists(order) {
+    if (!order) return;
+    const merge = (list) => {
+      const idx = list.findIndex((o) => Number(o.id) === Number(order.id));
+      if (idx >= 0) list[idx] = order;
+      else list.unshift(order);
+    };
+    merge(ordersList);
+    merge(ordersReviewList);
   }
 
   async function patchOrder(id, body) {
@@ -6361,11 +7389,7 @@
       body: JSON.stringify(body),
     });
     const order = data?.order;
-    if (order) {
-      const idx = ordersList.findIndex((o) => Number(o.id) === Number(order.id));
-      if (idx >= 0) ordersList[idx] = order;
-      else ordersList.unshift(order);
-    }
+    if (order) upsertOrderInLists(order);
     return order;
   }
 
@@ -6385,7 +7409,7 @@
         const a = document.createElement("a");
         const url = URL.createObjectURL(blob);
         a.href = url;
-        a.download = file.name || `skin-${file.id}.png`;
+        a.download = file.name || `file-${file.id}.png`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -6394,7 +7418,7 @@
         if (file.path) {
           const a = document.createElement("a");
           a.href = file.path;
-          a.download = file.name || "skin.png";
+          a.download = file.name || "file.png";
           a.target = "_blank";
           document.body.appendChild(a);
           a.click();
@@ -6402,7 +7426,21 @@
         }
       }
     }
-    showToast(files.length > 1 ? "Скачивание начато" : "Скин скачан");
+    showToast(files.length > 1 ? "Скачивание начато" : "Файл скачан");
+  }
+
+  async function softDeleteOrder(id) {
+    const data = await api(`/api/orders/${id}/soft-delete`, { method: "POST" });
+    if (data?.order) upsertOrderInLists(data.order);
+    return data?.order;
+  }
+
+  async function restoreOrderLocal(id) {
+    await api(`/api/orders/${id}/restore`, { method: "POST" });
+    ordersDismissedIds.add(Number(id));
+    ordersList = ordersList.filter((o) => Number(o.id) !== Number(id));
+    ordersReviewList = ordersReviewList.filter((o) => Number(o.id) !== Number(id));
+    if (Number(ordersOpenId) === Number(id)) ordersOpenId = null;
   }
 
   function bindOrdersUi() {
@@ -6410,25 +7448,30 @@
       const btn = e.target.closest("[data-orders-tab]");
       if (!btn) return;
       const next = btn.getAttribute("data-orders-tab");
-      if (next !== "create" && next !== "list") return;
+      if (next !== "main" && next !== "review") return;
+      if (next === "review" && !isOrdersFounder()) return;
       ordersTab = next;
       ordersOpenId = null;
       hideOrdersItemMenu();
-      if (ordersTab === "list") {
-        disposeOrdersPreviews();
-        if (!authToken) {
-          openAuthModal("login");
-        } else {
-          await loadOrdersList();
-        }
+      if (ordersTab === "review") {
+        await disposeOrdersPreviews();
+        await loadOrdersReview();
       } else {
         await loadOrdersPreviews();
+        if (authToken) await loadOrdersMine();
       }
       renderOrdersUi();
     });
 
-    document.getElementById("orders-type-skin")?.addEventListener("click", () => openOrdersForm("skin"));
-    document.getElementById("orders-type-model")?.addEventListener("click", () => openOrdersForm("model"));
+    document.getElementById("orders-type-skin")?.addEventListener("click", () =>
+      openOrdersForm("skin")
+    );
+    document.getElementById("orders-type-model")?.addEventListener("click", () =>
+      openOrdersForm("model")
+    );
+    document.getElementById("orders-type-build")?.addEventListener("click", () => {
+      showToast('Раздел «Постройка» скоро');
+    });
 
     document.getElementById("orders-form-modal-close")?.addEventListener("click", () => {
       closeStudioModal("orders-form-modal");
@@ -6436,13 +7479,17 @@
     document.getElementById("orders-form-refs-btn")?.addEventListener("click", () => {
       document.getElementById("orders-form-refs-input")?.click();
     });
-    document.getElementById("orders-form-refs-input")?.addEventListener("change", async (e) => {
-      const input = e.target;
-      const added = await filesToOrderPayload(input?.files, 8);
-      ordersFormRefs = [...ordersFormRefs, ...added].slice(0, 8);
-      if (input) input.value = "";
-      renderOrdersRefsChips();
-    });
+    document
+      .getElementById("orders-form-refs-input")
+      ?.addEventListener("change", async (e) => {
+        const input = e.target;
+        const added = await filesToOrderPayload(input?.files, 8, {
+          detectSkinRole: ordersFormKind === "skin",
+        });
+        ordersFormRefs = [...ordersFormRefs, ...added].slice(0, 8);
+        if (input) input.value = "";
+        renderOrdersRefsChips();
+      });
     document.getElementById("orders-form")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       const descEl = document.getElementById("orders-form-desc");
@@ -6472,9 +7519,9 @@
         }
         closeStudioModal("orders-form-modal");
         showToast("Заказ отправлен");
-        ordersTab = "list";
+        ordersTab = "main";
         ordersOpenId = null;
-        await loadOrdersList();
+        await loadOrdersMine();
         renderOrdersUi();
       } catch (ex) {
         if (err) {
@@ -6488,10 +7535,46 @@
       }
     });
 
-    document.getElementById("orders-detail-back")?.addEventListener("click", () => {
+    document.getElementById("orders-detail-back")?.addEventListener("click", async () => {
       ordersOpenId = null;
+      if (ordersTab === "main") await loadOrdersPreviews();
       renderOrdersUi();
     });
+
+    document.getElementById("orders-download-btn")?.addEventListener("click", async () => {
+      const order = getOpenOrder();
+      if (!order) return;
+      await downloadOrderResults(order);
+    });
+
+    const ownerPatch = async ({ submit }) => {
+      if (!ordersOpenId) return;
+      const descEl = document.getElementById("orders-detail-desc");
+      const description = String(descEl?.value || "").trim();
+      if (!description) {
+        descEl?.focus();
+        showToast("Опишите заказ");
+        return;
+      }
+      const body = { description };
+      if (ordersOwnerExtraRefs.length) body.refs = ordersOwnerExtraRefs;
+      if (submit) body.status = "pending";
+      try {
+        await patchOrder(ordersOpenId, body);
+        ordersOwnerExtraRefs = [];
+        showToast(submit ? "Отправлено" : "Сохранено");
+        await loadOrdersMine();
+        renderOrdersUi();
+      } catch (err) {
+        showToast(err.message || "Не удалось сохранить");
+      }
+    };
+    document
+      .getElementById("orders-owner-save-btn")
+      ?.addEventListener("click", () => ownerPatch({ submit: false }));
+    document
+      .getElementById("orders-owner-submit-btn")
+      ?.addEventListener("click", () => ownerPatch({ submit: true }));
 
     document.getElementById("orders-reject-btn")?.addEventListener("click", () => {
       if (!ordersOpenId) return;
@@ -6545,15 +7628,87 @@
           method: "POST",
           body: JSON.stringify({ files }),
         });
-        if (data?.order) {
-          const idx = ordersList.findIndex((o) => Number(o.id) === Number(data.order.id));
-          if (idx >= 0) ordersList[idx] = data.order;
-        }
+        if (data?.order) upsertOrderInLists(data.order);
         showToast("Файлы прикреплены");
         renderOrdersUi();
       } catch (err) {
         showToast(err.message || "Не удалось прикрепить");
       }
+    });
+    document.getElementById("orders-hide-btn")?.addEventListener("click", async () => {
+      if (!ordersOpenId) return;
+      const order = getOpenOrder();
+      if (!order) return;
+      const nextHidden = !order.hidden;
+      try {
+        await patchOrder(ordersOpenId, { hidden: nextHidden });
+        showToast(nextHidden ? "Скрыто" : "Показано");
+        if (nextHidden && !ordersShowHidden) {
+          ordersReviewList = ordersReviewList.filter(
+            (o) => Number(o.id) !== Number(ordersOpenId)
+          );
+          ordersOpenId = null;
+        } else if (!nextHidden && ordersShowHidden) {
+          ordersReviewList = ordersReviewList.filter(
+            (o) => Number(o.id) !== Number(ordersOpenId)
+          );
+          ordersOpenId = null;
+        }
+        renderOrdersUi();
+      } catch (err) {
+        showToast(err.message || "Не удалось обновить");
+      }
+    });
+    document.getElementById("orders-delete-btn")?.addEventListener("click", async () => {
+      if (!ordersOpenId) return;
+      const order = getOpenOrder();
+      if (String(order?.status || "") !== "rejected") {
+        showToast("Удалить можно только отклонённые заказы");
+        return;
+      }
+      const ok = window.confirm(`Удалить заказ #${ordersOpenId}?`);
+      if (!ok) return;
+      try {
+        await api(`/api/orders/${ordersOpenId}`, { method: "DELETE" });
+        ordersList = ordersList.filter((o) => Number(o.id) !== Number(ordersOpenId));
+        ordersReviewList = ordersReviewList.filter(
+          (o) => Number(o.id) !== Number(ordersOpenId)
+        );
+        ordersOpenId = null;
+        showToast("Удалено");
+        renderOrdersUi();
+      } catch (err) {
+        showToast(err.message || "Не удалось удалить");
+      }
+    });
+
+    document.getElementById("orders-review-toolbar")?.addEventListener("click", async (e) => {
+      const statusBtn = e.target.closest("[data-orders-status]");
+      if (statusBtn) {
+        ordersReviewStatusFilter = statusBtn.getAttribute("data-orders-status") || "all";
+        if (ordersShowHidden) {
+          ordersShowHidden = false;
+          await loadOrdersReview();
+        }
+        renderOrdersUi();
+        return;
+      }
+      const hiddenBtn = e.target.closest("[data-orders-hidden]");
+      if (hiddenBtn) {
+        ordersShowHidden = !ordersShowHidden;
+        await loadOrdersReview();
+        renderOrdersUi();
+        return;
+      }
+      const kindBtn = e.target.closest("[data-orders-kind]");
+      if (kindBtn) {
+        ordersReviewKindFilter = kindBtn.getAttribute("data-orders-kind") || "all";
+        renderOrdersUi();
+      }
+    });
+    document.getElementById("orders-review-sort")?.addEventListener("change", (e) => {
+      ordersReviewSort = String(e.target.value || "date-desc");
+      renderOrdersUi();
     });
 
     document.getElementById("orders-item-menu")?.addEventListener("click", async (e) => {
@@ -6563,16 +7718,42 @@
       const id = ordersCtxId;
       hideOrdersItemMenu();
       if (!id) return;
-      const order = ordersList.find((o) => Number(o.id) === Number(id));
+      const order =
+        ordersList.find((o) => Number(o.id) === Number(id)) ||
+        ordersReviewList.find((o) => Number(o.id) === Number(id));
       if (!order) return;
       if (act === "open") {
+        if (order.deletedAt) return;
         ordersOpenId = Number(id);
-        ordersTab = "list";
         renderOrdersUi();
         return;
       }
       if (act === "download") {
         await downloadOrderResults(order);
+        return;
+      }
+      if (act === "soft-delete") {
+        if (String(order.status) === "ready") return;
+        const ok = window.confirm("Удалить заказ? Можно восстановить в течение 24ч.");
+        if (!ok) return;
+        try {
+          await softDeleteOrder(id);
+          showToast("Заказ удалён");
+          if (Number(ordersOpenId) === Number(id)) ordersOpenId = null;
+          renderOrdersUi();
+        } catch (err) {
+          showToast(err.message || "Не удалось удалить");
+        }
+        return;
+      }
+      if (act === "restore") {
+        try {
+          await restoreOrderLocal(id);
+          showToast("Восстановлено как черновик — отправьте заново");
+          renderOrdersUi();
+        } catch (err) {
+          showToast(err.message || "Не удалось восстановить");
+        }
       }
     });
 
