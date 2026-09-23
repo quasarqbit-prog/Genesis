@@ -25,7 +25,12 @@ function disposeObject(root) {
   });
 }
 
-function fitCamera(camera, object, canvas, { yOffset = 0, xOffset = 0, cropFeet = false } = {}) {
+function fitCamera(
+  camera,
+  object,
+  canvas,
+  { yOffset = 0, xOffset = 0, cropFeet = false, mode = "button" } = {}
+) {
   // Reset layout from previous fits (needed when toggling cropFeet)
   object.position.set(0, 0, 0);
   const box = new THREE.Box3().setFromObject(object);
@@ -39,21 +44,32 @@ function fitCamera(camera, object, canvas, { yOffset = 0, xOffset = 0, cropFeet 
   const aspect = canvas.width / Math.max(canvas.height, 1);
   const fov = camera.fov * (Math.PI / 180);
 
-  if (cropFeet) {
+  if (mode === "install" || (!cropFeet && mode !== "button")) {
+    // Full body with padding so head + feet fit
+    let dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.22;
+    if (aspect < 1) dist *= 1.05;
+    camera.position.set(0, dist * 0.06, dist * 1.02);
+    camera.lookAt(0, size.y * 0.02, 0);
+    camera.near = Math.max(0.01, dist / 100);
+    camera.far = dist * 20;
+  } else if (mode === "button") {
+    // Type "Кнопка": raised bust crop, fills frame from the top
+    let dist = maxDim / (2 * Math.tan(fov / 2));
+    if (aspect < 1) dist /= aspect;
+    dist *= 0.52;
+    object.position.y += size.y * 0.12;
+    camera.position.set(0, dist * 0.08, dist * 0.9);
+    camera.lookAt(0, size.y * 0.08, 0);
+    camera.near = Math.max(0.01, dist / 100);
+    camera.far = dist * 20;
+  } else {
+    // Type "Анкета": crop feet (expand via setCropFeet)
     let dist = maxDim / (2 * Math.tan(fov / 2));
     if (aspect < 1) dist /= aspect;
     dist *= 0.72;
     object.position.y -= size.y * 0.08;
     camera.position.set(0, dist * 0.14, dist * 0.88);
     camera.lookAt(0, size.y * 0.16, 0);
-    camera.near = Math.max(0.01, dist / 100);
-    camera.far = dist * 20;
-  } else {
-    // Full-body framing (install / anketa hover)
-    let dist = (maxDim / (2 * Math.tan(fov / 2))) * 0.92;
-    if (aspect < 1) dist *= 0.92;
-    camera.position.set(0, dist * 0.08, dist * 0.95);
-    camera.lookAt(0, size.y * 0.05 + yOffset * 0.3, 0);
     camera.near = Math.max(0.01, dist / 100);
     camera.far = dist * 20;
   }
@@ -153,7 +169,17 @@ export async function mountOrdersPreview(canvas, opts) {
   let cropFeet =
     opts.cropFeet != null ? Boolean(opts.cropFeet) : mode !== "install";
   root.rotation.y = baseYaw;
-  fitCamera(camera, root, canvas, { yOffset, xOffset, cropFeet });
+
+  const applyFit = () => {
+    const framingMode = !cropFeet && mode === "anketa" ? "install" : mode;
+    fitCamera(camera, root, canvas, {
+      yOffset,
+      xOffset,
+      cropFeet,
+      mode: framingMode,
+    });
+  };
+  applyFit();
 
   const host =
     opts.lookHost ||
@@ -267,7 +293,7 @@ export async function mountOrdersPreview(canvas, opts) {
       const value = Boolean(next);
       if (value === cropFeet) return;
       cropFeet = value;
-      fitCamera(camera, root, canvas, { yOffset, xOffset, cropFeet });
+      applyFit();
     },
     stop() {
       alive = false;

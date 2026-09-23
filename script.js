@@ -6543,7 +6543,7 @@
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=87`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=88`);
     return ordersPreviewMod;
   }
 
@@ -6656,7 +6656,7 @@
             objUrl: assets.skinModel,
             textureUrl: skinUrl,
             yaw: Math.PI,
-            yOffset: -0.28,
+            yOffset: 0.18,
             cropFeet: true,
             mode: "button",
             lookHost: skinCanvas.closest(".orders-type-card") || skinCanvas,
@@ -6849,8 +6849,8 @@
       frame.className = "orders-preview-card__frame";
       const canvas = document.createElement("canvas");
       canvas.className = "orders-preview-card__canvas";
-      canvas.width = 140;
-      canvas.height = 220;
+      canvas.width = 180;
+      canvas.height = 300;
       canvas.setAttribute("aria-hidden", "true");
       frame.appendChild(canvas);
       card.appendChild(frame);
