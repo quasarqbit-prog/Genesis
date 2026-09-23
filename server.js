@@ -643,6 +643,26 @@ async function ensureSchema() {
         ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
+
+  if (!(await columnExists("chat_rooms", "slug"))) {
+    await pool.query(
+      `ALTER TABLE chat_rooms
+       ADD COLUMN slug VARCHAR(32) NULL AFTER type,
+       ADD UNIQUE KEY uq_chat_rooms_slug (slug)`
+    );
+  }
+  if (!(await columnExists("chat_rooms", "web_readonly"))) {
+    await pool.query(
+      `ALTER TABLE chat_rooms
+       ADD COLUMN web_readonly TINYINT(1) NOT NULL DEFAULT 0 AFTER slug`
+    );
+  }
+  if (!(await columnExists("chat_messages", "audience_json"))) {
+    await pool.query(
+      `ALTER TABLE chat_messages
+       ADD COLUMN audience_json JSON NULL AFTER source`
+    );
+  }
 }
 
 async function ensureFounderIdZero(founderId) {
@@ -2790,7 +2810,7 @@ app.post("/api/mc/online", async (req, res) => {
   }
 });
 
-const { attachChatSocket } = require("./chat-routes").setupChatRoutes({
+const { attachChatSocket, ensureSystemChatRooms } = require("./chat-routes").setupChatRoutes({
   app,
   pool,
   io,
@@ -4761,6 +4781,7 @@ server.listen(PORT, async () => {
   try {
     await ensureSchema();
     await ensureAdminSeed();
+    await ensureSystemChatRooms();
     console.log("DB schema OK");
   } catch (err) {
     console.error("DB schema ensure failed:", err.message);

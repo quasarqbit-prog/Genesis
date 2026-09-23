@@ -68,9 +68,13 @@ MOD_API_KEY=длинный_секретный_ключ
 | POST | `/api/mc/chat/rooms` | Создать `{ nick, type, name?, memberIds?\|memberNicks? }` |
 | POST | `/api/mc/chat/rooms/:id/join` | Вступить в общий `{ nick }` |
 | GET | `/api/mc/chat/rooms/:id/messages?nick=&after=` | История |
-| POST | `/api/mc/chat/messages` | Отправить `{ nick, roomId, text }` |
+| POST | `/api/mc/chat/messages` | Отправить `{ nick, roomId\|roomSlug, text, audienceNicks? }` |
 | GET | `/api/mc/chat/sync?nick=&after=` | Новые сообщения во всех чатах игрока |
 | GET | `/api/mc/chat/directory` | Список ников для создания |
+
+Системные общие чаты (создаются при старте сервера):
+- `roomSlug: "minecraft"` — общий чат Minecraft
+- `roomSlug: "proximity"` — «По близости»: на сайте только просмотр; писать из мода с `audienceNicks` (отправитель + кто рядом)
 
 Сайт → мод: мод периодически дергает `sync`. Мод → сайт: `POST .../messages` (сразу видно на сайте через Socket.io).
 

@@ -17,6 +17,54 @@ function setupChatRoutes({
   MC_NICK_RE,
   normalizeMcNick,
 }) {
+  const SYSTEM_ROOMS = [
+    {
+      slug: "minecraft",
+      name: "Minecraft",
+      type: "public",
+      webReadonly: 0,
+    },
+    {
+      slug: "proximity",
+      name: "По близости",
+      type: "public",
+      webReadonly: 1,
+    },
+  ];
+
+  async function ensureSystemChatRooms() {
+    for (const def of SYSTEM_ROOMS) {
+      const [rows] = await pool.execute(
+        `SELECT id FROM chat_rooms WHERE slug = :slug LIMIT 1`,
+        { slug: def.slug }
+      );
+      if (rows[0]) {
+        await pool.execute(
+          `UPDATE chat_rooms
+           SET name = :name, type = :type, web_readonly = :webReadonly
+           WHERE slug = :slug`,
+          {
+            name: def.name,
+            type: def.type,
+            webReadonly: def.webReadonly,
+            slug: def.slug,
+          }
+        );
+        continue;
+      }
+      await pool.execute(
+        `INSERT INTO chat_rooms (name, type, slug, web_readonly, created_by)
+         VALUES (:name, :type, :slug, :webReadonly, NULL)`,
+        {
+          name: def.name,
+          type: def.type,
+          slug: def.slug,
+          webReadonly: def.webReadonly,
+        }
+      );
+    }
+  }
+
   function requireModKey(req, res) {
     if (!MOD_API_KEY) {
       res.status(403).json({ ok: false, error: "Forbidden" });
@@ -44,10 +92,28 @@ function setupChatRoutes({
     const id = Number(roomId);
     if (!Number.isFinite(id) || id <= 0) return null;
     const [rows] = await pool.execute(
-      `SELECT id, name, type, created_by, created_at FROM chat_rooms WHERE id = :id LIMIT 1`,
+      `SELECT id, name, type, slug, web_readonly, created_by, created_at
+       FROM chat_rooms WHERE id = :id LIMIT 1`,
       { id }
     );
     return rows[0] || null;
+  }
+
+  async function getRoomBySlug(slug) {
+    const [rows] = await pool.execute(
+      `SELECT id, name, type, slug, web_readonly, created_by, created_at
+       FROM chat_rooms WHERE slug = :slug LIMIT 1`,
+      { slug: String(slug || "") }
+    );
+    return rows[0] || null;
+  }
+
+  function isSystemRoom(room) {
+    return Boolean(room?.slug);
+  }
+
+  function isWebReadonly(room) {
+    return Boolean(Number(room?.web_readonly)) || room?.slug === "proximity";
   }
 
   async function isMember(roomId, userId) {
@@ -59,11 +125,16 @@ function setupChatRoutes({
   }
 
   async function canAccessRoom(room, userId) {
-    if (!room) return false;
-    if (room.type === "public") {
-      return isMember(room.id, userId);
-    }
+    if (!room || userId == null) return false;
+    if (isSystemRoom(room) && room.type === "public") return true;
     return isMember(room.id, userId);
+  }
+
+  async function ensureMembership(roomId, userId) {
+    await pool.execute(
+      `INSERT IGNORE INTO chat_members (room_id, user_id) VALUES (:roomId, :userId)`,
+      { roomId, userId }
+    );
   }
 
   async function listMembers(roomId) {
@@ -84,6 +155,21 @@ function setupChatRoutes({
     }));
   }
 
+  function parseAudience(raw) {
+    if (raw == null) return null;
+    if (Array.isArray(raw)) {
+      return raw.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+    }
+    if (typeof raw === "string") {
+      try {
+        return parseAudience(JSON.parse(raw));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
   function serializeMessage(row) {
     return {
       id: Number(row.id),
@@ -92,6 +178,7 @@ function setupChatRoutes({
       authorNick: row.author_nick || "",
       text: row.body || "",
       source: row.source || "web",
+      audience: parseAudience(row.audience_json),
       createdAt: row.created_at
         ? new Date(row.created_at).toISOString()
         : null,
@@ -99,24 +186,35 @@ function setupChatRoutes({
   }
 
   async function serializeRoom(row, userId) {
-    const members = await listMembers(row.id);
+    const members = isSystemRoom(row) ? [] : await listMembers(row.id);
     const [lastRows] = await pool.execute(
-      `SELECT id, room_id, user_id, author_nick, body, source, created_at
+      `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
        FROM chat_messages WHERE room_id = :roomId
        ORDER BY id DESC LIMIT 1`,
       { roomId: row.id }
     );
-    const last = lastRows[0] ? serializeMessage(lastRows[0]) : null;
+    let last = lastRows[0] ? serializeMessage(lastRows[0]) : null;
+    if (last && row.slug === "proximity" && userId != null) {
+      const aud = last.audience;
+      const mine = Number(last.userId) === Number(userId);
+      const inAud = Array.isArray(aud) && aud.includes(Number(userId));
+      if (aud && !mine && !inAud) last = null;
+    }
     let title = row.name;
     if (row.type === "dm" && userId != null) {
       const other = members.find((m) => m.id !== Number(userId));
       if (other) title = other.siteNick || other.mcNick || title;
     }
+    const joined =
+      isSystemRoom(row) ||
+      (userId != null ? await isMember(row.id, userId) : false);
     return {
       id: Number(row.id),
       name: row.name,
       title,
       type: row.type,
+      slug: row.slug || null,
+      webReadonly: isWebReadonly(row),
       createdBy: row.created_by != null ? Number(row.created_by) : null,
       createdAt: row.created_at
         ? new Date(row.created_at).toISOString()
@@ -124,6 +222,7 @@ function setupChatRoutes({
       members,
       lastMessage: last,
       memberCount: members.length,
+      joined: Boolean(joined),
     };
   }
 
@@ -227,21 +326,31 @@ function setupChatRoutes({
     let rows;
     if (scope === "public") {
       const [r] = await pool.execute(
-        `SELECT r.id, r.name, r.type, r.created_by, r.created_at,
+        `SELECT r.id, r.name, r.type, r.slug, r.web_readonly, r.created_by, r.created_at,
                 EXISTS(
                   SELECT 1 FROM chat_members m
                   WHERE m.room_id = r.id AND m.user_id = :userId
                 ) AS joined
          FROM chat_rooms r
          WHERE r.type = 'public'
-         ORDER BY r.name ASC
+         ORDER BY
+           CASE r.slug
+             WHEN 'minecraft' THEN 0
+             WHEN 'proximity' THEN 1
+             ELSE 2
+           END,
+           r.name ASC
          LIMIT 200`,
         { userId }
       );
       rows = r;
+      // Auto-join system public rooms so sync/membership stays consistent
+      for (const row of rows) {
+        if (row.slug) await ensureMembership(row.id, userId);
+      }
     } else {
       const [r] = await pool.execute(
-        `SELECT r.id, r.name, r.type, r.created_by, r.created_at, 1 AS joined
+        `SELECT r.id, r.name, r.type, r.slug, r.web_readonly, r.created_by, r.created_at, 1 AS joined
          FROM chat_rooms r
          JOIN chat_members m ON m.room_id = r.id AND m.user_id = :userId
          WHERE r.type IN ('dm', 'group')
@@ -254,10 +363,10 @@ function setupChatRoutes({
     const out = [];
     for (const row of rows) {
       const room = await serializeRoom(row, userId);
-      room.joined = Boolean(Number(row.joined));
+      if (scope === "public" && row.slug) room.joined = true;
+      else if (scope === "public") room.joined = Boolean(Number(row.joined));
       out.push(room);
     }
-    // Sort mine by last message time
     if (scope !== "public") {
       out.sort((a, b) => {
         const ta = a.lastMessage?.createdAt || a.createdAt || "";
@@ -268,80 +377,140 @@ function setupChatRoutes({
     return out;
   }
 
-  async function loadMessages(roomId, { afterId = 0, beforeId = 0, limit = 80 } = {}) {
+  function proximityVisibilitySql(alias = "msg") {
+    return `(
+      ${alias}.audience_json IS NULL
+      OR ${alias}.user_id = :viewerId
+      OR JSON_CONTAINS(${alias}.audience_json, CAST(:viewerId AS JSON), '$')
+    )`;
+  }
+
+  async function loadMessages(
+    room,
+    { afterId = 0, beforeId = 0, limit = 80, viewerId = null } = {}
+  ) {
+    const roomId = room.id;
     const lim = Math.min(Math.max(Number(limit) || 80, 1), 200);
     const after = Number(afterId) || 0;
     const before = Number(beforeId) || 0;
+    const proximity = room.slug === "proximity" && viewerId != null;
+    const vis = proximity ? ` AND ${proximityVisibilitySql("chat_messages")}` : "";
+    const params = { roomId };
+    if (proximity) params.viewerId = Number(viewerId);
+
     let rows;
     if (after > 0) {
+      params.after = after;
       const [r] = await pool.execute(
-        `SELECT id, room_id, user_id, author_nick, body, source, created_at
+        `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
          FROM chat_messages
-         WHERE room_id = :roomId AND id > :after
+         WHERE room_id = :roomId AND id > :after${vis}
          ORDER BY id ASC
          LIMIT ${lim}`,
-        { roomId, after }
+        params
       );
       rows = r;
     } else if (before > 0) {
+      params.before = before;
       const [r] = await pool.execute(
-        `SELECT id, room_id, user_id, author_nick, body, source, created_at
+        `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
          FROM chat_messages
-         WHERE room_id = :roomId AND id < :before
+         WHERE room_id = :roomId AND id < :before${vis}
          ORDER BY id DESC
          LIMIT ${lim}`,
-        { roomId, before }
+        params
       );
       rows = r.reverse();
     } else {
       const [r] = await pool.execute(
-        `SELECT id, room_id, user_id, author_nick, body, source, created_at
+        `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
          FROM chat_messages
-         WHERE room_id = :roomId
+         WHERE room_id = :roomId${vis}
          ORDER BY id DESC
          LIMIT ${lim}`,
-        { roomId }
+        params
       );
       rows = r.reverse();
     }
     return rows.map(serializeMessage);
   }
 
-  async function postMessage({ room, userId, authorNick, text, source }) {
+  async function postMessage({
+    room,
+    userId,
+    authorNick,
+    text,
+    source,
+    audienceIds = null,
+  }) {
     const body = String(text || "").trim().slice(0, MSG_MAX);
     if (!body) {
       const err = new Error("Пустое сообщение");
       err.status = 400;
       throw err;
     }
+    if (isWebReadonly(room) && source !== "mod") {
+      const err = new Error("Этот чат только для просмотра на сайте — писать можно из игры");
+      err.status = 403;
+      throw err;
+    }
     const nick = String(authorNick || "").trim().slice(0, 32) || "???";
+    let audience = null;
+    if (room.slug === "proximity") {
+      const set = new Set(
+        (audienceIds || [])
+          .map((id) => Number(id))
+          .filter((id) => Number.isFinite(id) && id >= 0)
+      );
+      if (userId != null) set.add(Number(userId));
+      if (!set.size) {
+        const err = new Error("Для «По близости» укажи audienceNicks / audienceIds");
+        err.status = 400;
+        throw err;
+      }
+      audience = [...set];
+    }
+
     const [result] = await pool.execute(
-      `INSERT INTO chat_messages (room_id, user_id, author_nick, body, source)
-       VALUES (:roomId, :userId, :authorNick, :body, :source)`,
+      `INSERT INTO chat_messages (room_id, user_id, author_nick, body, source, audience_json)
+       VALUES (:roomId, :userId, :authorNick, :body, :source, :audienceJson)`,
       {
         roomId: room.id,
         userId: userId != null ? userId : null,
         authorNick: nick,
         body,
         source: source === "mod" ? "mod" : "web",
+        audienceJson: audience ? JSON.stringify(audience) : null,
       }
     );
     const [rows] = await pool.execute(
-      `SELECT id, room_id, user_id, author_nick, body, source, created_at
+      `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
        FROM chat_messages WHERE id = :id LIMIT 1`,
       { id: result.insertId }
     );
     const message = serializeMessage(rows[0]);
     io.to(`chat:${room.id}`).emit("chat:message", { roomId: room.id, message });
+
     try {
-      const [members] = await pool.execute(
-        `SELECT user_id FROM chat_members WHERE room_id = :roomId`,
-        { roomId: room.id }
-      );
-      for (const m of members) {
-        const uid = Number(m.user_id);
-        if (!Number.isFinite(uid)) continue;
-        io.to(`user:${uid}`).emit("chat:message", { roomId: room.id, message });
+      if (audience?.length) {
+        for (const uid of audience) {
+          io.to(`user:${uid}`).emit("chat:message", { roomId: room.id, message });
+        }
+      } else if (room.slug === "minecraft") {
+        io.emit("chat:message", { roomId: room.id, message });
+      } else {
+        const [members] = await pool.execute(
+          `SELECT user_id FROM chat_members WHERE room_id = :roomId`,
+          { roomId: room.id }
+        );
+        for (const m of members) {
+          const uid = Number(m.user_id);
+          if (!Number.isFinite(uid)) continue;
+          io.to(`user:${uid}`).emit("chat:message", {
+            roomId: room.id,
+            message,
+          });
+        }
       }
     } catch (err) {
       console.warn("chat member notify:", err.message);
@@ -411,10 +580,12 @@ function setupChatRoutes({
       if (!(await canAccessRoom(room, req.user.id))) {
         return res.status(403).json({ error: "Нет доступа к чату" });
       }
-      const messages = await loadMessages(room.id, {
+      if (isSystemRoom(room)) await ensureMembership(room.id, req.user.id);
+      const messages = await loadMessages(room, {
         afterId: req.query.after,
         beforeId: req.query.before,
         limit: req.query.limit,
+        viewerId: req.user.id,
       });
       return res.json({ messages });
     } catch (err) {
@@ -430,6 +601,7 @@ function setupChatRoutes({
       if (!(await canAccessRoom(room, req.user.id))) {
         return res.status(403).json({ error: "Нет доступа к чату" });
       }
+      if (isSystemRoom(room)) await ensureMembership(room.id, req.user.id);
       const message = await postMessage({
         room,
         userId: req.user.id,
@@ -538,10 +710,12 @@ function setupChatRoutes({
       if (!(await canAccessRoom(room, user.id))) {
         return res.status(403).json({ ok: false, error: "Forbidden" });
       }
-      const messages = await loadMessages(room.id, {
+      if (isSystemRoom(room)) await ensureMembership(room.id, user.id);
+      const messages = await loadMessages(room, {
         afterId: req.query.after,
         beforeId: req.query.before,
         limit: req.query.limit,
+        viewerId: user.id,
       });
       return res.json({ ok: true, messages });
     } catch (err) {
@@ -554,17 +728,32 @@ function setupChatRoutes({
     try {
       const user = await resolveModPlayer(req, res);
       if (!user) return;
-      const room = await getRoom(req.body?.roomId);
+      let room = null;
+      if (req.body?.roomId) room = await getRoom(req.body.roomId);
+      if (!room && req.body?.roomSlug) room = await getRoomBySlug(req.body.roomSlug);
       if (!room) return res.status(404).json({ ok: false, error: "Not found" });
       if (!(await canAccessRoom(room, user.id))) {
         return res.status(403).json({ ok: false, error: "Forbidden" });
       }
+      if (isSystemRoom(room)) await ensureMembership(room.id, user.id);
+
+      let audienceIds = Array.isArray(req.body?.audienceIds)
+        ? req.body.audienceIds
+        : [];
+      if (Array.isArray(req.body?.audienceNicks) && req.body.audienceNicks.length) {
+        for (const n of req.body.audienceNicks) {
+          const u = await findUserByNick(n);
+          if (u) audienceIds.push(u.id);
+        }
+      }
+
       const message = await postMessage({
         room,
         userId: user.id,
         authorNick: user.mc_nick,
         text: req.body?.text,
         source: "mod",
+        audienceIds,
       });
       return res.json({ ok: true, message });
     } catch (err) {
@@ -581,16 +770,26 @@ function setupChatRoutes({
     try {
       const user = await resolveModPlayer(req, res);
       if (!user) return;
+      // ensure system rooms membership for sync join
+      for (const def of SYSTEM_ROOMS) {
+        const sys = await getRoomBySlug(def.slug);
+        if (sys) await ensureMembership(sys.id, user.id);
+      }
       const after = Number(req.query.after) || 0;
       const lim = Math.min(Math.max(Number(req.query.limit) || 100, 1), 300);
       const [rows] = await pool.execute(
-        `SELECT msg.id, msg.room_id, msg.user_id, msg.author_nick, msg.body, msg.source, msg.created_at
+        `SELECT msg.id, msg.room_id, msg.user_id, msg.author_nick, msg.body, msg.source, msg.audience_json, msg.created_at
          FROM chat_messages msg
          JOIN chat_members m ON m.room_id = msg.room_id AND m.user_id = :userId
+         LEFT JOIN chat_rooms r ON r.id = msg.room_id
          WHERE msg.id > :after
+           AND (
+             r.slug IS NULL OR r.slug <> 'proximity'
+             OR ${proximityVisibilitySql("msg")}
+           )
          ORDER BY msg.id ASC
          LIMIT ${lim}`,
-        { userId: user.id, after }
+        { userId: user.id, after, viewerId: user.id }
       );
       return res.json({
         ok: true,
@@ -640,7 +839,7 @@ function setupChatRoutes({
     });
   }
 
-  return { attachChatSocket };
+  return { attachChatSocket, ensureSystemChatRooms };
 }
 
 module.exports = { setupChatRoutes };

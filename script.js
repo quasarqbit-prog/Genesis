@@ -11589,6 +11589,7 @@
     const title = document.getElementById("chat-main-title");
     const joinBtn = document.getElementById("chat-join-btn");
     const form = document.getElementById("chat-compose");
+    const input = document.getElementById("chat-compose-input");
     if (!room) {
       if (title) title.textContent = "Выбери чат";
       if (joinBtn) joinBtn.hidden = true;
@@ -11597,10 +11598,20 @@
       renderChatMessages();
       return;
     }
-    if (title) title.textContent = chatRoomTitle(room);
-    const needJoin = room.type === "public" && !room.joined;
+    if (title) {
+      title.textContent = room.webReadonly
+        ? `${chatRoomTitle(room)} · только просмотр`
+        : chatRoomTitle(room);
+    }
+    const needJoin = room.type === "public" && !room.joined && !room.slug;
     if (joinBtn) joinBtn.hidden = !needJoin;
-    if (form) form.hidden = needJoin;
+    const canCompose = !needJoin && !room.webReadonly;
+    if (form) form.hidden = !canCompose;
+    if (input) {
+      input.placeholder = room.webReadonly
+        ? "Писать можно только из игры"
+        : "Сообщение…";
+    }
     if (needJoin) {
       chatMessages = [];
       renderChatMessages();
@@ -11620,7 +11631,7 @@
     renderChatRoomList();
     renderChatMain(room);
     if (socket) socket.emit("chat:join", { roomId: id });
-    if (room.type === "public" && !room.joined) return;
+    if (room.type === "public" && !room.joined && !room.slug) return;
     try {
       const data = await api(`/api/chat/rooms/${id}/messages?limit=100`);
       chatMessages = Array.isArray(data.messages) ? data.messages : [];
@@ -11635,6 +11646,15 @@
     const roomId = Number(payload?.roomId);
     const message = payload?.message;
     if (!roomId || !message) return;
+
+    const myId = Number(authUser?.id);
+    if (Array.isArray(message.audience) && message.audience.length) {
+      const visible =
+        (myId && message.audience.includes(myId)) ||
+        (myId && Number(message.userId) === myId);
+      if (!visible) return;
+    }
+
     const msgId = Number(message.id);
     if (Number.isFinite(msgId) && msgId > 0) {
       if (chatSeenMsgIds.has(msgId)) {
