@@ -4002,6 +4002,9 @@
   /** @type {Map<string, {name:string,ext:string,bytes:Uint8Array,size:number,dataUrl?:string}>} */
   const hubRaceBlockFiles = new Map();
   let hubRaceBlockFileTargetId = null;
+  /** Active content-blocks editor context (studio modal or hub race form).
+   * Must be initialized before updateAuthChrome() → fillHubRaceFields(). */
+  let blocksCtx = null;
 
   function fillHubRaceFields() {
     const form =
@@ -4027,7 +4030,14 @@
         });
       }
     });
-    if (typeof renderHubRaceBlocks === "function") renderHubRaceBlocks();
+    // Defer: updateAuthChrome() can run before studio-block helpers/consts are initialized.
+    queueMicrotask(() => {
+      try {
+        if (typeof renderHubRaceBlocks === "function") renderHubRaceBlocks();
+      } catch (err) {
+        console.error("[hub-race-blocks]", err);
+      }
+    });
     setHubFieldError("hub-race-error", "");
   }
 
@@ -9327,9 +9337,6 @@
     syncStudioCraftLegend(block, legend);
     bodyEl.appendChild(legend);
   }
-
-  /** Active content-blocks editor context (studio modal or hub race form) */
-  let blocksCtx = null;
 
   function getBlocksCtx() {
     return (
