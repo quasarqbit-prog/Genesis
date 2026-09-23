@@ -49,7 +49,7 @@ function fitCamera(camera, object, canvas, { yOffset = 0, xOffset = 0, cropFeet 
     camera.near = Math.max(0.01, dist / 100);
     camera.far = dist * 20;
   } else {
-    // Original type-card framing (СКИН / МОДЕЛЬ buttons)
+    // Full-body framing (install / anketa hover)
     let dist = (maxDim / (2 * Math.tan(fov / 2))) * 0.92;
     if (aspect < 1) dist *= 0.92;
     camera.position.set(0, dist * 0.08, dist * 0.95);
@@ -69,6 +69,11 @@ export function stopOrdersPreview(canvas) {
 }
 
 /**
+ * Preview modes:
+ * - button: crop feet, look toward cursor (type cards СКИН/МОДЕЛЬ)
+ * - anketa: crop feet, expand on hover via setCropFeet, look toward cursor
+ * - install: full body, LMB-drag rotates, no cursor look
+ *
  * @param {HTMLCanvasElement} canvas
  * @param {{
  *   objUrl: string,
@@ -77,6 +82,7 @@ export function stopOrdersPreview(canvas) {
  *   yOffset?: number,
  *   xOffset?: number,
  *   cropFeet?: boolean,
+ *   mode?: 'button' | 'anketa' | 'install',
  *   lookHost?: Element | null,
  * }} opts
  */
@@ -88,6 +94,13 @@ export async function mountOrdersPreview(canvas, opts) {
     prev.stop();
     previews.delete(canvas);
   }
+
+  const mode =
+    opts.mode === "install" || opts.mode === "anketa" || opts.mode === "button"
+      ? opts.mode
+      : opts.cropFeet
+        ? "anketa"
+        : "button";
 
   const width = canvas.width || 96;
   const height = canvas.height || 128;
@@ -137,16 +150,19 @@ export async function mountOrdersPreview(canvas, opts) {
   const baseYaw = Number.isFinite(opts.yaw) ? Number(opts.yaw) : Math.PI;
   const yOffset = Number.isFinite(opts.yOffset) ? Number(opts.yOffset) : 0;
   const xOffset = Number.isFinite(opts.xOffset) ? Number(opts.xOffset) : 0;
-  let cropFeet = Boolean(opts.cropFeet);
+  let cropFeet =
+    opts.cropFeet != null ? Boolean(opts.cropFeet) : mode !== "install";
   root.rotation.y = baseYaw;
   fitCamera(camera, root, canvas, { yOffset, xOffset, cropFeet });
 
   const host =
     opts.lookHost ||
     canvas.closest(".orders-type-card") ||
+    canvas.closest(".orders-preview-card") ||
     canvas.closest(".studio-tile") ||
     canvas.parentElement ||
     canvas;
+
   let hovering = false;
   let pointerX = 0;
   let pointerY = 0;
@@ -155,24 +171,63 @@ export async function mountOrdersPreview(canvas, opts) {
   let targetYaw = 0;
   let targetPitch = 0;
   let idlePhase = 0;
+  let dragging = false;
+  let lastDragX = 0;
 
   const onEnter = () => {
     hovering = true;
   };
   const onLeave = () => {
     hovering = false;
+    dragging = false;
   };
   const onMove = (e) => {
+    if (mode === "install") {
+      if (!dragging) return;
+      const dx = e.clientX - lastDragX;
+      lastDragX = e.clientX;
+      lookYaw += dx * 0.012;
+      return;
+    }
     const rect = host.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     pointerX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     pointerY = ((e.clientY - rect.top) / rect.height) * 2 - 1;
     hovering = true;
   };
+  const onDown = (e) => {
+    if (mode !== "install") return;
+    if (e.button != null && e.button !== 0) return;
+    dragging = true;
+    lastDragX = e.clientX;
+    hovering = true;
+    try {
+      host.setPointerCapture?.(e.pointerId);
+    } catch (_) {
+      /* ignore */
+    }
+    e.preventDefault();
+  };
+  const onUp = (e) => {
+    if (mode !== "install") return;
+    dragging = false;
+    try {
+      host.releasePointerCapture?.(e.pointerId);
+    } catch (_) {
+      /* ignore */
+    }
+  };
 
   host.addEventListener("pointerenter", onEnter);
   host.addEventListener("pointerleave", onLeave);
   host.addEventListener("pointermove", onMove);
+  if (mode === "install") {
+    host.addEventListener("pointerdown", onDown);
+    host.addEventListener("pointerup", onUp);
+    host.addEventListener("pointercancel", onUp);
+    host.style.touchAction = "none";
+    host.style.cursor = "grab";
+  }
 
   let alive = true;
   let frame = 0;
@@ -180,24 +235,34 @@ export async function mountOrdersPreview(canvas, opts) {
     if (!alive) return;
     frame = requestAnimationFrame(tick);
 
-    if (hovering) {
+    if (mode === "install") {
+      lookPitch += (0 - lookPitch) * 0.12;
+      root.rotation.y = baseYaw + lookYaw;
+      root.rotation.x = lookPitch;
+      if (host.style) host.style.cursor = dragging ? "grabbing" : "grab";
+    } else if (hovering) {
       targetYaw = -pointerX * 0.85;
       targetPitch = Math.max(-0.35, Math.min(0.4, -pointerY * 0.55));
+      lookYaw += (targetYaw - lookYaw) * 0.12;
+      lookPitch += (targetPitch - lookPitch) * 0.12;
+      root.rotation.y = baseYaw + lookYaw;
+      root.rotation.x = lookPitch;
     } else {
       idlePhase += 0.016;
       targetYaw = Math.sin(idlePhase * 0.7) * 0.22;
       targetPitch = 0;
+      lookYaw += (targetYaw - lookYaw) * 0.12;
+      lookPitch += (targetPitch - lookPitch) * 0.12;
+      root.rotation.y = baseYaw + lookYaw;
+      root.rotation.x = lookPitch;
     }
 
-    lookYaw += (targetYaw - lookYaw) * 0.12;
-    lookPitch += (targetPitch - lookPitch) * 0.12;
-    root.rotation.y = baseYaw + lookYaw;
-    root.rotation.x = lookPitch;
     renderer.render(scene, camera);
   };
   tick();
 
   const handle = {
+    mode,
     setCropFeet(next) {
       const value = Boolean(next);
       if (value === cropFeet) return;
@@ -210,6 +275,9 @@ export async function mountOrdersPreview(canvas, opts) {
       host.removeEventListener("pointerenter", onEnter);
       host.removeEventListener("pointerleave", onLeave);
       host.removeEventListener("pointermove", onMove);
+      host.removeEventListener("pointerdown", onDown);
+      host.removeEventListener("pointerup", onUp);
+      host.removeEventListener("pointercancel", onUp);
       scene.remove(root);
       disposeObject(root);
       material.dispose();

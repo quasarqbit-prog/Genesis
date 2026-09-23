@@ -6514,17 +6514,15 @@
     if (kind === "skin") {
       if (st === "ready" && results.length) {
         const first = results.find((r) => r?.path) || results[0];
-        if (first?.path) return { type: "skin3d", textureUrl: first.path };
+        if (first?.path) {
+          return { type: "skin3d", textureUrl: first.path, file: first, folder: "results" };
+        }
       }
-      const skinRef =
-        refs.find((r) => String(r.role || "").toLowerCase() === "skin") ||
-        refs.find((r) => /skin|скин/i.test(String(r.name || "")));
-      if (skinRef?.path) return { type: "skin3d", textureUrl: skinRef.path };
-      // Fallback: any square 64-based image path treated as skin when only one image
+      const skinRef = refs.find((r) => String(r.role || "").toLowerCase() === "skin");
+      if (skinRef?.path) {
+        return { type: "skin3d", textureUrl: skinRef.path, file: skinRef, folder: "refs" };
+      }
       const img = refs.find(isOrderImageFile);
-      if (img?.path && refs.filter(isOrderImageFile).length === 1) {
-        return { type: "skin3d", textureUrl: img.path };
-      }
       if (img?.path) return { type: "image", coverUrl: img.path };
       return { type: "race" };
     }
@@ -6545,7 +6543,7 @@
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=86`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=87`);
     return ordersPreviewMod;
   }
 
@@ -6659,6 +6657,9 @@
             textureUrl: skinUrl,
             yaw: Math.PI,
             yOffset: -0.28,
+            cropFeet: true,
+            mode: "button",
+            lookHost: skinCanvas.closest(".orders-type-card") || skinCanvas,
           })
           .catch((err) => console.warn("orders skin preview", err))
       );
@@ -6670,6 +6671,9 @@
             objUrl: assets.costumeModel,
             textureUrl: assets.modelTexture,
             yaw: Math.PI,
+            cropFeet: true,
+            mode: "button",
+            lookHost: modelCanvas.closest(".orders-type-card") || modelCanvas,
           })
           .catch((err) => console.warn("orders model preview", err))
       );
@@ -6689,6 +6693,7 @@
         yaw: Math.PI,
         yOffset: 0,
         cropFeet,
+        mode: "anketa",
         lookHost,
       });
       ordersTilePreviewCanvases.set(Number(orderId), canvas);
@@ -6700,33 +6705,50 @@
     }
   }
 
-  function collectOrderSkinUrls(order) {
+  function collectOrderSkinFiles(order) {
     const refs = Array.isArray(order?.refs) ? order.refs : [];
     const results = Array.isArray(order?.results) ? order.results : [];
-    const urls = [];
-    const push = (f) => {
+    const files = [];
+    const push = (f, folder) => {
       const path = f?.path || f?.dataUrl;
-      if (!path || urls.includes(path)) return;
-      urls.push(path);
+      if (!path) return;
+      if (files.some((x) => (x.path || x.dataUrl) === path)) return;
+      if (String(f.role || "").toLowerCase() === "ref") return;
+      files.push({ ...f, folder });
     };
     refs.forEach((f) => {
-      if (String(f.role || "").toLowerCase() === "skin") push(f);
+      if (String(f.role || "").toLowerCase() === "skin") push(f, "refs");
     });
     if (String(order?.kind || "") === "skin") {
       results.forEach((f) => {
-        if (isOrderImageFile(f)) push(f);
+        if (isOrderImageFile(f)) push(f, "results");
       });
-      if (!urls.length) {
-        refs.forEach((f) => {
-          if (isOrderImageFile(f)) push(f);
-        });
-      }
     } else {
       results.forEach((f) => {
-        if (String(f.role || "").toLowerCase() === "skin" || isOrderImageFile(f)) push(f);
+        if (String(f.role || "").toLowerCase() === "skin") push(f, "results");
       });
     }
-    return urls;
+    return files;
+  }
+
+  async function filterExactSkinFiles(files) {
+    const out = [];
+    for (const f of files || []) {
+      const src = f?.path || f?.dataUrl;
+      if (!src) continue;
+      const size = await probeImageSize(src);
+      if (size && isLikelySkinDimensions(size.w, size.h)) out.push(f);
+    }
+    return out;
+  }
+
+  function fillOrderTileCoverImage(visual, coverUrl) {
+    const img = document.createElement("img");
+    img.className = "orders-cover-img";
+    img.src = coverUrl;
+    img.alt = "";
+    img.draggable = false;
+    visual.appendChild(img);
   }
 
   function fillOrderTileVisual(visual, order) {
@@ -6741,36 +6763,108 @@
       canvas.height = 128;
       canvas.setAttribute("aria-hidden", "true");
       visual.appendChild(canvas);
-      mountOrderTileSkinPreview(canvas, cover.textureUrl, order.id, {
-        cropFeet: true,
-        lookHost: visual.closest(".studio-tile") || visual,
-      });
+      // Verify 64×64 before mounting 3D; otherwise show as flat cover
+      void (async () => {
+        const size = await probeImageSize(cover.textureUrl);
+        if (!size || !isLikelySkinDimensions(size.w, size.h)) {
+          visual.classList.remove("orders-tile-visual--skin");
+          visual.innerHTML = "";
+          fillOrderTileCoverImage(visual, cover.textureUrl);
+          return;
+        }
+        mountOrderTileSkinPreview(canvas, cover.textureUrl, order.id, {
+          cropFeet: true,
+          lookHost: visual.closest(".studio-tile") || visual,
+        });
+      })();
       return true;
     }
+    if (cover.type === "image" && cover.coverUrl) {
+      fillOrderTileCoverImage(visual, cover.coverUrl);
+      return false;
+    }
     const img = document.createElement("img");
-    img.className =
-      cover.type === "image" ? "orders-cover-img" : "catalog-card__img orders-cover-img";
-    img.src = cover.type === "image" ? cover.coverUrl : "assets/race.png";
+    img.className = "catalog-card__img orders-cover-img";
+    img.src = "assets/race.png";
     img.alt = "";
     img.draggable = false;
     visual.appendChild(img);
     return false;
   }
 
-  async function mountOrdersDetailSkinPreviews(host, urls) {
-    if (!host || !urls?.length) return;
+  async function downloadOrderSingleFile(order, file, folder = "refs") {
+    if (!order || !file) return;
+    const folderName = folder === "results" ? "results" : "refs";
+    try {
+      if (file.id) {
+        const res = await fetch(
+          `/api/orders/${order.id}/files/${folderName}/${file.id}`,
+          {
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+          }
+        );
+        if (res.ok) {
+          const blob = await res.blob();
+          const a = document.createElement("a");
+          const url = URL.createObjectURL(blob);
+          a.href = url;
+          a.download = file.name || `skin-${file.id}.png`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          showToast("Скин скачан");
+          return;
+        }
+      }
+      if (file.path || file.dataUrl) {
+        const a = document.createElement("a");
+        a.href = file.path || file.dataUrl;
+        a.download = file.name || "skin.png";
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast("Скин скачан");
+        return;
+      }
+    } catch (_) {
+      /* fall through */
+    }
+    showToast("Не удалось скачать скин");
+  }
+
+  async function mountOrdersDetailSkinPreviews(host, order, files) {
+    if (!host || !files?.length) return;
     const assets = await ensureOrdersSkinAssets();
     const mod = await ensureOrdersPreviewMod();
-    for (const url of urls.slice(0, 6)) {
-      const wrap = document.createElement("div");
-      wrap.className = "orders-detail-skin";
+    const skins = await filterExactSkinFiles(files);
+    if (!skins.length) return;
+    for (const file of skins.slice(0, 6)) {
+      const url = file.path || file.dataUrl;
+      if (!url) continue;
+      const card = document.createElement("div");
+      card.className = "orders-preview-card orders-preview-card--install";
+      const frame = document.createElement("div");
+      frame.className = "orders-preview-card__frame";
       const canvas = document.createElement("canvas");
-      canvas.className = "orders-detail-skin__canvas";
+      canvas.className = "orders-preview-card__canvas";
       canvas.width = 140;
       canvas.height = 220;
       canvas.setAttribute("aria-hidden", "true");
-      wrap.appendChild(canvas);
-      host.appendChild(wrap);
+      frame.appendChild(canvas);
+      card.appendChild(frame);
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "mc-btn mc-btn--compact orders-preview-card__action";
+      action.textContent = "Скачать";
+      action.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void downloadOrderSingleFile(order, file, file.folder || "refs");
+      });
+      card.appendChild(action);
+      host.appendChild(card);
       ordersDetailPreviewCanvases.add(canvas);
       try {
         await mod.mountOrdersPreview(canvas, {
@@ -6779,7 +6873,8 @@
           yaw: Math.PI,
           yOffset: 0,
           cropFeet: false,
-          lookHost: wrap,
+          mode: "install",
+          lookHost: frame,
         });
       } catch (err) {
         console.warn("orders detail skin", err);
@@ -6938,11 +7033,7 @@
   }
 
   function isLikelySkinDimensions(w, h) {
-    if (!w || !h) return false;
-    if (w === 64 && (h === 32 || h === 64)) return true;
-    if (w === 128 && (h === 64 || h === 128)) return true;
-    if (w >= 64 && w % 64 === 0 && (h === w || h * 2 === w)) return true;
-    return false;
+    return Number(w) === 64 && Number(h) === 64;
   }
 
   async function filesToOrderPayload(fileList, max = 8, { detectSkinRole = false } = {}) {
@@ -7207,8 +7298,8 @@
     `;
     body.appendChild(meta);
 
-    const skinUrls = collectOrderSkinUrls(order);
-    if (skinUrls.length) {
+    const skinFiles = collectOrderSkinFiles(order);
+    if (skinFiles.length) {
       const skinTitle = document.createElement("h3");
       skinTitle.className = "orders-detail__section-title";
       skinTitle.textContent = "Превью на модели";
@@ -7216,7 +7307,7 @@
       const skinRow = document.createElement("div");
       skinRow.className = "orders-detail-skins";
       body.appendChild(skinRow);
-      void mountOrdersDetailSkinPreviews(skinRow, skinUrls);
+      void mountOrdersDetailSkinPreviews(skinRow, order, skinFiles);
     }
 
     const st = String(order.status || "pending");
@@ -7333,10 +7424,10 @@
     const visual = document.createElement("div");
     visual.className = "catalog-card__visual";
     const hasSkin = fillOrderTileVisual(visual, order);
-    if (!order.deletedAt) {
-      appendOrderStar(visual, order.status, order.reason, order.queueNo);
-    }
     btn.appendChild(visual);
+    if (!order.deletedAt) {
+      appendOrderStar(btn, order.status, order.reason, order.queueNo);
+    }
 
     if (hasSkin) {
       btn.addEventListener("pointerenter", () => {

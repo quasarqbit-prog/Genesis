@@ -3492,18 +3492,15 @@ function pngDimensions(buffer) {
 }
 
 function isLikelySkinDimensions(w, h) {
-  if (!w || !h) return false;
-  if (w === 64 && (h === 32 || h === 64)) return true;
-  if (w === 128 && (h === 64 || h === 128)) return true;
-  if (w >= 64 && w % 64 === 0 && (h === w || h * 2 === w)) return true;
-  return false;
+  return Number(w) === 64 && Number(h) === 64;
 }
 
 function resolveOrderFileRole(file, buffer, mime) {
   const hinted = String(file?.role || "").trim().toLowerCase();
-  if (hinted === "skin" || hinted === "ref") return hinted;
+  if (hinted === "ref") return "ref";
   const dims = /png/i.test(mime || "") ? pngDimensions(buffer) : null;
   if (dims && isLikelySkinDimensions(dims.w, dims.h)) return "skin";
+  if (hinted === "skin") return "ref";
   return "ref";
 }
 

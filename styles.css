@@ -1143,8 +1143,8 @@ h3,
 
 .studio-tile__star {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 6px;
+  right: 6px;
   z-index: 6;
   width: 22px;
   height: 22px;
@@ -1773,15 +1773,15 @@ h3,
   justify-content: center;
   width: 96px;
   height: 128px;
-  padding-bottom: 4px;
+  padding-bottom: 0;
   background: rgba(8, 4, 16, 0.55);
   border: 2px solid rgba(107, 90, 138, 0.35);
   image-rendering: pixelated;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .orders-type-card__preview--model {
-  overflow: visible;
+  overflow: hidden;
 }
 
 .orders-type-card__preview--empty {
@@ -1799,10 +1799,10 @@ h3,
 }
 
 .orders-model-canvas {
-  width: 112px;
-  height: 148px;
-  margin-top: -28px;
-  margin-bottom: -4px;
+  width: 96px;
+  height: 128px;
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .orders-type-card__label {
@@ -1923,6 +1923,43 @@ h3,
   flex-wrap: wrap;
   gap: 14px;
   margin: 0 0 8px;
+}
+
+.orders-preview-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 148px;
+}
+
+.orders-preview-card__frame {
+  width: 140px;
+  height: 220px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(8, 4, 16, 0.45);
+  border: 2px solid rgba(107, 90, 138, 0.4);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.orders-preview-card--install .orders-preview-card__frame {
+  overflow: hidden;
+}
+
+.orders-preview-card__canvas {
+  width: 140px;
+  height: 220px;
+  display: block;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+.orders-preview-card__action {
+  width: 100%;
 }
 
 .orders-detail-skin {
@@ -2282,6 +2319,11 @@ h3,
 
 .studio-tile.catalog-card:hover {
   z-index: 3;
+}
+
+/* Don't bounce the visual — star/queue badges stay put on anketa hover */
+.studio-tile.catalog-card:hover .catalog-card__visual {
+  transform: none;
 }
 
 .studio-type-card:hover,
