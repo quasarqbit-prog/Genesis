@@ -26,7 +26,7 @@ function disposeObject(root) {
 }
 
 function fitCamera(camera, object, canvas, { yOffset = 0, xOffset = 0, cropFeet = false } = {}) {
-  // Reset layout from previous fits
+  // Reset layout from previous fits (needed when toggling cropFeet)
   object.position.set(0, 0, 0);
   const box = new THREE.Box3().setFromObject(object);
   const size = box.getSize(new THREE.Vector3());
@@ -38,21 +38,25 @@ function fitCamera(camera, object, canvas, { yOffset = 0, xOffset = 0, cropFeet 
   const maxDim = Math.max(size.x, size.y, size.z, 0.001);
   const aspect = canvas.width / Math.max(canvas.height, 1);
   const fov = camera.fov * (Math.PI / 180);
-  let dist = maxDim / (2 * Math.tan(fov / 2));
-  if (aspect < 1) dist /= aspect;
 
   if (cropFeet) {
+    let dist = maxDim / (2 * Math.tan(fov / 2));
+    if (aspect < 1) dist /= aspect;
     dist *= 0.72;
     object.position.y -= size.y * 0.08;
     camera.position.set(0, dist * 0.14, dist * 0.88);
     camera.lookAt(0, size.y * 0.16, 0);
+    camera.near = Math.max(0.01, dist / 100);
+    camera.far = dist * 20;
   } else {
-    dist *= 1.08;
-    camera.position.set(0, dist * 0.04, dist * 0.98);
-    camera.lookAt(0, 0, 0);
+    // Original type-card framing (СКИН / МОДЕЛЬ buttons)
+    let dist = (maxDim / (2 * Math.tan(fov / 2))) * 0.92;
+    if (aspect < 1) dist *= 0.92;
+    camera.position.set(0, dist * 0.08, dist * 0.95);
+    camera.lookAt(0, size.y * 0.05 + yOffset * 0.3, 0);
+    camera.near = Math.max(0.01, dist / 100);
+    camera.far = dist * 20;
   }
-  camera.near = Math.max(0.01, dist / 100);
-  camera.far = dist * 20;
   camera.updateProjectionMatrix();
 }
 
