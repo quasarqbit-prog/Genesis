@@ -1969,14 +1969,45 @@ app.post("/api/login", async (req, res) => {
   }
 });
 
-/** Проверка пароля для Minecraft-мода */
+function signMcAuthProof(challenge, nick, status) {
+  return crypto
+    .createHmac("sha256", MOD_API_KEY)
+    .update(`${challenge}\n${String(nick || "").toLowerCase()}\n${status}`)
+    .digest("hex");
+}
+
+async function lookupMcPasswordStatus(nick, password) {
+  const [rows] = await pool.execute(
+    `SELECT mc_nick, password_hash, account_type, telegram
+     FROM users WHERE LOWER(mc_nick) = LOWER(:nick) LIMIT 1`,
+    { nick }
+  );
+  const row = rows[0];
+  if (!row) {
+    return { status: "unknown", row: null };
+  }
+  if (!row.password_hash) {
+    return { status: "unset", row };
+  }
+  const ok = await bcrypt.compare(password, row.password_hash);
+  return { status: ok ? "ok" : "wrong", row };
+}
+
+/** Проверка пароля для Minecraft-мода (сервер → сайт)
+ *  POST /api/mc/verify
+ *  Header: x-mod-key: <MOD_API_KEY>
+ *  Body: { "nick": "PlayerNick", "password": "..." }
+ *  200 { ok: true } | 401 Unknown player / Wrong password / Password unset | 403 key
+ */
 app.post("/api/mc/verify", async (req, res) => {
   try {
-    if (MOD_API_KEY) {
-      const key = req.headers["x-mod-key"] || req.body?.apiKey;
-      if (key !== MOD_API_KEY) {
-        return res.status(403).json({ ok: false, error: "Forbidden" });
-      }
+    if (!MOD_API_KEY) {
+      console.error("mc verify: MOD_API_KEY is not set");
+      return res.status(403).json({ ok: false, error: "Forbidden" });
+    }
+    const key = String(req.headers["x-mod-key"] || req.body?.apiKey || "");
+    if (key !== MOD_API_KEY) {
+      return res.status(403).json({ ok: false, error: "Forbidden" });
     }
 
     const nick = normalizeMcNick(req.body?.nick || req.body?.mcNick);
@@ -1985,32 +2016,60 @@ app.post("/api/mc/verify", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Bad request" });
     }
 
-    const [rows] = await pool.execute(
-      `SELECT password_hash, account_type, telegram
-       FROM users WHERE mc_nick = :nick LIMIT 1`,
-      { nick }
-    );
-    const row = rows[0];
-    if (!row) {
+    const { status, row } = await lookupMcPasswordStatus(nick, password);
+    if (status === "unknown") {
       return res.status(401).json({ ok: false, error: "Unknown player" });
     }
-    if (!row.password_hash) {
+    if (status === "unset") {
       return res.status(401).json({ ok: false, error: "Password unset" });
     }
-
-    const ok = await bcrypt.compare(password, row.password_hash);
-    if (!ok) {
+    if (status === "wrong") {
       return res.status(401).json({ ok: false, error: "Wrong password" });
     }
 
     return res.json({
       ok: true,
-      nick,
+      nick: row.mc_nick || nick,
       accountType: row.account_type,
       telegram: row.telegram,
     });
   } catch (err) {
     console.error("mc verify:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+/** Проверка пароля с клиента Minecraft (игровой хостинг часто режет исходящий HTTP с сервера)
+ *  POST /api/mc/player-verify
+ *  Body: { "nick", "password", "challenge" }
+ *  200 { ok, status, nick, challenge, sig } — sig = HMAC-SHA256(MOD_API_KEY, challenge\\nnick\\nstatus)
+ */
+app.post("/api/mc/player-verify", async (req, res) => {
+  try {
+    if (!MOD_API_KEY) {
+      console.error("mc player-verify: MOD_API_KEY is not set");
+      return res.status(503).json({ ok: false, error: "Unavailable" });
+    }
+
+    const nick = normalizeMcNick(req.body?.nick || req.body?.mcNick);
+    const password = String(req.body?.password || "");
+    const challenge = String(req.body?.challenge || "").trim().toLowerCase();
+    if (!MC_NICK_RE.test(nick) || !password || !/^[a-f0-9]{32}$/.test(challenge)) {
+      return res.status(400).json({ ok: false, error: "Bad request" });
+    }
+
+    const { status, row } = await lookupMcPasswordStatus(nick, password);
+    const resolvedNick = (row && row.mc_nick) || nick;
+    const sig = signMcAuthProof(challenge, resolvedNick, status);
+    return res.json({
+      ok: status === "ok",
+      status,
+      nick: resolvedNick,
+      challenge,
+      sig,
+    });
+  } catch (err) {
+    console.error("mc player-verify:", err);
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
@@ -2635,11 +2694,12 @@ app.post("/api/user/avatar/refresh", authMiddleware, async (req, res) => {
 /** Список игроков онлайн на Minecraft-сервере (шлёт мод) */
 app.post("/api/mc/online", async (req, res) => {
   try {
-    if (MOD_API_KEY) {
-      const key = req.headers["x-mod-key"] || req.body?.apiKey;
-      if (key !== MOD_API_KEY) {
-        return res.status(403).json({ ok: false, error: "Forbidden" });
-      }
+    if (!MOD_API_KEY) {
+      return res.status(403).json({ ok: false, error: "Forbidden" });
+    }
+    const key = String(req.headers["x-mod-key"] || req.body?.apiKey || "");
+    if (key !== MOD_API_KEY) {
+      return res.status(403).json({ ok: false, error: "Forbidden" });
     }
 
     const raw = req.body?.nicks || req.body?.players || [];
