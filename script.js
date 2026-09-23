@@ -5097,6 +5097,19 @@
             }))
           : [],
       };
+      const before = studioDoc.folders.length;
+      studioDoc.folders = studioDoc.folders.filter((f) => {
+        if (!f.softDeletedAt) return true;
+        const until = f.softDeletedUntil || f.softDeletedAt + 86400000;
+        return until > Date.now();
+      });
+      if (studioDoc.folders.length !== before) {
+        try {
+          localStorage.setItem(STUDIO_STORAGE_KEY, JSON.stringify(studioDoc));
+        } catch (_) {
+          /* ignore */
+        }
+      }
     } catch (_) {
       studioDoc = { folders: [] };
     }
@@ -5254,10 +5267,12 @@
     const restoreBtn = menu?.querySelector('[data-studio-act="restore"]');
     const sendBtn = menu?.querySelector('[data-studio-act="send"]');
     const deleteBtn = menu?.querySelector('[data-studio-act="delete"]');
+    const hardBtn = menu?.querySelector('[data-studio-act="hard-delete"]');
     const editBtn = menu?.querySelector('[data-studio-act="edit"]');
     if (restoreBtn) restoreBtn.hidden = !soft;
     if (sendBtn) sendBtn.hidden = soft;
     if (deleteBtn) deleteBtn.hidden = soft;
+    if (hardBtn) hardBtn.hidden = !soft;
     if (editBtn) editBtn.hidden = soft;
     placeStudioMenu(menu, clientX, clientY);
   }
@@ -5904,20 +5919,20 @@
         }
         if (subEl) {
           if (f.softDeletedAt) {
-            const until = f.softDeletedUntil || f.softDeletedAt + 86400000;
-            const left = Math.max(0, until - Date.now());
-            const hrs = Math.ceil(left / 3600000);
-            subEl.textContent = hrs > 0 ? `Удалено · ещё ~${hrs}ч` : "Скоро очистится";
+            subEl.textContent = "Удалено · ПКМ: восстановить";
+            subEl.hidden = false;
           } else {
             subEl.textContent = "";
             subEl.hidden = true;
           }
         }
-        if (f.submissionStatus && !f.softDeletedAt) {
+        if (f.softDeletedAt) {
+          const until = f.softDeletedUntil || f.softDeletedAt + 86400000;
+          appendPurgeClock(btn, until);
+        } else if (f.submissionStatus) {
           appendStudioStar(btn, f.submissionStatus, f.submissionReason, f.queueNo);
         }
         btn.addEventListener("click", () => {
-          if (f.softDeletedAt) return;
           hideStudioMenus();
           studioOpenFolderId = f.id;
           renderStudio();
@@ -6070,22 +6085,13 @@
         return;
       }
       if (act === "restore") {
-        if (!folder.softDeletedAt || !folder.submissionId) {
-          folder.softDeletedAt = null;
-          folder.softDeletedUntil = null;
-          folder.submissionId = null;
-          folder.submissionStatus = null;
-          folder.submissionReason = "";
-          folder.queueNo = null;
-          saveStudioDoc();
-          renderStudio();
-          showToast("Восстановлено как черновик");
-          return;
-        }
+        if (!folder.softDeletedAt) return;
         try {
-          await api(`/api/studio/submissions/${folder.submissionId}/restore`, {
-            method: "POST",
-          });
+          if (folder.submissionId && authToken) {
+            await api(`/api/studio/submissions/${folder.submissionId}/restore`, {
+              method: "POST",
+            });
+          }
           folder.softDeletedAt = null;
           folder.softDeletedUntil = null;
           folder.submissionId = null;
@@ -6100,8 +6106,32 @@
         }
         return;
       }
+      if (act === "hard-delete") {
+        if (!folder.softDeletedAt) return;
+        const ok = window.confirm(
+          `Удалить «${folder.name}» навсегда без восстановления?`
+        );
+        if (!ok) return;
+        try {
+          if (folder.submissionId && authToken) {
+            await api(`/api/studio/submissions/${folder.submissionId}/hard-delete`, {
+              method: "POST",
+            });
+          }
+          studioDoc.folders = studioDoc.folders.filter((x) => x.id !== folderId);
+          if (studioOpenFolderId === folderId) studioOpenFolderId = null;
+          saveStudioDoc();
+          showToast("Удалено навсегда");
+          renderStudio();
+        } catch (err) {
+          showToast(err.message || "Не удалось удалить");
+        }
+        return;
+      }
       if (act === "delete") {
-        const ok = window.confirm(`Удалить папку «${folder.name}» целиком?`);
+        const ok = window.confirm(
+          `Удалить папку «${folder.name}»? Можно восстановить в течение 24ч.`
+        );
         if (!ok) return;
         if (folder.submissionId && authToken) {
           try {
@@ -6128,9 +6158,11 @@
             return;
           }
         }
-        studioDoc.folders = studioDoc.folders.filter((x) => x.id !== folderId);
-        if (studioOpenFolderId === folderId) studioOpenFolderId = null;
+        const deletedMs = Date.now();
+        folder.softDeletedAt = deletedMs;
+        folder.softDeletedUntil = deletedMs + 86400000;
         saveStudioDoc();
+        showToast("Папка удалена — можно восстановить в течение 24ч");
         renderStudio();
       }
     });
@@ -6538,9 +6570,50 @@
     return `~${hrs}ч`;
   }
 
+  function formatPurgeCountdown(untilMs) {
+    const left = Math.max(0, Number(untilMs) - Date.now());
+    const totalSec = Math.floor(left / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
+  function appendPurgeClock(host, untilMs) {
+    if (!host || !Number.isFinite(Number(untilMs))) return null;
+    const clock = document.createElement("span");
+    clock.className = "studio-tile__purge-clock";
+    clock.textContent = "⏱";
+    clock.setAttribute("data-purge-until", String(untilMs));
+    const tip = `Удаление через ${formatPurgeCountdown(untilMs)}`;
+    clock.setAttribute("data-tip", tip);
+    clock.setAttribute("aria-label", tip);
+    clock.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    clock.addEventListener("pointerdown", (e) => e.stopPropagation());
+    host.appendChild(clock);
+    return clock;
+  }
+
+  function tickPurgeClocks() {
+    document.querySelectorAll(".studio-tile__purge-clock[data-purge-until]").forEach((el) => {
+      const until = Number(el.getAttribute("data-purge-until"));
+      if (!Number.isFinite(until)) return;
+      const tip = `Удаление через ${formatPurgeCountdown(until)}`;
+      el.setAttribute("data-tip", tip);
+      el.setAttribute("aria-label", tip);
+    });
+  }
+
+  if (!window.__genesisPurgeClockTimer) {
+    window.__genesisPurgeClockTimer = setInterval(tickPurgeClocks, 1000);
+  }
+
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=91`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=92`);
     return ordersPreviewMod;
   }
 
@@ -6740,6 +6813,7 @@
   }
 
   function fillOrderTileCoverImage(visual, coverUrl) {
+    visual.classList.add("orders-tile-visual--cover");
     const img = document.createElement("img");
     img.className = "orders-cover-img";
     img.src = coverUrl;
@@ -6751,7 +6825,12 @@
   function fillOrderTileVisual(visual, order) {
     const cover = orderCoverInfo(order);
     visual.innerHTML = "";
-    visual.classList.remove("orders-tile-visual--skin", "is-skin-full");
+    visual.classList.remove(
+      "orders-tile-visual--skin",
+      "orders-tile-visual--cover",
+      "is-skin-full",
+      "is-cover-full"
+    );
     if (cover.type === "skin3d" && cover.textureUrl) {
       visual.classList.add("orders-tile-visual--skin");
       const canvas = document.createElement("canvas");
@@ -6774,11 +6853,11 @@
           lookHost: visual.closest(".studio-tile") || visual,
         });
       })();
-      return true;
+      return "skin";
     }
     if (cover.type === "image" && cover.coverUrl) {
       fillOrderTileCoverImage(visual, cover.coverUrl);
-      return false;
+      return "cover";
     }
     const img = document.createElement("img");
     img.className = "catalog-card__img orders-cover-img";
@@ -6786,7 +6865,7 @@
     img.alt = "";
     img.draggable = false;
     visual.appendChild(img);
-    return false;
+    return null;
   }
 
   async function downloadOrderSingleFile(order, file, folder = "refs") {
@@ -6931,14 +7010,18 @@
       String(order.status) === "ready" &&
       Array.isArray(order.results) &&
       order.results.length > 0;
+    const openBtn = menu.querySelector('[data-orders-act="open"]');
     const dl = menu.querySelector('[data-orders-act="download"]');
     const restoreBtn = menu.querySelector('[data-orders-act="restore"]');
     const softBtn = menu.querySelector('[data-orders-act="soft-delete"]');
+    const hardBtn = menu.querySelector('[data-orders-act="hard-delete"]');
+    if (openBtn) openBtn.hidden = false;
     if (dl) dl.hidden = !ready || soft;
     if (restoreBtn) restoreBtn.hidden = !soft;
     if (softBtn) {
       softBtn.hidden = soft || String(order.status) === "ready";
     }
+    if (hardBtn) hardBtn.hidden = !soft;
     placeStudioMenu(menu, clientX, clientY);
   }
 
@@ -7420,13 +7503,18 @@
 
     const visual = document.createElement("div");
     visual.className = "catalog-card__visual";
-    const hasSkin = fillOrderTileVisual(visual, order);
+    const coverKind = fillOrderTileVisual(visual, order);
     btn.appendChild(visual);
-    if (!order.deletedAt) {
+    if (order.deletedAt) {
+      const until =
+        Date.parse(order.purgeAt || 0) ||
+        (Date.parse(order.deletedAt) || Date.now()) + 86400000;
+      appendPurgeClock(btn, until);
+    } else {
       appendOrderStar(btn, order.status, order.reason, order.queueNo);
     }
 
-    if (hasSkin) {
+    if (coverKind === "skin") {
       btn.addEventListener("pointerenter", () => {
         visual.classList.add("is-skin-full");
         ordersTilePreviewHandles.get(Number(order.id))?.setCropFeet?.(false);
@@ -7434,6 +7522,13 @@
       btn.addEventListener("pointerleave", () => {
         visual.classList.remove("is-skin-full");
         ordersTilePreviewHandles.get(Number(order.id))?.setCropFeet?.(true);
+      });
+    } else if (coverKind === "cover") {
+      btn.addEventListener("pointerenter", () => {
+        visual.classList.add("is-cover-full");
+      });
+      btn.addEventListener("pointerleave", () => {
+        visual.classList.remove("is-cover-full");
       });
     }
 
@@ -7445,7 +7540,7 @@
     const sub = document.createElement("span");
     sub.className = "studio-tile__sub";
     if (order.deletedAt) {
-      sub.textContent = `Удалено · ещё ${formatPurgeLeft(order.purgeAt)}`;
+      sub.textContent = "Удалено · ПКМ: восстановить";
     } else if (isOrdersFounder() && ordersTab === "review") {
       sub.textContent = order.submitterMcNick || "—";
     } else {
@@ -7456,7 +7551,6 @@
     btn.appendChild(stack);
 
     btn.addEventListener("click", () => {
-      if (order.deletedAt) return;
       ordersOpenId = Number(order.id);
       renderOrdersUi();
     });
@@ -7647,10 +7741,17 @@
   }
 
   async function restoreOrderLocal(id) {
-    await api(`/api/orders/${id}/restore`, { method: "POST" });
-    ordersDismissedIds.add(Number(id));
+    const data = await api(`/api/orders/${id}/restore`, { method: "POST" });
+    if (data?.order) upsertOrderInLists(data.order);
+    ordersDismissedIds.delete(Number(id));
+    return data?.order;
+  }
+
+  async function hardDeleteOrder(id) {
+    await api(`/api/orders/${id}/hard-delete`, { method: "POST" });
     ordersList = ordersList.filter((o) => Number(o.id) !== Number(id));
     ordersReviewList = ordersReviewList.filter((o) => Number(o.id) !== Number(id));
+    ordersDismissedIds.add(Number(id));
     if (Number(ordersOpenId) === Number(id)) ordersOpenId = null;
   }
 
@@ -7936,7 +8037,6 @@
         ordersReviewList.find((o) => Number(o.id) === Number(id));
       if (!order) return;
       if (act === "open") {
-        if (order.deletedAt) return;
         ordersOpenId = Number(id);
         renderOrdersUi();
         return;
@@ -7962,10 +8062,23 @@
       if (act === "restore") {
         try {
           await restoreOrderLocal(id);
-          showToast("Восстановлено как черновик — отправьте заново");
+          showToast("Заказ восстановлен");
           renderOrdersUi();
         } catch (err) {
           showToast(err.message || "Не удалось восстановить");
+        }
+        return;
+      }
+      if (act === "hard-delete") {
+        if (!order.deletedAt) return;
+        const ok = window.confirm("Удалить заказ навсегда без восстановления?");
+        if (!ok) return;
+        try {
+          await hardDeleteOrder(id);
+          showToast("Удалено навсегда");
+          renderOrdersUi();
+        } catch (err) {
+          showToast(err.message || "Не удалось удалить");
         }
       }
     });

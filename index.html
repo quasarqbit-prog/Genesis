@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=91" />
+  <link rel="stylesheet" href="styles.css?v=92" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -1709,6 +1709,7 @@
     <button type="button" class="studio-ctx__btn" data-studio-act="send">Отправить</button>
     <button type="button" class="studio-ctx__btn" data-studio-act="restore" hidden>Восстановить</button>
     <button type="button" class="studio-ctx__btn studio-ctx__btn--danger" data-studio-act="delete">Удалить</button>
+    <button type="button" class="studio-ctx__btn studio-ctx__btn--danger" data-studio-act="hard-delete" hidden>Удалить навсегда</button>
   </div>
 
   <div class="studio-ctx" id="studio-item-menu" hidden>
@@ -1861,6 +1862,7 @@
     <button type="button" class="studio-ctx__btn" data-orders-act="download" hidden>Скачать</button>
     <button type="button" class="studio-ctx__btn" data-orders-act="restore" hidden>Восстановить</button>
     <button type="button" class="studio-ctx__btn studio-ctx__btn--danger" data-orders-act="soft-delete" hidden>Удалить</button>
+    <button type="button" class="studio-ctx__btn studio-ctx__btn--danger" data-orders-act="hard-delete" hidden>Удалить навсегда</button>
   </div>
 
   <div class="patch-editor" id="patch-editor" hidden>
@@ -1913,6 +1915,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=91"></script>
+  <script src="script.js?v=92"></script>
 </body>
 </html>

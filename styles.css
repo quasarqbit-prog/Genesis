@@ -1231,6 +1231,59 @@ h3,
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
 }
 
+.studio-tile__purge-clock {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 6;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  pointer-events: auto;
+  cursor: help;
+  color: #fbbf24;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+}
+
+.studio-tile__purge-clock::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: min(240px, 70vw);
+  padding: 6px 8px;
+  border: 2px solid #b388ff;
+  background: rgba(16, 8, 28, 0.98);
+  color: #efe8ff;
+  font-family: var(--font-ded);
+  font-size: 11px;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-transform: none;
+  text-shadow: none;
+  filter: none;
+  white-space: nowrap;
+  text-align: left;
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
+}
+
+.studio-tile__purge-clock:hover::after,
+.studio-tile__purge-clock:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+}
+
 .studio-tile--soft-deleted,
 .orders-tile--soft-deleted {
   opacity: 0.48;
@@ -1240,6 +1293,12 @@ h3,
 .studio-tile--soft-deleted .studio-tile__star,
 .orders-tile--soft-deleted .studio-tile__star {
   opacity: 0.7;
+}
+
+.studio-tile--soft-deleted .studio-tile__purge-clock,
+.orders-tile--soft-deleted .studio-tile__purge-clock {
+  opacity: 1;
+  filter: none;
 }
 
 .studio-tile__label-stack {
@@ -1929,6 +1988,38 @@ h3,
   transform: scale(1.42) translateY(-10px);
 }
 
+.orders-tile-visual--cover {
+  overflow: hidden;
+  align-self: stretch;
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transition: overflow 0s linear 0.32s;
+}
+
+.orders-tile-visual--cover .orders-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform-origin: center bottom;
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  transform: scale(1) translateY(0);
+}
+
+.studio-tile:hover .orders-tile-visual--cover,
+.orders-tile-visual--cover.is-cover-full {
+  overflow: visible;
+  z-index: 4;
+  transition: overflow 0s;
+}
+
+.studio-tile:hover .orders-tile-visual--cover .orders-cover-img,
+.orders-tile-visual--cover.is-cover-full .orders-cover-img {
+  transform: scale(1.42) translateY(-10px);
+}
+
 .orders-detail-skins {
   display: flex;
   flex-wrap: wrap;
@@ -2327,9 +2418,16 @@ h3,
 }
 
 .orders-grid > .studio-tile:hover .orders-tile-visual--skin,
-.orders-grid > .studio-tile .orders-tile-visual--skin.is-skin-full {
+.orders-grid > .studio-tile .orders-tile-visual--skin.is-skin-full,
+.orders-grid > .studio-tile:hover .orders-tile-visual--cover,
+.orders-grid > .studio-tile .orders-tile-visual--cover.is-cover-full {
   overflow: visible;
   max-height: none;
+}
+
+.orders-grid > .studio-tile:has(.orders-tile-visual--cover):hover {
+  overflow: visible;
+  z-index: 4;
 }
 
 .orders-grid > .studio-tile .orders-tile-canvas {

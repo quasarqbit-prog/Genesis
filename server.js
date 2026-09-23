@@ -3411,7 +3411,7 @@ app.post("/api/studio/submissions/:id/restore", authMiddleware, async (req, res)
     if (!Number.isFinite(deletedAt) || Date.now() - deletedAt > 24 * 60 * 60 * 1000) {
       return res.status(410).json({ error: "Срок восстановления истёк" });
     }
-    // Keep deleted_at so admin queue never sees it again; client restores local draft.
+    // Restore as local draft: keep deleted_at so it stays out of admin queue
     return res.json({
       ok: true,
       localOnly: true,
@@ -3420,6 +3420,40 @@ app.post("/api/studio/submissions/:id/restore", authMiddleware, async (req, res)
   } catch (err) {
     console.error("studio restore:", err);
     return res.status(500).json({ error: "Не удалось восстановить анкету" });
+  }
+});
+
+app.post("/api/studio/submissions/:id/hard-delete", authMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(
+      `SELECT * FROM studio_submissions WHERE id = :id LIMIT 1`,
+      { id }
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    await refreshUserRole(req);
+    const isOwner = Number(rows[0].submitter_id) === Number(req.user.id);
+    const isFounder = req.user?.role === "founder";
+    if (!isOwner && !isFounder) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    if (!rows[0].deleted_at && !isFounder) {
+      return res.status(400).json({ error: "Сначала удалите анкету (мягкое удаление)" });
+    }
+    await pool.execute(
+      `DELETE FROM studio_submissions
+       WHERE submitter_id = :uid AND client_folder_id = :folderId`,
+      {
+        uid: rows[0].submitter_id,
+        folderId: rows[0].client_folder_id,
+      }
+    );
+    await renumberQueue("studio_submissions");
+    return res.json({ ok: true, id });
+  } catch (err) {
+    console.error("studio hard-delete:", err);
+    return res.status(500).json({ error: "Не удалось удалить анкету" });
   }
 });
 
@@ -3907,14 +3941,42 @@ app.post("/api/orders/:id/restore", authMiddleware, async (req, res) => {
     if (!Number.isFinite(deletedAt) || Date.now() - deletedAt > 24 * 60 * 60 * 1000) {
       return res.status(410).json({ error: "Срок восстановления истёк" });
     }
-    return res.json({
-      ok: true,
-      localOnly: true,
-      order: mapOrderRow(rows[0]),
-    });
+    await pool.execute(`UPDATE orders SET deleted_at = NULL WHERE id = :id`, { id });
+    const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    return res.json({ ok: true, order: mapOrderRow(next[0]) });
   } catch (err) {
     console.error("orders restore:", err);
     return res.status(500).json({ error: "Не удалось восстановить заказ" });
+  }
+});
+
+app.post("/api/orders/:id/hard-delete", authMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [rows] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
+    if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
+    await refreshUserRole(req);
+    const isOwner = Number(rows[0].submitter_id) === Number(req.user.id);
+    const isFounder = req.user?.role === "founder";
+    if (!isOwner && !isFounder) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    if (!rows[0].deleted_at && !isFounder) {
+      return res.status(400).json({ error: "Сначала удалите заказ (мягкое удаление)" });
+    }
+    await pool.execute(`DELETE FROM orders WHERE id = :id`, { id });
+    await renumberQueue("orders");
+    try {
+      const dir = path.join(ORDERS_DIR, String(id));
+      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    } catch (_) {
+      /* ignore */
+    }
+    return res.json({ ok: true, id });
+  } catch (err) {
+    console.error("orders hard-delete:", err);
+    return res.status(500).json({ error: "Не удалось удалить заказ" });
   }
 });
 
