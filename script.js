@@ -6514,10 +6514,14 @@
         if (first?.path) return { type: "skin3d", textureUrl: first.path };
       }
       const skinRef =
-        refs.find((r) => r.role === "skin") ||
+        refs.find((r) => String(r.role || "").toLowerCase() === "skin") ||
         refs.find((r) => /skin|скин/i.test(String(r.name || "")));
       if (skinRef?.path) return { type: "skin3d", textureUrl: skinRef.path };
+      // Fallback: any square 64-based image path treated as skin when only one image
       const img = refs.find(isOrderImageFile);
+      if (img?.path && refs.filter(isOrderImageFile).length === 1) {
+        return { type: "skin3d", textureUrl: img.path };
+      }
       if (img?.path) return { type: "image", coverUrl: img.path };
       return { type: "race" };
     }
@@ -6538,7 +6542,7 @@
 
   async function ensureOrdersPreviewMod() {
     if (ordersPreviewMod) return ordersPreviewMod;
-    ordersPreviewMod = await import(`/assets/orders-preview.js?v=83`);
+    ordersPreviewMod = await import(`/assets/orders-preview.js?v=84`);
     return ordersPreviewMod;
   }
 
@@ -6848,16 +6852,9 @@
         const dataUrl = await readFileAsDataUrl(file);
         const entry = { name: file.name || "file.png", dataUrl };
         if (detectSkinRole) {
-          const isPng =
-            /\.png$/i.test(file.name || "") ||
-            /^data:image\/png/i.test(dataUrl);
-          if (isPng) {
-            const size = await probeImageSize(dataUrl);
-            entry.role =
-              size && isLikelySkinDimensions(size.w, size.h) ? "skin" : "ref";
-          } else {
-            entry.role = "ref";
-          }
+          const size = await probeImageSize(dataUrl);
+          entry.role =
+            size && isLikelySkinDimensions(size.w, size.h) ? "skin" : "ref";
         }
         out.push(entry);
       } catch {

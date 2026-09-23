@@ -3201,7 +3201,6 @@ app.get("/api/studio/submissions", staffMiddleware, async (req, res) => {
        INNER JOIN (
          SELECT submitter_id, client_folder_id, MAX(id) AS max_id
          FROM studio_submissions
-         WHERE deleted_at IS NULL
          GROUP BY submitter_id, client_folder_id
        ) latest ON latest.max_id = s.id
        WHERE s.deleted_at IS NULL
@@ -3328,7 +3327,7 @@ app.delete("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     const [rows] = await pool.execute(
-      `SELECT id, status FROM studio_submissions WHERE id = :id LIMIT 1`,
+      `SELECT id, status, submitter_id, client_folder_id FROM studio_submissions WHERE id = :id LIMIT 1`,
       { id }
     );
     if (!rows[0]) return res.status(404).json({ error: "Не найдено" });
@@ -3338,7 +3337,15 @@ app.delete("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
         error: "Удалить можно только отклонённые анкеты",
       });
     }
-    await pool.execute(`DELETE FROM studio_submissions WHERE id = :id`, { id });
+    // Delete the whole version chain so older revisions cannot reappear
+    await pool.execute(
+      `DELETE FROM studio_submissions
+       WHERE submitter_id = :uid AND client_folder_id = :folderId`,
+      {
+        uid: rows[0].submitter_id,
+        folderId: rows[0].client_folder_id,
+      }
+    );
     await renumberQueue("studio_submissions");
     return res.json({ ok: true, id });
   } catch (err) {
@@ -3362,14 +3369,15 @@ app.post("/api/studio/submissions/:id/soft-delete", authMiddleware, async (req, 
     if (!isOwner && !isFounder) {
       return res.status(403).json({ error: "Нет доступа" });
     }
-    if (rows[0].deleted_at) {
-      return res.json({ ok: true, submission: mapStudioSubmissionRow(rows[0]) });
-    }
+    // Soft-delete entire version chain so older revisions cannot reappear
     await pool.execute(
       `UPDATE studio_submissions
-       SET deleted_at = CURRENT_TIMESTAMP, queue_no = NULL
-       WHERE id = :id`,
-      { id }
+       SET deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP), queue_no = NULL
+       WHERE submitter_id = :uid AND client_folder_id = :folderId`,
+      {
+        uid: rows[0].submitter_id,
+        folderId: rows[0].client_folder_id,
+      }
     );
     await renumberQueue("studio_submissions");
     const [next] = await pool.execute(
@@ -3468,6 +3476,37 @@ function safeOrderFileName(name, fallback = "file.png") {
   return (base || fallback).slice(0, 120);
 }
 
+function pngDimensions(buffer) {
+  try {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 24) return null;
+    if (buffer[0] !== 0x89 || buffer[1] !== 0x50 || buffer[2] !== 0x4e || buffer[3] !== 0x47) {
+      return null;
+    }
+    return {
+      w: buffer.readUInt32BE(16),
+      h: buffer.readUInt32BE(20),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isLikelySkinDimensions(w, h) {
+  if (!w || !h) return false;
+  if (w === 64 && (h === 32 || h === 64)) return true;
+  if (w === 128 && (h === 64 || h === 128)) return true;
+  if (w >= 64 && w % 64 === 0 && (h === w || h * 2 === w)) return true;
+  return false;
+}
+
+function resolveOrderFileRole(file, buffer, mime) {
+  const hinted = String(file?.role || "").trim().toLowerCase();
+  if (hinted === "skin" || hinted === "ref") return hinted;
+  const dims = /png/i.test(mime || "") ? pngDimensions(buffer) : null;
+  if (dims && isLikelySkinDimensions(dims.w, dims.h)) return "skin";
+  return "ref";
+}
+
 async function saveOrderFiles(orderId, folder, files) {
   const dir = path.join(ORDERS_DIR, String(orderId), folder);
   fs.mkdirSync(dir, { recursive: true });
@@ -3480,12 +3519,17 @@ async function saveOrderFiles(orderId, folder, files) {
     const name = safeOrderFileName(file.name, `${id}.png`);
     const abs = path.join(dir, `${id}__${name}`);
     fs.writeFileSync(abs, decoded.buffer);
+    const role =
+      folder === "refs"
+        ? resolveOrderFileRole(file, decoded.buffer, decoded.mime)
+        : "result";
     saved.push({
       id,
       name,
       mime: decoded.mime || "application/octet-stream",
       size: decoded.buffer.length,
       path: `/uploads/orders/${orderId}/${folder}/${id}__${name}`,
+      role,
     });
     if (saved.length >= 12) break;
   }
