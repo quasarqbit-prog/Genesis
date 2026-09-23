@@ -299,8 +299,148 @@ async function uploadModJar({
   };
 }
 
+function httpsGetText(url, hops = 0) {
+  return new Promise((resolve, reject) => {
+    if (hops > 6) {
+      reject(new Error("Drive redirect loop"));
+      return;
+    }
+    const req = https.get(
+      url,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml",
+        },
+      },
+      (res) => {
+        if (
+          [301, 302, 303, 307, 308].includes(res.statusCode) &&
+          res.headers.location
+        ) {
+          res.resume();
+          const next = res.headers.location.startsWith("http")
+            ? res.headers.location
+            : new URL(res.headers.location, url).href;
+          httpsGetText(next, hops + 1).then(resolve, reject);
+          return;
+        }
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          resolve({
+            status: res.statusCode || 0,
+            text: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+      }
+    );
+    req.on("error", reject);
+  });
+}
+
+function parseJarsFromDriveHtml(html) {
+  const text = String(html || "");
+  /** @type {Map<string, { id: string, name: string }>} */
+  const byId = new Map();
+
+  const entryRe =
+    /\/file\/d\/([a-zA-Z0-9_-]{10,})\/(?:view|preview)[^"'<]*[\s\S]{0,500}?flip-entry-title[^>]*>([^<]+)/gi;
+  let m;
+  while ((m = entryRe.exec(text))) {
+    const id = m[1];
+    const name = String(m[2] || "").trim();
+    if (/\.jar$/i.test(name)) byId.set(id, { id, name });
+  }
+
+  // Fallback: ids + nearby .jar names from JSON blobs in the page
+  const jsonJarRe =
+    /"(?:title|name|fileName)"\s*:\s*"([^"]+\.jar)"[\s\S]{0,240}?"id"\s*:\s*"([a-zA-Z0-9_-]{10,})"/gi;
+  while ((m = jsonJarRe.exec(text))) {
+    byId.set(m[2], { id: m[2], name: m[1] });
+  }
+  const jsonJarRe2 =
+    /"id"\s*:\s*"([a-zA-Z0-9_-]{10,})"[\s\S]{0,240}?"(?:title|name|fileName)"\s*:\s*"([^"]+\.jar)"/gi;
+  while ((m = jsonJarRe2.exec(text))) {
+    byId.set(m[1], { id: m[1], name: m[2] });
+  }
+
+  return [...byId.values()];
+}
+
+async function listJarsViaPublicFolderPage(folderId) {
+  const urls = [
+    `https://drive.google.com/embeddedfolderview?id=${encodeURIComponent(folderId)}`,
+    `https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}?usp=sharing`,
+  ];
+  /** @type {Map<string, { id: string, name: string }>} */
+  const found = new Map();
+  let lastErr = null;
+  for (const url of urls) {
+    try {
+      const res = await httpsGetText(url);
+      if (res.status >= 400) {
+        lastErr = new Error(`Drive folder HTTP ${res.status}`);
+        continue;
+      }
+      for (const f of parseJarsFromDriveHtml(res.text)) {
+        found.set(f.id, f);
+      }
+      if (found.size) break;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (!found.size && lastErr) throw lastErr;
+  return [...found.values()];
+}
+
+async function listJarsViaApi(folderId) {
+  const token = await getAccessToken();
+  const files = await listFilesInFolder(token, folderId, null);
+  return files
+    .filter((f) => /\.jar$/i.test(String(f.name || "")))
+    .map((f) => ({ id: String(f.id), name: String(f.name) }));
+}
+
+/**
+ * Find the single (or newest) .jar in the shared Drive folder.
+ * Works with a public folder page; uses service account if configured.
+ */
+async function findModJarInFolder(folderId) {
+  if (!folderId) throw new Error("Не задан ID папки Google Drive");
+
+  let jars = [];
+  if (hasDriveUploadCredentials()) {
+    try {
+      jars = await listJarsViaApi(folderId);
+    } catch (err) {
+      console.warn("Drive API list jars:", err.message);
+    }
+  }
+  if (!jars.length) {
+    jars = await listJarsViaPublicFolderPage(folderId);
+  }
+  if (!jars.length) {
+    throw new Error(
+      "В папке Google Drive нет .jar — загрузите мод вручную и нажмите «Уведомить» снова"
+    );
+  }
+  // Prefer one file; if several, take lexicographically last name (often higher version)
+  jars.sort((a, b) => String(a.name).localeCompare(String(b.name), "en"));
+  const pick = jars[jars.length - 1];
+  return {
+    id: pick.id,
+    name: pick.name,
+    downloadUrl: `https://drive.google.com/uc?export=download&id=${encodeURIComponent(pick.id)}`,
+    count: jars.length,
+  };
+}
+
 module.exports = {
   hasDriveUploadCredentials,
   uploadModJar,
   getAccessToken,
+  findModJarInFolder,
 };

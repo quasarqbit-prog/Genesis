@@ -4483,79 +4483,54 @@ app.put("/api/server", authMiddleware, async (req, res) => {
   }
 });
 
-app.post(
-  "/api/server/mod/upload",
-  authMiddleware,
-  express.raw({ type: () => true, limit: "80mb" }),
-  async (req, res) => {
+app.post("/api/server/mod/notify", authMiddleware, async (req, res) => {
+  try {
+    await assertFounderActor(req);
+    const { findModJarInFolder } = require("./scripts/gdrive-mod.js");
+    let jar;
     try {
-      await assertFounderActor(req);
-      const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.from([]);
-      if (!buf.length) {
-        return res.status(400).json({ error: "Пустой файл" });
-      }
-      if (buf.length > 80 * 1024 * 1024) {
-        return res.status(400).json({ error: "Файл слишком большой (до 80 МБ)" });
-      }
-      const rawName = String(
-        req.headers["x-filename"] || req.query?.name || "genesis.jar"
-      );
-      let fileName = path.basename(rawName).replace(/[^\w.\-]+/g, "_");
-      if (!/\.jar$/i.test(fileName)) fileName = `${fileName || "genesis"}.jar`;
-      fileName = fileName.slice(0, 120);
-      const version =
-        String(req.headers["x-mod-version"] || "").trim() ||
-        parseModVersionFromName(fileName) ||
-        new Date().toISOString().slice(0, 10);
-
-      const {
-        hasDriveUploadCredentials,
-        uploadModJar,
-      } = require("./scripts/gdrive-mod.js");
-
-      if (!hasDriveUploadCredentials()) {
-        return res.status(503).json({
-          error:
-            "Google Drive не настроен. Добавьте GDRIVE_SERVICE_ACCOUNT_JSON (или FILE) в .env и выдайте сервисному аккаунту права редактора на папку мода",
-        });
-      }
-
-      let uploaded;
-      try {
-        uploaded = await uploadModJar({
-          buffer: buf,
-          fileName,
-          folderId: GDRIVE_MOD_FOLDER_ID,
-        });
-      } catch (err) {
-        console.error("mod drive upload:", err);
-        return res.status(502).json({
-          error: err.message || "Не удалось загрузить мод на Google Drive",
-        });
-      }
-
-      const current = readServerInfo();
-      current.mod = {
-        version,
-        fileName,
-        path: null,
-        driveId: uploaded.id,
-        url: uploaded.downloadUrl,
-        updatedAt: new Date().toISOString(),
-      };
-      const saved = writeServerInfo(current);
-      const payload = publicServerInfo(saved, { includePassword: true });
-      io.emit("server:updated", { server: payload });
-      return res.json({ ok: true, server: payload, drive: uploaded });
+      jar = await findModJarInFolder(GDRIVE_MOD_FOLDER_ID);
     } catch (err) {
-      console.error("mod upload:", err);
-      const status = err.status || 500;
-      return res.status(status).json({
-        error: err.message || "Не удалось загрузить мод",
+      console.error("mod notify list:", err);
+      return res.status(502).json({
+        error: err.message || "Не удалось прочитать папку Google Drive",
       });
     }
+
+    const fileName = String(jar.name || "genesis.jar")
+      .replace(/[^\w.\-]+/g, "_")
+      .slice(0, 120);
+    const version =
+      String(req.body?.version || "").trim() ||
+      parseModVersionFromName(fileName) ||
+      fileName.replace(/\.jar$/i, "") ||
+      new Date().toISOString().slice(0, 10);
+
+    const current = readServerInfo();
+    current.mod = {
+      version,
+      fileName,
+      path: null,
+      driveId: jar.id,
+      url: jar.downloadUrl,
+      updatedAt: new Date().toISOString(),
+    };
+    const saved = writeServerInfo(current);
+    const payload = publicServerInfo(saved, { includePassword: true });
+    io.emit("server:updated", { server: payload });
+    return res.json({
+      ok: true,
+      server: payload,
+      drive: { id: jar.id, name: jar.name, count: jar.count },
+    });
+  } catch (err) {
+    console.error("mod notify:", err);
+    const status = err.status || 500;
+    return res.status(status).json({
+      error: err.message || "Не удалось уведомить об обновлении",
+    });
   }
-);
+});
 
 app.get("/api/server/mod/download", authMiddleware, async (req, res) => {
   try {

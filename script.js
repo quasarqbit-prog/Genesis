@@ -8745,7 +8745,7 @@
     }
   }
 
-  function readInstalledModVersion() {
+  function readInstalledModStamp() {
     try {
       return String(localStorage.getItem(MOD_INSTALLED_KEY) || "").trim();
     } catch {
@@ -8753,18 +8753,25 @@
     }
   }
 
-  function writeInstalledModVersion(version) {
+  function writeInstalledModStamp(stamp) {
     try {
-      localStorage.setItem(MOD_INSTALLED_KEY, String(version || ""));
+      localStorage.setItem(MOD_INSTALLED_KEY, String(stamp || ""));
     } catch {
       /* ignore */
     }
   }
 
+  function currentModStamp() {
+    const version = String(serverInfo?.mod?.version || "").trim();
+    const updatedAt = String(serverInfo?.mod?.updatedAt || "").trim();
+    if (!version && !updatedAt) return "";
+    return `${version}|${updatedAt}`;
+  }
+
   function hasModUpdate() {
-    const current = String(serverInfo?.mod?.version || "").trim();
+    const current = currentModStamp();
     if (!current) return false;
-    const installed = readInstalledModVersion();
+    const installed = readInstalledModStamp();
     return Boolean(installed) ? installed !== current : Boolean(serverInfo?.mod?.updatedAt);
   }
 
@@ -8847,8 +8854,8 @@
   }
 
   function markModInstalled() {
-    const version = String(serverInfo?.mod?.version || "").trim();
-    if (version) writeInstalledModVersion(version);
+    const stamp = currentModStamp();
+    if (stamp) writeInstalledModStamp(stamp);
     renderServerTab();
   }
 
@@ -10495,44 +10502,21 @@
     }
   });
 
-  document.getElementById("server-mod-upload-btn")?.addEventListener("click", () => {
+  document.getElementById("server-mod-notify-btn")?.addEventListener("click", async () => {
     if (String(authUser?.role || "") !== "founder") return;
-    document.getElementById("server-mod-file")?.click();
-  });
-
-  document.getElementById("server-mod-file")?.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || String(authUser?.role || "") !== "founder") return;
-    if (!/\.jar$/i.test(file.name)) {
-      showToast("Нужен файл .jar");
-      return;
-    }
-    showToast("Загрузка мода на Google Drive…");
+    const ok = window.confirm(
+      "Уведомить всех об обновлении мода?\n\nВ папке Google Drive должен лежать один .jar (ты уже залил его вручную)."
+    );
+    if (!ok) return;
+    showToast("Читаю папку Google Drive…");
     try {
-      const res = await fetch("/api/server/mod/upload", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          "Content-Type": "application/octet-stream",
-          "X-Filename": file.name,
-        },
-        body: file,
-      });
-      let data = null;
-      try {
-        data = await res.json();
-      } catch {
-        data = null;
-      }
-      if (!res.ok) {
-        throw new Error(data?.error || `HTTP ${res.status}`);
-      }
+      const data = await api("/api/server/mod/notify", { method: "POST", body: "{}" });
       if (data?.server) serverInfo = data.server;
       renderServerTab();
-      showToast("Мод загружен на Google Drive");
+      const name = data?.drive?.name || serverInfo?.mod?.fileName || "мод";
+      showToast(`Обновление опубликовано: ${name}`);
     } catch (err) {
-      showToast(err.message || "Не удалось загрузить мод");
+      showToast(err.message || "Не удалось уведомить об обновлении");
     }
   });
 

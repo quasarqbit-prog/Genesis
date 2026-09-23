@@ -5,6 +5,11 @@ node_modules/
 uploads/
 data/
 tmp/
+secrets/
+**/gdrive-sa.json
+*-sa.json
+*service-account*.json
+*.b64
 
 *.exe
 
