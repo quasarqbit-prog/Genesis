@@ -11284,6 +11284,122 @@
     });
   }
 
+  function chatNotifyPermissionState() {
+    if (typeof Notification === "undefined") return "unsupported";
+    if (!window.isSecureContext) return "insecure";
+    return Notification.permission;
+  }
+
+  function updateChatNotifyPermissionUi() {
+    const hint = document.getElementById("chat-notify-permission-hint");
+    const btn = document.getElementById("chat-notify-permission-btn");
+    const state = chatNotifyPermissionState();
+    if (btn) {
+      btn.hidden = state === "unsupported" || state === "insecure" || state === "granted";
+    }
+    if (!hint) return;
+    if (state === "unsupported") {
+      hint.textContent = "Этот браузер не поддерживает уведомления устройства.";
+    } else if (state === "insecure") {
+      hint.textContent =
+        "Нужен HTTPS (или localhost). На обычном HTTP браузер блокирует уведомления в шторе/панели.";
+    } else if (state === "granted") {
+      hint.textContent = "Уведомления устройства разрешены — приходят в штору / панель ОС.";
+    } else if (state === "denied") {
+      hint.textContent =
+        "Уведомления запрещены в настройках браузера. Разреши Genesis в списке сайтов.";
+    } else {
+      hint.textContent =
+        "Нажми «Разрешить», чтобы сообщения приходили в штору телефона или панель ПК.";
+    }
+  }
+
+  async function ensureChatNotifyPermission() {
+    if (typeof Notification === "undefined" || !window.isSecureContext) {
+      updateChatNotifyPermissionUi();
+      return false;
+    }
+    if (Notification.permission === "granted") return true;
+    if (Notification.permission === "denied") {
+      updateChatNotifyPermissionUi();
+      return false;
+    }
+    try {
+      const result = await Notification.requestPermission();
+      updateChatNotifyPermissionUi();
+      return result === "granted";
+    } catch {
+      updateChatNotifyPermissionUi();
+      return false;
+    }
+  }
+
+  async function registerChatServiceWorker() {
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) return null;
+    try {
+      return await navigator.serviceWorker.register("/sw-chat.js", { scope: "/" });
+    } catch (err) {
+      console.warn("sw-chat:", err.message);
+      return null;
+    }
+  }
+
+  async function showChatDeviceNotification(room, message) {
+    const title = `Genesis · ${chatRoomTitle(room)}`;
+    const body = `${message.authorNick || "?"}: ${String(message.text || "").slice(0, 140)}`;
+    const options = {
+      body,
+      tag: `genesis-chat-${room.id}`,
+      renotify: true,
+      silent: false,
+      data: { roomId: Number(room.id) },
+    };
+    try {
+      playNotifySound();
+    } catch {
+      /* ignore */
+    }
+
+    const granted =
+      typeof Notification !== "undefined" &&
+      window.isSecureContext &&
+      Notification.permission === "granted";
+
+    if (!granted) {
+      // без разрешения ОС — хотя бы toast внутри сайта
+      showToast(body);
+      return;
+    }
+
+    try {
+      const reg =
+        (await navigator.serviceWorker?.getRegistration?.()) ||
+        (await navigator.serviceWorker?.ready.catch(() => null));
+      if (reg?.showNotification) {
+        await reg.showNotification(title, options);
+        return;
+      }
+    } catch (err) {
+      console.warn("sw notify:", err.message);
+    }
+
+    try {
+      const n = new Notification(title, options);
+      n.onclick = () => {
+        try {
+          window.focus();
+        } catch {
+          /* ignore */
+        }
+        setMainTab("chat");
+        openChatRoom(room.id);
+        n.close();
+      };
+    } catch {
+      showToast(body);
+    }
+  }
+
   function setChatNotifyToggleUi(btn, on, labelOn, labelOff) {
     if (!btn) return;
     btn.classList.toggle("is-on", on);
@@ -11322,6 +11438,7 @@
 
   async function renderChatSettingsUi() {
     loadChatNotifyPrefs();
+    updateChatNotifyPermissionUi();
     setChatNotifyToggleUi(
       document.getElementById("chat-notify-all"),
       chatNotifyPrefs.all,
@@ -11570,13 +11687,24 @@
     renderChatRoomList();
 
     if (shouldNotifyChatMessage(room, message)) {
-      const preview = String(message.text || "").slice(0, 80);
-      showToast(`${message.authorNick}: ${preview}`);
+      showChatDeviceNotification(room, message);
     }
   }
 
   loadChatNotifyPrefs();
   updateChatTabBadge();
+  updateChatNotifyPermissionUi();
+  registerChatServiceWorker();
+  if (navigator.serviceWorker) {
+    navigator.serviceWorker.addEventListener("message", (event) => {
+      if (event.data?.type !== "chat-notify-click") return;
+      setMainTab("chat");
+      const roomId = Number(event.data.roomId);
+      if (Number.isFinite(roomId) && roomId > 0) {
+        ensureChatLoaded().then(() => openChatRoom(roomId));
+      }
+    });
+  }
 
   function syncChatCreateTypeUi() {
     const type =
@@ -11680,20 +11808,28 @@
   document.getElementById("chat-create-modal-close")?.addEventListener("click", closeChatCreateModal);
   document.getElementById("chat-create-cancel")?.addEventListener("click", closeChatCreateModal);
 
-  document.getElementById("chat-notify-all")?.addEventListener("click", () => {
+  document.getElementById("chat-notify-all")?.addEventListener("click", async () => {
     chatNotifyPrefs.all = !chatNotifyPrefs.all;
     saveChatNotifyPrefs();
+    if (chatNotifyPrefs.all) await ensureChatNotifyPermission();
     renderChatSettingsUi();
   });
-  document.getElementById("chat-notify-public")?.addEventListener("click", () => {
+  document.getElementById("chat-notify-public")?.addEventListener("click", async () => {
     chatNotifyPrefs.public = !chatNotifyPrefs.public;
     saveChatNotifyPrefs();
+    if (chatNotifyPrefs.public) await ensureChatNotifyPermission();
     renderChatSettingsUi();
   });
-  document.getElementById("chat-notify-personal")?.addEventListener("click", () => {
+  document.getElementById("chat-notify-personal")?.addEventListener("click", async () => {
     chatNotifyPrefs.personal = !chatNotifyPrefs.personal;
     saveChatNotifyPrefs();
+    if (chatNotifyPrefs.personal) await ensureChatNotifyPermission();
     renderChatSettingsUi();
+  });
+  document.getElementById("chat-notify-permission-btn")?.addEventListener("click", async () => {
+    const ok = await ensureChatNotifyPermission();
+    if (ok) showToast("Уведомления устройства включены");
+    else updateChatNotifyPermissionUi();
   });
   document.getElementById("chat-settings-mine")?.addEventListener("click", (e) => {
     const btn = e.target.closest(".chat-settings-room__mute[data-room-id]");
@@ -11826,6 +11962,19 @@
     ensurePatchesLoaded().then(() => renderPatchesUi());
     if (authToken) {
       ensureServerInfoLoaded().then(() => renderServerTab());
+    }
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "chat" && authToken) {
+        setMainTab("chat");
+        const roomId = Number(params.get("chatRoom"));
+        if (Number.isFinite(roomId) && roomId > 0) {
+          await ensureChatLoaded();
+          await openChatRoom(roomId);
+        }
+      }
+    } catch {
+      /* ignore */
     }
   })();
 

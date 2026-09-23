@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=97" />
+  <link rel="stylesheet" href="styles.css?v=98" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -630,6 +630,8 @@
                 <button type="button" class="sound-master-toggle is-on" id="chat-notify-all" aria-pressed="true">Все уведомления: Вкл</button>
                 <button type="button" class="sound-master-toggle" id="chat-notify-public" aria-pressed="false">Общие чаты: Выкл</button>
                 <button type="button" class="sound-master-toggle is-on" id="chat-notify-personal" aria-pressed="true">Личные чаты: Вкл</button>
+                <button type="button" class="mc-btn mc-btn--compact mc-btn--ghost" id="chat-notify-permission-btn">Разрешить уведомления устройства</button>
+                <p class="field-hint" id="chat-notify-permission-hint"></p>
               </div>
 
               <div class="hub-sep" aria-hidden="true"></div>
@@ -2041,6 +2043,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=97"></script>
+  <script src="script.js?v=98"></script>
 </body>
 </html>
