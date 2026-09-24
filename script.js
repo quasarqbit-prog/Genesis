@@ -2887,19 +2887,19 @@
           title: "Профиль",
           paragraphs: [
             "Откройте свой аватар слева в полоске игроков — откроются настройки и профиль.",
-            "В профиле видны ник, id, раса и одобренный контент.",
+            "В профиле видны ник, id, роль и одобренный контент.",
           ],
           items: [
             "Вкладка «Профиль» — ник, аватар, мета.",
-            "Вкладка «Раса» — одобренная расовая анкета.",
+            "Вкладка «Роль» — одобренная анкета роли.",
             "Вкладка «Контент» — опубликованные папки и файлы.",
           ],
         },
         {
-          title: "Раса",
+          title: "Роль",
           paragraphs: [
             "Расовая анкета заполняется в студии и проходит модерацию.",
-            "После одобрения раса отображается в профиле и в мини-карточке игрока.",
+            "После одобрения роль отображается в профиле и в мини-карточке игрока.",
           ],
         },
         {
@@ -3055,7 +3055,7 @@
         {
           title: "Профили",
           paragraphs: [
-            "Можно редактировать чужие профили и расы (кроме своего аккаунта в режиме founder-edit).",
+            "Можно редактировать чужие профили и роли (кроме своего аккаунта в режиме founder-edit).",
           ],
         },
       ],
@@ -4079,7 +4079,7 @@
     const required = ["raceName", "origin", "abilities", "useful"];
     const missing = required.find((key) => !form[key]);
     if (missing) {
-      setHubFieldError("hub-race-error", "Заполни обязательные поля расы");
+      setHubFieldError("hub-race-error", "Заполни обязательные поля роли");
       return;
     }
     const saveBtn = document.getElementById("hub-race-save-btn");
@@ -4098,7 +4098,7 @@
         form: { ...(profileCache.form || {}), ...form },
       };
       writeLocalStorageFallback(profileCache);
-      showToast("Раса сохранена");
+      showToast("Роль сохранена");
     } catch (err) {
       setHubFieldError("hub-race-error", err.message || "Не удалось сохранить");
     } finally {
@@ -4159,17 +4159,17 @@
   document.getElementById("hub-race-submit-btn")?.addEventListener("click", async () => {
     setHubFieldError("hub-race-error", "");
     if (!authToken) {
-      showToast("Войдите, чтобы отправить расу");
+      showToast("Войдите, чтобы отправить роль");
       return;
     }
     const form = readHubRaceForm();
     const required = ["raceName", "origin", "abilities", "useful"];
     if (required.find((key) => !form[key])) {
-      setHubFieldError("hub-race-error", "Заполни обязательные поля расы");
+      setHubFieldError("hub-race-error", "Заполни обязательные поля роли");
       return;
     }
     const ok = window.confirm(
-      `Отправить расу «${form.raceName}» на рассмотрение админам и помощникам?`
+      `Отправить роль «${form.raceName}» на рассмотрение админам и помощникам?`
     );
     if (!ok) return;
     const btn = document.getElementById("hub-race-submit-btn");
@@ -4201,7 +4201,7 @@
       raceSubmissionStatus = String(sub?.status || "pending");
       raceSubmissionReason = String(sub?.reason || "");
       updateHubRaceStarUi();
-      showToast("Раса отправлена на рассмотрение");
+      showToast("Роль отправлена на рассмотрение");
     } catch (err) {
       setHubFieldError("hub-race-error", err.message || "Не удалось отправить");
     } finally {
@@ -5888,8 +5888,8 @@
           btn.querySelector(".studio-tile__name").textContent =
             s.folderName ||
             (s.version > 1
-              ? `${s.baseName || (isRace ? "Раса" : "Папка")} V${s.version}`
-              : s.baseName || (isRace ? "Раса" : "Папка"));
+              ? `${s.baseName || (isRace ? "Роль" : "Папка")} V${s.version}`
+              : s.baseName || (isRace ? "Роль" : "Папка"));
           btn.querySelector(".studio-tile__sub").textContent = s.submitterMcNick || "—";
           btn.addEventListener("click", () => {
             hideStudioMenus();
@@ -5905,7 +5905,7 @@
       if (bar) bar.hidden = false;
       const isRaceOpen = isRaceSubmission(sub);
       if (title) {
-        title.textContent = `${sub.folderName || (isRaceOpen ? "Раса" : "Папка")} · ${sub.submitterMcNick || ""}`.trim();
+        title.textContent = `${sub.folderName || (isRaceOpen ? "Роль" : "Папка")} · ${sub.submitterMcNick || ""}`.trim();
       }
       updateStudioReviewActionsUi(sub);
 
@@ -5916,7 +5916,7 @@
             : null) || { raceName: sub.folderName };
         const panel = document.createElement("div");
         panel.className = "studio-race-review";
-        panel.innerHTML = renderRaceBlocks(race) || `<p class="studio-empty">Нет текста расы</p>`;
+        panel.innerHTML = renderRaceBlocks(race) || `<p class="studio-empty">Нет текста роли</p>`;
         grid.appendChild(panel);
         return;
       }
@@ -6455,7 +6455,7 @@
         return;
       }
       const isRace = isRaceSubmission(sub);
-      const label = sub?.folderName || (isRace ? "расу" : "анкету");
+      const label = sub?.folderName || (isRace ? "роль" : "анкету");
       const ok = window.confirm(
         `Убрать «${label}» из списка анкет? Папка пользователя сохранится.`
       );
@@ -8343,8 +8343,8 @@
     const lead = document.getElementById("hero-lead");
     if (lead) {
       lead.textContent = registered
-        ? `Зарегистрирована раса (${raceName || "—"}).`
-        : "Регистрация расы на сервер";
+        ? `Зарегистрирована роль (${raceName || "—"}).`
+        : "Регистрация роли на сервер";
     }
 
     if (startBtn) {
@@ -8582,11 +8582,11 @@
 
     const sections = [
       ["Игровое имя", val("nick")],
-      ["Название расы", val("raceName")],
-      ["Происхождение расы", val("origin")],
-      ["Способности расы", val("abilities")],
-      ["Особенности расы", val("traits")],
-      ["Чем раса полезна для других", val("useful")],
+      ["Название роли", val("raceName")],
+      ["Происхождение роли", val("origin")],
+      ["Способности роли", val("abilities")],
+      ["Особенности роли", val("traits")],
+      ["Чем роль полезна для других", val("useful")],
       ["Особые механики", val("mechanics")],
     ];
 
@@ -8717,12 +8717,12 @@
 
   function sendRaceViaGmail() {
     const filename = downloadZip();
-    const race = document.getElementById("raceName")?.value.trim() || "раса";
+    const race = document.getElementById("raceName")?.value.trim() || "роль";
     const player = sanitizeNick(nick?.value || "") || "player";
     openGmailCompose({
-      subject: `Genesis · регистрация расы · ${player}`,
+      subject: `Genesis · регистрация роли · ${player}`,
       body: [
-        `Анкета регистрации расы «${race}».`,
+        `Анкета регистрации роли «${race}».`,
         ``,
         `ZIP уже скачан: ${filename}`,
         `Прикрепите этот файл к письму и отправьте.`,

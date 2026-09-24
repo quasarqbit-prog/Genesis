@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=99" />
+  <link rel="stylesheet" href="styles.css?v=100" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -59,7 +59,7 @@
                   <div class="studio-kind-switch" role="group" aria-label="Тип анкет">
                     <button type="button" class="studio-kind-switch__btn is-active" data-studio-kind="all">Все</button>
                     <button type="button" class="studio-kind-switch__btn" data-studio-kind="folder">Контент</button>
-                    <button type="button" class="studio-kind-switch__btn" data-studio-kind="race">Расы</button>
+                    <button type="button" class="studio-kind-switch__btn" data-studio-kind="race">Роли</button>
                     <button type="button" class="studio-kind-switch__btn" data-studio-kind="hidden">Скрытые</button>
                   </div>
                   <label class="studio-sort-label" for="studio-review-sort">
@@ -360,7 +360,7 @@
           <button type="button" class="hub-nav__btn hub-nav__btn--close" id="settings-close-tab">Закрыть</button>
           <button type="button" class="hub-nav__btn is-active" data-hub-tab="profile">Профиль</button>
           <button type="button" class="hub-nav__btn" data-hub-tab="race" id="hub-tab-race">
-            Раса<span class="hub-tab-star" id="hub-race-star" hidden aria-hidden="true">★</span>
+            Роль<span class="hub-tab-star" id="hub-race-star" hidden aria-hidden="true">★</span>
           </button>
           <button type="button" class="hub-nav__btn" data-hub-tab="sound">Звук</button>
           <button type="button" class="hub-nav__btn" data-hub-tab="chat">Чат</button>
@@ -465,9 +465,9 @@
             <form class="hub-form hub-race-form" id="hub-race-form" novalidate>
               <div class="field-block">
                 <label class="field-label" for="hub-race-name">
-                  Название расы
+                  Название роли
                   <span class="req">*</span>
-                  <span class="field-tip" tabindex="0" data-tip="Короткое имя расы, как в анкете.">?</span>
+                  <span class="field-tip" tabindex="0" data-tip="Короткое имя роли. Ролью может быть новая раса, простой человек со своими фишками и т.д.">?</span>
                 </label>
                 <input
                   class="field-input"
@@ -482,9 +482,9 @@
 
               <div class="field-block">
                 <label class="field-label" for="hub-race-origin">
-                  Происхождение расы
+                  Происхождение роли
                   <span class="req">*</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите как появилась ваша раса, не выходя за рамки логики и лора Minecraft.">?</span>
+                  <span class="field-tip" tabindex="0" data-tip="Распишите, как появилась ваша роль, не выходя за рамки логики и лора Minecraft.">?</span>
                 </label>
                 <textarea
                   class="field-area"
@@ -496,9 +496,9 @@
 
               <div class="field-block">
                 <label class="field-label" for="hub-race-abilities">
-                  Способности расы
+                  Способности роли
                   <span class="req">*</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите какие есть способности у вашей расы.">?</span>
+                  <span class="field-tip" tabindex="0" data-tip="Распишите, какие есть способности у вашей роли.">?</span>
                 </label>
                 <textarea
                   class="field-area"
@@ -510,9 +510,9 @@
 
               <div class="field-block">
                 <label class="field-label" for="hub-race-traits">
-                  Особенности расы
+                  Особенности роли
                   <span class="opt">необязательно</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите какие есть побочные эффекты у этой расы. (отрицательные эффекты, фоновые фишки)">?</span>
+                  <span class="field-tip" tabindex="0" data-tip="Распишите побочные эффекты и фоновые фишки этой роли (в том числе отрицательные).">?</span>
                 </label>
                 <textarea
                   class="field-area"
@@ -524,9 +524,9 @@
 
               <div class="field-block">
                 <label class="field-label" for="hub-race-useful">
-                  Чем ваша раса полезна для других
+                  Чем ваша роль полезна для других
                   <span class="req">*</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите чем ваша раса может помочь другим игрокам в быту.">?</span>
+                  <span class="field-tip" tabindex="0" data-tip="Распишите, чем ваша роль может помочь другим игрокам в быту.">?</span>
                 </label>
                 <textarea
                   class="field-area"
@@ -538,9 +538,9 @@
 
               <div class="field-block">
                 <label class="field-label" for="hub-race-mechanics">
-                  Особые механики которые привносит раса в мир
+                  Особые механики которые привносит роль в мир
                   <span class="opt">необязательно</span>
-                  <span class="field-tip" tabindex="0" data-tip="Распишите что нового в игровой мир добавит приход вашей расы. (новые предметы, биомы, структуры, механики)">?</span>
+                  <span class="field-tip" tabindex="0" data-tip="Распишите, что нового в игровой мир добавит ваша роль (предметы, биомы, структуры, механики).">?</span>
                 </label>
                 <textarea
                   class="field-area"
@@ -662,7 +662,7 @@
         <div class="user-profile-drawer__inner">
           <nav class="user-profile-tabs" id="user-profile-tabs" aria-label="Разделы профиля">
             <button type="button" class="user-profile-tabs__btn is-active" data-profile-tab="profile">Профиль</button>
-            <button type="button" class="user-profile-tabs__btn" data-profile-tab="race">Раса</button>
+            <button type="button" class="user-profile-tabs__btn" data-profile-tab="race">Роль</button>
             <button type="button" class="user-profile-tabs__btn" data-profile-tab="content">Контент</button>
           </nav>
           <div class="user-profile-card" id="user-profile-card">
@@ -704,45 +704,45 @@
 
             <div class="user-profile-panel" data-profile-panel="race" hidden>
               <div class="user-profile-race" id="user-profile-race" hidden></div>
-              <p class="user-profile-empty" id="user-profile-race-empty" hidden>Нет одобренной расы</p>
+              <p class="user-profile-empty" id="user-profile-race-empty" hidden>Нет одобренной роли</p>
               <form class="user-profile-race-edit hub-race-form" id="user-profile-race-edit" hidden novalidate>
                 <div class="field-block">
                   <label class="field-label" for="edit-race-name">
-                    Название расы
+                    Название роли
                     <span class="req">*</span>
-                    <span class="field-tip" tabindex="0" data-tip="Короткое имя расы, как в анкете.">?</span>
+                    <span class="field-tip" tabindex="0" data-tip="Короткое имя роли. Ролью может быть новая раса, простой человек со своими фишками и т.д.">?</span>
                   </label>
                   <input class="field-input" id="edit-race-name" type="text" maxlength="48" placeholder="Пример: Эндариты" autocomplete="off" spellcheck="false" />
                 </div>
                 <div class="field-block">
                   <label class="field-label" for="edit-race-origin">
-                    Происхождение расы
+                    Происхождение роли
                     <span class="req">*</span>
-                    <span class="field-tip" tabindex="0" data-tip="Распишите как появилась ваша раса, не выходя за рамки логики и лора Minecraft.">?</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите, как появилась ваша роль, не выходя за рамки логики и лора Minecraft.">?</span>
                   </label>
                   <textarea class="field-area" id="edit-race-origin" rows="4" placeholder="Пример: родились в Энде из обсидиана…"></textarea>
                 </div>
                 <div class="field-block">
                   <label class="field-label" for="edit-race-abilities">
-                    Способности расы
+                    Способности роли
                     <span class="req">*</span>
-                    <span class="field-tip" tabindex="0" data-tip="Распишите какие есть способности у вашей расы.">?</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите, какие есть способности у вашей роли.">?</span>
                   </label>
                   <textarea class="field-area" id="edit-race-abilities" rows="4" placeholder="Пример: ночное зрение, прыжок x2…"></textarea>
                 </div>
                 <div class="field-block">
                   <label class="field-label" for="edit-race-traits">
-                    Особенности расы
+                    Особенности роли
                     <span class="opt">необязательно</span>
-                    <span class="field-tip" tabindex="0" data-tip="Распишите какие есть побочные эффекты у этой расы. (отрицательные эффекты, фоновые фишки)">?</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите побочные эффекты и фоновые фишки этой роли (в том числе отрицательные).">?</span>
                   </label>
                   <textarea class="field-area" id="edit-race-traits" rows="3" placeholder="Пример: боятся воды…"></textarea>
                 </div>
                 <div class="field-block">
                   <label class="field-label" for="edit-race-useful">
-                    Чем ваша раса полезна для других
+                    Чем ваша роль полезна для других
                     <span class="req">*</span>
-                    <span class="field-tip" tabindex="0" data-tip="Распишите чем ваша раса может помочь другим игрокам в быту.">?</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите, чем ваша роль может помочь другим игрокам в быту.">?</span>
                   </label>
                   <textarea class="field-area" id="edit-race-useful" rows="4" placeholder="Пример: чинят броню соседям…"></textarea>
                 </div>
@@ -750,7 +750,7 @@
                   <label class="field-label" for="edit-race-mechanics">
                     Особые механики
                     <span class="opt">необязательно</span>
-                    <span class="field-tip" tabindex="0" data-tip="Распишите что нового в игровой мир добавит приход вашей расы. (новые предметы, биомы, структуры, механики)">?</span>
+                    <span class="field-tip" tabindex="0" data-tip="Распишите, что нового в игровой мир добавит ваша роль (предметы, биомы, структуры, механики).">?</span>
                   </label>
                   <textarea class="field-area" id="edit-race-mechanics" rows="3" placeholder="Пример: новый биом, портал…"></textarea>
                 </div>
@@ -1057,7 +1057,7 @@
     <div class="panels stage-view is-active" id="panels">
       <section class="hero panel" id="hero">
         <h1 class="logo">GENESIS</h1>
-        <p class="lead" id="hero-lead">Регистрация расы на сервер</p>
+        <p class="lead" id="hero-lead">Регистрация роли на сервер</p>
         <button type="button" class="mc-btn" id="start-btn">РЕГИСТРАЦИЯ</button>
       </section>
 
@@ -1083,9 +1083,9 @@
 
         <div class="field-block">
           <label class="field-label" for="raceName">
-            Название расы
+            Название роли
             <span class="req">*</span>
-            <span class="field-tip" tabindex="0" data-tip="Короткое имя расы, как в анкете.">?</span>
+            <span class="field-tip" tabindex="0" data-tip="Короткое имя роли. Ролью может быть новая раса, простой человек со своими фишками и т.д.">?</span>
           </label>
           <input
             class="field-input"
@@ -1103,9 +1103,9 @@
 
         <div class="field-block">
           <label class="field-label" for="origin">
-            Происхождение расы
+            Происхождение роли
             <span class="req">*</span>
-            <span class="field-tip" tabindex="0" data-tip="Распишите как появилась ваша раса, не выходя за рамки логики и лора Minecraft.">?</span>
+            <span class="field-tip" tabindex="0" data-tip="Распишите, как появилась ваша роль, не выходя за рамки логики и лора Minecraft.">?</span>
           </label>
           <textarea
             class="field-area"
@@ -1119,9 +1119,9 @@
 
         <div class="field-block">
           <label class="field-label" for="abilities">
-            Способности расы
+            Способности роли
             <span class="req">*</span>
-            <span class="field-tip" tabindex="0" data-tip="Распишите какие есть способности у вашей расы.">?</span>
+            <span class="field-tip" tabindex="0" data-tip="Распишите, какие есть способности у вашей роли.">?</span>
           </label>
           <textarea
             class="field-area"
@@ -1135,9 +1135,9 @@
 
         <div class="field-block">
           <label class="field-label" for="traits">
-            Особенности расы
+            Особенности роли
             <span class="opt">необязательно</span>
-            <span class="field-tip" tabindex="0" data-tip="Распишите какие есть побочные эффекты у этой расы. (отрицательные эффекты, фоновые фишки)">?</span>
+            <span class="field-tip" tabindex="0" data-tip="Распишите побочные эффекты и фоновые фишки этой роли (в том числе отрицательные).">?</span>
           </label>
           <textarea
             class="field-area"
@@ -1150,9 +1150,9 @@
 
         <div class="field-block">
           <label class="field-label" for="useful">
-            Чем ваша раса полезна для других
+            Чем ваша роль полезна для других
             <span class="req">*</span>
-            <span class="field-tip" tabindex="0" data-tip="Распишите чем ваша раса может помочь другим игрокам в быту.">?</span>
+            <span class="field-tip" tabindex="0" data-tip="Распишите, чем ваша роль может помочь другим игрокам в быту.">?</span>
           </label>
           <textarea
             class="field-area"
@@ -1166,9 +1166,9 @@
 
         <div class="field-block">
           <label class="field-label" for="mechanics">
-            Особые механики которые привносит раса в мир
+            Особые механики которые привносит роль в мир
             <span class="opt">необязательно</span>
-            <span class="field-tip" tabindex="0" data-tip="Распишите что нового в игровой мир добавит приход вашей расы. (новые предметы, биомы, структуры, механики)">?</span>
+            <span class="field-tip" tabindex="0" data-tip="Распишите, что нового в игровой мир добавит ваша роль (предметы, биомы, структуры, механики).">?</span>
           </label>
           <textarea
             class="field-area"
@@ -1204,7 +1204,7 @@
             Аудио
             <span class="opt">необязательно</span>
           </div>
-          <p class="field-hint">Звуки расы: .ogg, .mp3, .wav</p>
+          <p class="field-hint">Звуки роли: .ogg, .mp3, .wav</p>
           <div class="audio-list" id="race-audio-list"></div>
           <div class="file-upload-row">
             <label class="mc-btn mc-btn--file" for="race-audio-input">ЗАГРУЗИТЬ АУДИО</label>
@@ -1266,7 +1266,7 @@
             <p class="submit-progress">Этап 3 / 4</p>
             <h2 class="submit-title">Вход на сервер</h2>
             <p class="submit-text">
-              Регистрация расы окончена. Вы в очереди на добавление, и сможете заходить на
+              Регистрация роли окончена. Вы в очереди на добавление, и сможете заходить на
               сервер когда вас добавят в белый список.
             </p>
             <p class="submit-meta">• Minecraft 1.21.11 fabric</p>
@@ -2043,6 +2043,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=99"></script>
+  <script src="script.js?v=100"></script>
 </body>
 </html>

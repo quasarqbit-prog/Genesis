@@ -3235,7 +3235,7 @@ app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
         blocks: Array.isArray(raceSrc.blocks) ? raceSrc.blocks : [],
       };
       if (!race.raceName || !race.origin || !race.abilities || !race.useful) {
-        return res.status(400).json({ error: "Заполни обязательные поля расы" });
+        return res.status(400).json({ error: "Заполни обязательные поля роли" });
       }
       folderName = race.raceName;
       folderColor = folderColor || "#c4ff4d";

@@ -84,7 +84,7 @@ MOD_API_KEY=длинный_секретный_ключ
 | POST | `/api/register` | Регистрация `{ username, password }` |
 | POST | `/api/login` | Вход → `{ token, user }` |
 | GET | `/api/user/profile` | Профиль (Bearer JWT) |
-| PUT | `/api/user/profile` | Сохранить анкету расы / stats |
+| PUT | `/api/user/profile` | Сохранить анкету роли / stats |
 | GET | `/api/health` | Проверка API + БД |
 
 ## Socket.io
