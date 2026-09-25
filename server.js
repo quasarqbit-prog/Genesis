@@ -597,7 +597,7 @@ async function ensureSchema() {
     CREATE TABLE IF NOT EXISTS chat_rooms (
       id INT UNSIGNED NOT NULL AUTO_INCREMENT,
       name VARCHAR(64) NOT NULL,
-      type ENUM('dm', 'group', 'public') NOT NULL,
+      type ENUM('dm', 'group', 'public', 'ticket') NOT NULL,
       created_by INT UNSIGNED NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -662,6 +662,35 @@ async function ensureSchema() {
       `ALTER TABLE chat_messages
        ADD COLUMN audience_json JSON NULL AFTER source`
     );
+  }
+
+  try {
+    await pool.query(
+      `ALTER TABLE chat_rooms
+       MODIFY COLUMN type ENUM('dm', 'group', 'public', 'ticket') NOT NULL`
+    );
+  } catch (err) {
+    console.warn("chat_rooms type ticket migrate:", err.message);
+  }
+  if (!(await columnExists("chat_rooms", "ref_kind"))) {
+    await pool.query(
+      `ALTER TABLE chat_rooms
+       ADD COLUMN ref_kind VARCHAR(16) NULL AFTER web_readonly`
+    );
+  }
+  if (!(await columnExists("chat_rooms", "ref_id"))) {
+    await pool.query(
+      `ALTER TABLE chat_rooms
+       ADD COLUMN ref_id INT UNSIGNED NULL AFTER ref_kind`
+    );
+  }
+  try {
+    await pool.query(
+      `ALTER TABLE chat_rooms
+       ADD UNIQUE KEY uq_chat_rooms_ticket (ref_kind, ref_id)`
+    );
+  } catch (err) {
+    /* already exists */
   }
 }
 
@@ -3111,31 +3140,68 @@ function assertQueueTable(table) {
   }
 }
 
-async function nextQueueNo(table) {
+/** Next free queue number among active in-queue rows (optionally by orders.kind). */
+async function nextQueueNo(table, { kind = null } = {}) {
   assertQueueTable(table);
+  const params = {};
+  let kindSql = "";
+  if (table === "orders" && kind) {
+    kindSql = " AND kind = :kind";
+    params.kind = String(kind);
+  }
+  // Only rows that still hold a queue slot (NULL = left the queue on purpose)
   const [rows] = await pool.execute(
     `SELECT COALESCE(MAX(queue_no), 0) + 1 AS next_no
      FROM ${table}
-     WHERE status = 'approved' AND deleted_at IS NULL`
+     WHERE status = 'approved'
+       AND deleted_at IS NULL
+       AND queue_no IS NOT NULL${kindSql}`,
+    params
   );
   return Math.max(1, Number(rows[0]?.next_no) || 1);
 }
 
-async function renumberQueue(table) {
+/** Compact queue to 1..N for rows that are currently in the queue. */
+async function renumberQueue(table, { kind = null } = {}) {
   assertQueueTable(table);
+  const params = {};
+  let kindSql = "";
+  if (table === "orders" && kind) {
+    kindSql = " AND kind = :kind";
+    params.kind = String(kind);
+  }
+  // Do not pull back rows whose queue_no was cleared (e.g. superseded resubmit)
   const [rows] = await pool.execute(
     `SELECT id FROM ${table}
-     WHERE status = 'approved' AND deleted_at IS NULL
-     ORDER BY queue_no ASC, id ASC`
+     WHERE status = 'approved'
+       AND deleted_at IS NULL
+       AND queue_no IS NOT NULL${kindSql}
+     ORDER BY queue_no ASC, id ASC`,
+    params
   );
   let n = 1;
   for (const row of rows) {
-    await pool.execute(
-      `UPDATE ${table} SET queue_no = :n WHERE id = :id`,
-      { n, id: Number(row.id) }
-    );
+    await pool.execute(`UPDATE ${table} SET queue_no = :n WHERE id = :id`, {
+      n,
+      id: Number(row.id),
+    });
     n += 1;
   }
+}
+
+/** Drop a folder's previous approved rows from the studio queue (new version supersedes). */
+async function clearStudioQueueForFolder(submitterId, clientFolderId) {
+  await pool.execute(
+    `UPDATE studio_submissions
+     SET queue_no = NULL
+     WHERE submitter_id = :submitterId
+       AND client_folder_id = :clientFolderId
+       AND status = 'approved'
+       AND deleted_at IS NULL
+       AND queue_no IS NOT NULL`,
+    { submitterId, clientFolderId }
+  );
+  await renumberQueue("studio_submissions");
 }
 
 async function purgeSoftDeleted(table) {
@@ -3262,6 +3328,11 @@ app.post("/api/studio/submissions", authMiddleware, async (req, res) => {
       baseName,
     };
     folderName = studioDisplayName(baseName, version).slice(0, 128);
+
+    // New version leaves the old approved entry out of the live queue
+    if (prevStatus === "approved") {
+      await clearStudioQueueForFolder(submitterId, clientFolderId);
+    }
 
     const mcNick = String(req.user.mcNick || "").slice(0, 16) || "unknown";
     const payloadJson = JSON.stringify(payload);
@@ -3431,7 +3502,10 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
       }
       let queueNo = rows[0].queue_no != null ? Number(rows[0].queue_no) : null;
       if (status === "approved") {
-        queueNo = await nextQueueNo("studio_submissions");
+        // Keep number if already in queue; otherwise take next free slot then compact
+        if (!(current === "approved" && Number.isFinite(queueNo) && queueNo > 0)) {
+          queueNo = await nextQueueNo("studio_submissions");
+        }
       } else if (status === "rejected" || status === "added") {
         queueNo = null;
       }
@@ -3451,9 +3525,8 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
           queueNo,
         }
       );
-      if (status === "rejected" || status === "added") {
-        await renumberQueue("studio_submissions");
-      }
+      // Always compact 1..N after any queue-affecting change
+      await renumberQueue("studio_submissions");
     } else if (!wantsPayload && !hasHidden) {
       return res.status(400).json({ error: "Нужен status, payload или hidden" });
     }
@@ -3931,9 +4004,18 @@ app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
       if (status === "ready" && current !== "approved" && current !== "ready") {
         return res.status(400).json({ error: "Сначала примите заказ" });
       }
+      const orderKind = String(rows[0].kind || "skin");
+      // Separate queue only for skins; model/build stay without queue numbers
+      const usesSkinQueue = orderKind === "skin";
       let queueNo = rows[0].queue_no != null ? Number(rows[0].queue_no) : null;
       if (status === "approved") {
-        queueNo = await nextQueueNo("orders");
+        if (usesSkinQueue) {
+          if (!(current === "approved" && Number.isFinite(queueNo) && queueNo > 0)) {
+            queueNo = await nextQueueNo("orders", { kind: "skin" });
+          }
+        } else {
+          queueNo = null;
+        }
       } else if (status === "rejected" || status === "ready") {
         queueNo = null;
       }
@@ -3953,8 +4035,8 @@ app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
           queueNo,
         }
       );
-      if (status === "rejected" || status === "ready") {
-        await renumberQueue("orders");
+      if (usesSkinQueue) {
+        await renumberQueue("orders", { kind: "skin" });
       }
     } else if (!hasHidden) {
       return res.status(400).json({ error: "Нужен status или hidden" });
@@ -4004,7 +4086,7 @@ app.post("/api/orders/:id/results", authMiddleware, async (req, res) => {
         reviewedBy: req.user.id,
       }
     );
-    await renumberQueue("orders");
+    await renumberQueue("orders", { kind: "skin" });
     const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
     return res.json({ ok: true, order: mapOrderRow(next[0]) });
   } catch (err) {
@@ -4033,7 +4115,7 @@ app.delete("/api/orders/:id", authMiddleware, async (req, res) => {
       `UPDATE orders SET hidden = 1, queue_no = NULL WHERE id = :id`,
       { id }
     );
-    await renumberQueue("orders");
+    await renumberQueue("orders", { kind: "skin" });
     const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
     return res.json({ ok: true, id, order: mapOrderRow(next[0]) });
   } catch (err) {
@@ -4064,7 +4146,7 @@ app.post("/api/orders/:id/soft-delete", authMiddleware, async (req, res) => {
        WHERE id = :id`,
       { id }
     );
-    await renumberQueue("orders");
+    await renumberQueue("orders", { kind: "skin" });
     const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
     return res.json({ ok: true, order: mapOrderRow(next[0]) });
   } catch (err) {
@@ -4114,7 +4196,7 @@ app.post("/api/orders/:id/hard-delete", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "Сначала удалите заказ (мягкое удаление)" });
     }
     await pool.execute(`DELETE FROM orders WHERE id = :id`, { id });
-    await renumberQueue("orders");
+    await renumberQueue("orders", { kind: "skin" });
     try {
       const dir = path.join(ORDERS_DIR, String(id));
       if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });

@@ -7848,6 +7848,22 @@ h3,
   word-break: break-word;
 }
 
+.chat-msg__ticket-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.chat-msg__ticket-link:hover {
+  color: #fff;
+}
+
 .chat-msg.is-mine .chat-msg__body {
   border-color: rgba(196, 255, 77, 0.28);
   background: rgba(196, 255, 77, 0.08);

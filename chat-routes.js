@@ -4,9 +4,14 @@
  */
 "use strict";
 
-const CHAT_TYPES = new Set(["dm", "group", "public"]);
+const CHAT_TYPES = new Set(["dm", "group", "public", "ticket"]);
 const MSG_MAX = 1000;
 const NAME_MAX = 64;
+
+function isStaffRole(role) {
+  const r = String(role || "");
+  return r === "founder" || r === "admin" || r === "helper";
+}
 
 function setupChatRoutes({
   app,
@@ -92,7 +97,7 @@ function setupChatRoutes({
     const id = Number(roomId);
     if (!Number.isFinite(id) || id <= 0) return null;
     const [rows] = await pool.execute(
-      `SELECT id, name, type, slug, web_readonly, created_by, created_at
+      `SELECT id, name, type, slug, web_readonly, ref_kind, ref_id, created_by, created_at
        FROM chat_rooms WHERE id = :id LIMIT 1`,
       { id }
     );
@@ -101,9 +106,20 @@ function setupChatRoutes({
 
   async function getRoomBySlug(slug) {
     const [rows] = await pool.execute(
-      `SELECT id, name, type, slug, web_readonly, created_by, created_at
+      `SELECT id, name, type, slug, web_readonly, ref_kind, ref_id, created_by, created_at
        FROM chat_rooms WHERE slug = :slug LIMIT 1`,
       { slug: String(slug || "") }
+    );
+    return rows[0] || null;
+  }
+
+  async function getTicketRoom(refKind, refId) {
+    const [rows] = await pool.execute(
+      `SELECT id, name, type, slug, web_readonly, ref_kind, ref_id, created_by, created_at
+       FROM chat_rooms
+       WHERE type = 'ticket' AND ref_kind = :refKind AND ref_id = :refId
+       LIMIT 1`,
+      { refKind: String(refKind || ""), refId: Number(refId) }
     );
     return rows[0] || null;
   }
@@ -124,8 +140,12 @@ function setupChatRoutes({
     return Boolean(rows[0]);
   }
 
-  async function canAccessRoom(room, userId) {
+  async function canAccessRoom(room, userId, role = null) {
     if (!room || userId == null) return false;
+    if (room.type === "ticket") {
+      if (isStaffRole(role)) return true;
+      return isMember(room.id, userId);
+    }
     if (isSystemRoom(room) && room.type === "public") return true;
     return isMember(room.id, userId);
   }
@@ -215,6 +235,8 @@ function setupChatRoutes({
       type: row.type,
       slug: row.slug || null,
       webReadonly: isWebReadonly(row),
+      refKind: row.ref_kind || null,
+      refId: row.ref_id != null ? Number(row.ref_id) : null,
       createdBy: row.created_by != null ? Number(row.created_by) : null,
       createdAt: row.created_at
         ? new Date(row.created_at).toISOString()
@@ -256,8 +278,12 @@ function setupChatRoutes({
   }
 
   async function createRoom({ creatorId, name, type, memberIds }) {
-    if (!CHAT_TYPES.has(type)) {
-      const err = new Error("Неизвестный тип чата");
+    if (!CHAT_TYPES.has(type) || type === "ticket") {
+      const err = new Error(
+        type === "ticket"
+          ? "Чаты заявок создаются только через ответ на заявку"
+          : "Неизвестный тип чата"
+      );
       err.status = 400;
       throw err;
     }
@@ -322,11 +348,11 @@ function setupChatRoutes({
     return serializeRoom(await getRoom(roomId), creatorId);
   }
 
-  async function listRoomsForUser(userId, scope) {
+  async function listRoomsForUser(userId, scope, role = null) {
     let rows;
     if (scope === "public") {
       const [r] = await pool.execute(
-        `SELECT r.id, r.name, r.type, r.slug, r.web_readonly, r.created_by, r.created_at,
+        `SELECT r.id, r.name, r.type, r.slug, r.web_readonly, r.ref_kind, r.ref_id, r.created_by, r.created_at,
                 EXISTS(
                   SELECT 1 FROM chat_members m
                   WHERE m.room_id = r.id AND m.user_id = :userId
@@ -344,13 +370,34 @@ function setupChatRoutes({
         { userId }
       );
       rows = r;
-      // Auto-join system public rooms so sync/membership stays consistent
       for (const row of rows) {
         if (row.slug) await ensureMembership(row.id, userId);
       }
+    } else if (scope === "tickets") {
+      if (isStaffRole(role)) {
+        const [r] = await pool.execute(
+          `SELECT r.id, r.name, r.type, r.slug, r.web_readonly, r.ref_kind, r.ref_id, r.created_by, r.created_at, 1 AS joined
+           FROM chat_rooms r
+           WHERE r.type = 'ticket'
+           ORDER BY r.id DESC
+           LIMIT 200`
+        );
+        rows = r;
+      } else {
+        const [r] = await pool.execute(
+          `SELECT r.id, r.name, r.type, r.slug, r.web_readonly, r.ref_kind, r.ref_id, r.created_by, r.created_at, 1 AS joined
+           FROM chat_rooms r
+           JOIN chat_members m ON m.room_id = r.id AND m.user_id = :userId
+           WHERE r.type = 'ticket'
+           ORDER BY r.id DESC
+           LIMIT 200`,
+          { userId }
+        );
+        rows = r;
+      }
     } else {
       const [r] = await pool.execute(
-        `SELECT r.id, r.name, r.type, r.slug, r.web_readonly, r.created_by, r.created_at, 1 AS joined
+        `SELECT r.id, r.name, r.type, r.slug, r.web_readonly, r.ref_kind, r.ref_id, r.created_by, r.created_at, 1 AS joined
          FROM chat_rooms r
          JOIN chat_members m ON m.room_id = r.id AND m.user_id = :userId
          WHERE r.type IN ('dm', 'group')
@@ -365,6 +412,7 @@ function setupChatRoutes({
       const room = await serializeRoom(row, userId);
       if (scope === "public" && row.slug) room.joined = true;
       else if (scope === "public") room.joined = Boolean(Number(row.joined));
+      else room.joined = true;
       out.push(room);
     }
     if (scope !== "public") {
@@ -498,6 +546,24 @@ function setupChatRoutes({
         }
       } else if (room.slug === "minecraft") {
         io.emit("chat:message", { roomId: room.id, message });
+      } else if (room.type === "ticket") {
+        const [staffRows] = await pool.execute(
+          `SELECT id FROM users WHERE role IN ('founder', 'admin', 'helper')`
+        );
+        const ids = new Set(staffRows.map((r) => Number(r.id)));
+        if (userId != null) ids.add(Number(userId));
+        const [memRows] = await pool.execute(
+          `SELECT user_id FROM chat_members WHERE room_id = :roomId`,
+          { roomId: room.id }
+        );
+        for (const m of memRows) ids.add(Number(m.user_id));
+        for (const uid of ids) {
+          if (!Number.isFinite(uid)) continue;
+          io.to(`user:${uid}`).emit("chat:message", {
+            roomId: room.id,
+            message,
+          });
+        }
       } else {
         const [members] = await pool.execute(
           `SELECT user_id FROM chat_members WHERE room_id = :roomId`,
@@ -523,8 +589,10 @@ function setupChatRoutes({
 
   app.get("/api/chat/rooms", authMiddleware, async (req, res) => {
     try {
-      const scope = String(req.query.scope || "mine") === "public" ? "public" : "mine";
-      const rooms = await listRoomsForUser(req.user.id, scope);
+      const raw = String(req.query.scope || "mine");
+      const scope =
+        raw === "public" ? "public" : raw === "tickets" ? "tickets" : "mine";
+      const rooms = await listRoomsForUser(req.user.id, scope, req.user.role);
       return res.json({ rooms });
     } catch (err) {
       console.error("chat rooms:", err);
@@ -577,7 +645,7 @@ function setupChatRoutes({
     try {
       const room = await getRoom(req.params.id);
       if (!room) return res.status(404).json({ error: "Чат не найден" });
-      if (!(await canAccessRoom(room, req.user.id))) {
+      if (!(await canAccessRoom(room, req.user.id, req.user.role))) {
         return res.status(403).json({ error: "Нет доступа к чату" });
       }
       if (isSystemRoom(room)) await ensureMembership(room.id, req.user.id);
@@ -598,10 +666,11 @@ function setupChatRoutes({
     try {
       const room = await getRoom(req.params.id);
       if (!room) return res.status(404).json({ error: "Чат не найден" });
-      if (!(await canAccessRoom(room, req.user.id))) {
+      if (!(await canAccessRoom(room, req.user.id, req.user.role))) {
         return res.status(403).json({ error: "Нет доступа к чату" });
       }
       if (isSystemRoom(room)) await ensureMembership(room.id, req.user.id);
+      if (room.type === "ticket") await ensureMembership(room.id, req.user.id);
       const message = await postMessage({
         room,
         userId: req.user.id,
@@ -614,6 +683,87 @@ function setupChatRoutes({
       console.error("chat post:", err);
       return res.status(err.status || 500).json({
         error: err.message || "Не удалось отправить",
+      });
+    }
+  });
+
+  /** Staff reply on a studio/order application — creates ticket chat visible to all staff + submitter */
+  app.post("/api/chat/tickets", authMiddleware, async (req, res) => {
+    try {
+      if (!isStaffRole(req.user.role)) {
+        return res.status(403).json({ error: "Только для персонала" });
+      }
+      const refKind = String(req.body?.refKind || "").trim();
+      const refId = Number(req.body?.refId);
+      const text = String(req.body?.text || "").trim().slice(0, MSG_MAX - 48);
+      if (!["studio", "order"].includes(refKind) || !Number.isFinite(refId) || refId <= 0) {
+        return res.status(400).json({ error: "Нужны refKind (studio|order) и refId" });
+      }
+      if (!text) {
+        return res.status(400).json({ error: "Напиши текст ответа" });
+      }
+
+      let submitterId = null;
+      let title = "Заявка";
+      if (refKind === "studio") {
+        const [rows] = await pool.execute(
+          `SELECT id, submitter_id, folder_name, submitter_mc_nick
+           FROM studio_submissions WHERE id = :id LIMIT 1`,
+          { id: refId }
+        );
+        if (!rows[0]) return res.status(404).json({ error: "Анкета не найдена" });
+        submitterId = Number(rows[0].submitter_id);
+        title = `Заявка · ${rows[0].folder_name || rows[0].submitter_mc_nick || refId}`;
+      } else {
+        const [rows] = await pool.execute(
+          `SELECT id, submitter_id, kind, submitter_mc_nick, description
+           FROM orders WHERE id = :id LIMIT 1`,
+          { id: refId }
+        );
+        if (!rows[0]) return res.status(404).json({ error: "Заказ не найден" });
+        submitterId = Number(rows[0].submitter_id);
+        const kindLabel =
+          rows[0].kind === "model"
+            ? "Модель"
+            : rows[0].kind === "build"
+              ? "Постройка"
+              : "Скин";
+        title = `Заявка · ${kindLabel} · ${rows[0].submitter_mc_nick || refId}`;
+      }
+
+      let room = await getTicketRoom(refKind, refId);
+      if (!room) {
+        const [result] = await pool.execute(
+          `INSERT INTO chat_rooms (name, type, slug, web_readonly, ref_kind, ref_id, created_by)
+           VALUES (:name, 'ticket', NULL, 0, :refKind, :refId, :createdBy)`,
+          {
+            name: String(title).slice(0, NAME_MAX),
+            refKind,
+            refId,
+            createdBy: req.user.id,
+          }
+        );
+        room = await getRoom(result.insertId);
+      }
+      await addMembers(room.id, [submitterId, req.user.id]);
+
+      const linkTag = `[[ticket:${refKind}:${refId}]]`;
+      const body = `${linkTag}\n${text}`;
+      const message = await postMessage({
+        room,
+        userId: req.user.id,
+        authorNick: req.user.mcNick || "Админ",
+        text: body,
+        source: "web",
+      });
+      const full = await serializeRoom(room, req.user.id);
+      full.joined = true;
+      io.emit("chat:rooms-updated", { roomId: room.id, scope: "tickets" });
+      return res.json({ ok: true, room: full, message });
+    } catch (err) {
+      console.error("chat ticket:", err);
+      return res.status(err.status || 500).json({
+        error: err.message || "Не удалось создать чат по заявке",
       });
     }
   });
@@ -707,7 +857,7 @@ function setupChatRoutes({
       if (!user) return;
       const room = await getRoom(req.params.id);
       if (!room) return res.status(404).json({ ok: false, error: "Not found" });
-      if (!(await canAccessRoom(room, user.id))) {
+      if (!(await canAccessRoom(room, user.id, user.role))) {
         return res.status(403).json({ ok: false, error: "Forbidden" });
       }
       if (isSystemRoom(room)) await ensureMembership(room.id, user.id);
@@ -732,10 +882,11 @@ function setupChatRoutes({
       if (req.body?.roomId) room = await getRoom(req.body.roomId);
       if (!room && req.body?.roomSlug) room = await getRoomBySlug(req.body.roomSlug);
       if (!room) return res.status(404).json({ ok: false, error: "Not found" });
-      if (!(await canAccessRoom(room, user.id))) {
+      if (!(await canAccessRoom(room, user.id, user.role))) {
         return res.status(403).json({ ok: false, error: "Forbidden" });
       }
       if (isSystemRoom(room)) await ensureMembership(room.id, user.id);
+      if (room.type === "ticket") await ensureMembership(room.id, user.id);
 
       let audienceIds = Array.isArray(req.body?.audienceIds)
         ? req.body.audienceIds

@@ -5438,6 +5438,7 @@
     const addedBtn = document.getElementById("studio-review-added");
     const deleteBtn = document.getElementById("studio-review-delete");
     const hideBtn = document.getElementById("studio-review-hide");
+    const replyBtn = document.getElementById("studio-review-reply");
     if (!wrap) return;
     if (studioTab !== "review" || !sub) {
       wrap.hidden = true;
@@ -5452,6 +5453,7 @@
       addedBtn.disabled = st === "added";
       addedBtn.textContent = "Добавлено";
     }
+    if (replyBtn) replyBtn.hidden = false;
     if (hideBtn) {
       const canHide = st === "added" || st === "approved";
       hideBtn.hidden = !canHide;
@@ -6436,6 +6438,10 @@
         showToast(err.message || "Не удалось одобрить");
       }
     });
+    document.getElementById("studio-review-reply")?.addEventListener("click", () => {
+      if (!studioOpenReviewId) return;
+      openTicketReplyModal("studio", studioOpenReviewId);
+    });
     document.getElementById("studio-review-added")?.addEventListener("click", async () => {
       if (!studioOpenReviewId) return;
       try {
@@ -7380,6 +7386,7 @@
     const ownerSubmit = document.getElementById("orders-owner-submit-btn");
     const hideBtn = document.getElementById("orders-hide-btn");
     const deleteBtn = document.getElementById("orders-delete-btn");
+    const replyBtn = document.getElementById("orders-reply-btn");
     if (!wrap) return;
     if (!order) {
       wrap.hidden = true;
@@ -7416,6 +7423,7 @@
       approveBtn.hidden =
         !reviewMode || soft || st === "approved" || st === "ready";
     }
+    if (replyBtn) replyBtn.hidden = !reviewMode || soft;
     if (attachLabel) {
       attachLabel.hidden =
         !reviewMode || soft || (st !== "approved" && st !== "ready");
@@ -7435,6 +7443,7 @@
       ownerSubmit,
       rejectBtn,
       approveBtn,
+      replyBtn,
       attachLabel,
       hideBtn,
       deleteBtn,
@@ -8018,6 +8027,10 @@
       } catch (err) {
         showToast(err.message || "Не удалось принять");
       }
+    });
+    document.getElementById("orders-reply-btn")?.addEventListener("click", () => {
+      if (!ordersOpenId) return;
+      openTicketReplyModal("order", ordersOpenId);
     });
     document.getElementById("orders-attach-input")?.addEventListener("change", async (e) => {
       const input = e.target;
@@ -11166,7 +11179,7 @@
 
   /* ---------- Chat tab ---------- */
   const CHAT_NOTIFY_PREFS_KEY = "genesis_chat_notify_prefs_v1";
-  let chatScope = "mine"; // mine | public
+  let chatScope = "mine"; // mine | public | tickets
   let chatRooms = [];
   let chatActiveRoomId = null;
   let chatMessages = [];
@@ -11236,7 +11249,7 @@
     if (type === "public") {
       if (!chatNotifyPrefs.public) return false;
     } else {
-      // dm + group = личные
+      // dm + group + ticket = личные / заявки
       if (!chatNotifyPrefs.personal) return false;
     }
     const chatTabOpen = Boolean(
@@ -11269,7 +11282,97 @@
     if (type === "dm") return "ЛС";
     if (type === "group") return "Группа";
     if (type === "public") return "Общий";
+    if (type === "ticket") return "Заявка";
     return type || "";
+  }
+
+  function chatScopeQuery() {
+    if (chatScope === "public") return "public";
+    if (chatScope === "tickets") return "tickets";
+    return "mine";
+  }
+
+  function formatChatMessageHtml(text) {
+    const raw = String(text || "");
+    const linkRe = /\[\[ticket:(studio|order):(\d+)\]\]/g;
+    let html = "";
+    let last = 0;
+    let m;
+    while ((m = linkRe.exec(raw)) !== null) {
+      html += escapeChat(raw.slice(last, m.index));
+      const kind = m[1];
+      const id = m[2];
+      const label =
+        kind === "studio" ? `Открыть анкету #${id}` : `Открыть заказ #${id}`;
+      html += `<button type="button" class="chat-msg__ticket-link" data-ticket-kind="${kind}" data-ticket-id="${id}">${escapeChat(label)}</button>`;
+      last = m.index + m[0].length;
+    }
+    html += escapeChat(raw.slice(last));
+    return html.replace(/\n/g, "<br>");
+  }
+
+  let ticketReplyCtx = null; // { refKind, refId }
+
+  function openTicketReplyModal(refKind, refId) {
+    ticketReplyCtx = { refKind, refId: Number(refId) };
+    const err = document.getElementById("ticket-reply-error");
+    const ta = document.getElementById("ticket-reply-text");
+    if (err) {
+      err.hidden = true;
+      err.textContent = "";
+    }
+    if (ta) ta.value = "";
+    openStudioModal("ticket-reply-modal");
+    requestAnimationFrame(() => ta?.focus());
+  }
+
+  function closeTicketReplyModal() {
+    ticketReplyCtx = null;
+    closeStudioModal("ticket-reply-modal");
+  }
+
+  async function openApplicationFromTicket(refKind, refId) {
+    const id = Number(refId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (refKind === "studio") {
+      if (!isStudioStaffViewer()) {
+        showToast("Анкету может открыть только персонал");
+        return;
+      }
+      setMainTab("studio");
+      studioTab = "review";
+      studioOpenReviewId = id;
+      try {
+        await loadStudioReviewList();
+        if (!studioReviewList.some((s) => Number(s.id) === id)) {
+          showToast("Анкета не найдена или скрыта");
+          studioOpenReviewId = null;
+        }
+        renderStudio();
+      } catch (err) {
+        showToast(err.message || "Не удалось открыть анкету");
+      }
+      return;
+    }
+    if (refKind === "order") {
+      if (!isOrdersFounder()) {
+        showToast("Заказ может открыть только основатель");
+        return;
+      }
+      setMainTab("orders");
+      ordersTab = "review";
+      ordersOpenId = id;
+      try {
+        await loadOrdersReview();
+        if (!ordersReviewList.some((o) => Number(o.id) === id)) {
+          showToast("Заказ не найден или скрыт");
+          ordersOpenId = null;
+        }
+        renderOrdersUi();
+      } catch (err) {
+        showToast(err.message || "Не удалось открыть заказ");
+      }
+    }
   }
 
   function formatChatTime(iso) {
@@ -11510,13 +11613,24 @@
     if (!authToken || chatLoading) return;
     chatLoading = true;
     try {
-      const data = await api(`/api/chat/rooms?scope=${chatScope === "public" ? "public" : "mine"}`);
+      const data = await api(`/api/chat/rooms?scope=${chatScopeQuery()}`);
       chatRooms = Array.isArray(data.rooms) ? data.rooms : [];
       chatRooms.forEach(rememberChatRoom);
       chatRoomsDirty = false;
       if (keepSelection && chatActiveRoomId) {
         const still = chatRooms.find((r) => Number(r.id) === Number(chatActiveRoomId));
         if (!still) chatActiveRoomId = null;
+      }
+      const createBtn = document.getElementById("chat-create-btn");
+      if (createBtn) createBtn.hidden = chatScope === "tickets";
+      const empty = document.getElementById("chat-room-empty");
+      if (empty && !chatRooms.length) {
+        empty.textContent =
+          chatScope === "tickets"
+            ? "Пока нет чатов по заявкам"
+            : chatScope === "public"
+              ? "Нет общих чатов"
+              : "Пока нет чатов";
       }
       renderChatRoomList();
       if (chatActiveRoomId) {
@@ -11550,7 +11664,7 @@
       btn.setAttribute("role", "listitem");
       btn.dataset.roomId = String(room.id);
       const preview = room.lastMessage
-        ? `${room.lastMessage.authorNick}: ${room.lastMessage.text}`
+        ? `${room.lastMessage.authorNick}: ${String(room.lastMessage.text || "").replace(/\[\[ticket:(studio|order):\d+\]\]\s*/g, "")}`
         : chatScope === "public" && !room.joined
           ? "Нажми, чтобы вступить"
           : "Нет сообщений";
@@ -11579,7 +11693,7 @@
           <span>${escapeChat(formatChatTime(msg.createdAt))}</span>
           ${src}
         </div>
-        <div class="chat-msg__body">${escapeChat(msg.text)}</div>`;
+        <div class="chat-msg__body">${formatChatMessageHtml(msg.text)}</div>`;
       box.appendChild(el);
     });
     box.scrollTop = box.scrollHeight;
@@ -11802,12 +11916,71 @@
   document.getElementById("chat-scope-tabs")?.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-chat-scope]");
     if (!btn) return;
-    chatScope = btn.getAttribute("data-chat-scope") === "public" ? "public" : "mine";
+    const next = btn.getAttribute("data-chat-scope");
+    chatScope =
+      next === "public" ? "public" : next === "tickets" ? "tickets" : "mine";
     document.querySelectorAll("#chat-scope-tabs [data-chat-scope]").forEach((el) => {
       el.classList.toggle("is-active", el === btn);
     });
     chatActiveRoomId = null;
     refreshChatRooms();
+  });
+
+  document.getElementById("chat-messages")?.addEventListener("click", (e) => {
+    const link = e.target.closest(".chat-msg__ticket-link[data-ticket-kind]");
+    if (!link) return;
+    openApplicationFromTicket(
+      link.getAttribute("data-ticket-kind"),
+      link.getAttribute("data-ticket-id")
+    );
+  });
+
+  document.getElementById("ticket-reply-modal-close")?.addEventListener("click", closeTicketReplyModal);
+  document.getElementById("ticket-reply-cancel")?.addEventListener("click", closeTicketReplyModal);
+  document.getElementById("ticket-reply-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById("ticket-reply-error");
+    const textEl = document.getElementById("ticket-reply-text");
+    const text = String(textEl?.value || "").trim();
+    if (!ticketReplyCtx) return;
+    if (!text) {
+      textEl?.focus();
+      return;
+    }
+    if (errEl) {
+      errEl.hidden = true;
+      errEl.textContent = "";
+    }
+    try {
+      const data = await api("/api/chat/tickets", {
+        method: "POST",
+        body: JSON.stringify({
+          refKind: ticketReplyCtx.refKind,
+          refId: ticketReplyCtx.refId,
+          text,
+        }),
+      });
+      closeTicketReplyModal();
+      showToast("Ответ отправлен в чат «Заявки»");
+      const roomId = Number(data?.room?.id);
+      chatScope = "tickets";
+      document.querySelectorAll("#chat-scope-tabs [data-chat-scope]").forEach((el) => {
+        el.classList.toggle(
+          "is-active",
+          el.getAttribute("data-chat-scope") === "tickets"
+        );
+      });
+      setMainTab("chat");
+      await refreshChatRooms();
+      if (roomId) await openChatRoom(roomId);
+    } catch (err) {
+      if (errEl) {
+        errEl.hidden = false;
+        errEl.textContent = err.message || "Не удалось отправить";
+      } else {
+        showToast(err.message || "Не удалось отправить");
+      }
+    }
   });
 
   document.getElementById("chat-room-list")?.addEventListener("click", (e) => {

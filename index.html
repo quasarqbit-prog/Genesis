@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=100" />
+  <link rel="stylesheet" href="styles.css?v=101" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -85,6 +85,7 @@
                 <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-reject">Отклонить</button>
                 <button type="button" class="mc-btn" id="studio-review-approve">Одобрить</button>
                 <button type="button" class="mc-btn" id="studio-review-added" hidden>Добавлено</button>
+                <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-reply">Ответить в ЛС</button>
                 <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-hide" hidden>Скрыть</button>
                 <button type="button" class="mc-btn mc-btn--ghost studio-review-delete" id="studio-review-delete" hidden>Удалить</button>
               </div>
@@ -277,6 +278,7 @@
                   <button type="button" class="mc-btn" id="orders-owner-submit-btn" hidden>Отправить</button>
                   <button type="button" class="mc-btn mc-btn--ghost" id="orders-reject-btn">Отклонить</button>
                   <button type="button" class="mc-btn" id="orders-approve-btn">Принять</button>
+                  <button type="button" class="mc-btn mc-btn--ghost" id="orders-reply-btn">Ответить в ЛС</button>
                   <label class="mc-btn orders-attach-btn" id="orders-attach-label" hidden>
                     Прикрепить скины
                     <input id="orders-attach-input" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp" multiple hidden />
@@ -294,6 +296,7 @@
                 <nav class="chat-scope-tabs" id="chat-scope-tabs" aria-label="Тип чатов">
                   <button type="button" class="chat-scope-tabs__btn is-active" data-chat-scope="mine">Мои чаты</button>
                   <button type="button" class="chat-scope-tabs__btn" data-chat-scope="public">Общие чаты</button>
+                  <button type="button" class="chat-scope-tabs__btn" data-chat-scope="tickets">Заявки</button>
                 </nav>
                 <div class="chat-room-list" id="chat-room-list" role="list"></div>
                 <p class="chat-room-empty" id="chat-room-empty" hidden>Пока нет чатов</p>
@@ -1910,6 +1913,29 @@
     </div>
   </div>
 
+  <div class="auth-modal ui-layer" id="ticket-reply-modal" hidden>
+    <div class="popup-shell">
+      <button type="button" class="popup-close" id="ticket-reply-modal-close" aria-label="Закрыть">×</button>
+      <div class="auth-modal__panel" role="dialog" aria-modal="true" aria-labelledby="ticket-reply-modal-title">
+        <div class="auth-modal__head">
+          <h2 class="auth-modal__title" id="ticket-reply-modal-title">Ответить в ЛС</h2>
+        </div>
+        <form class="studio-modal__form" id="ticket-reply-form" novalidate>
+          <p class="field-hint" id="ticket-reply-hint">Сообщение уйдёт в чат «Заявки» — его видят все админы и автор заявки.</p>
+          <div class="field-block">
+            <label class="field-label" for="ticket-reply-text">Сообщение</label>
+            <textarea class="field-area" id="ticket-reply-text" rows="4" required maxlength="1000" placeholder="Текст ответа…"></textarea>
+          </div>
+          <p class="field-error" id="ticket-reply-error" hidden></p>
+          <div class="studio-modal__actions">
+            <button type="button" class="mc-btn mc-btn--ghost" id="ticket-reply-cancel">Отмена</button>
+            <button type="submit" class="mc-btn">Отправить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div class="auth-modal ui-layer" id="studio-reject-modal" hidden>
     <div class="popup-shell">
       <button type="button" class="popup-close" id="studio-reject-modal-close" aria-label="Закрыть">×</button>
@@ -2043,6 +2069,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=100"></script>
+  <script src="script.js?v=101"></script>
 </body>
 </html>
