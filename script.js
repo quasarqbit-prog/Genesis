@@ -5439,6 +5439,7 @@
     const deleteBtn = document.getElementById("studio-review-delete");
     const hideBtn = document.getElementById("studio-review-hide");
     const replyBtn = document.getElementById("studio-review-reply");
+    const queueBtn = document.getElementById("studio-review-queue");
     if (!wrap) return;
     if (studioTab !== "review" || !sub) {
       wrap.hidden = true;
@@ -5454,6 +5455,11 @@
       addedBtn.textContent = "Добавлено";
     }
     if (replyBtn) replyBtn.hidden = false;
+    if (queueBtn) {
+      const qn = Number(sub.queueNo);
+      queueBtn.hidden = !(st === "approved" && Number.isFinite(qn) && qn > 0);
+      if (!queueBtn.hidden) queueBtn.textContent = `Очередь №${qn}`;
+    }
     if (hideBtn) {
       const canHide = st === "added" || st === "approved";
       hideBtn.hidden = !canHide;
@@ -5462,6 +5468,42 @@
     if (deleteBtn) {
       deleteBtn.hidden = st !== "rejected";
     }
+  }
+
+  function getStudioTakenQueueNos(exceptId = null) {
+    const taken = new Set();
+    const except = exceptId != null ? Number(exceptId) : null;
+    (studioReviewList || []).forEach((s) => {
+      if (String(s.status || "") !== "approved") return;
+      if (except != null && Number(s.id) === except) return;
+      const qn = Number(s.queueNo);
+      if (Number.isFinite(qn) && qn > 0) taken.add(qn);
+    });
+    return taken;
+  }
+
+  function openStudioQueueModal(sub) {
+    if (!sub?.id) return;
+    const input = document.getElementById("studio-queue-input");
+    const hint = document.getElementById("studio-queue-hint");
+    const err = document.getElementById("studio-queue-error");
+    const qn = Number(sub.queueNo);
+    if (input) input.value = Number.isFinite(qn) && qn > 0 ? String(qn) : "1";
+    if (err) {
+      err.hidden = true;
+      err.textContent = "";
+    }
+    const taken = [...getStudioTakenQueueNos(sub.id)].sort((a, b) => a - b);
+    if (hint) {
+      hint.textContent = taken.length
+        ? `Занято: ${taken.map((n) => `№${n}`).join(", ")}. Эти места задать нельзя.`
+        : "Занятых мест пока нет — можно выбрать любой номер от 1.";
+    }
+    openStudioModal("studio-queue-modal");
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.select();
+    });
   }
 
   function updateStudioReviewToolbarUi() {
@@ -6441,6 +6483,60 @@
     document.getElementById("studio-review-reply")?.addEventListener("click", () => {
       if (!studioOpenReviewId) return;
       openTicketReplyModal("studio", studioOpenReviewId);
+    });
+    document.getElementById("studio-review-queue")?.addEventListener("click", () => {
+      const sub = getOpenReviewSubmission();
+      if (!sub) return;
+      openStudioQueueModal(sub);
+    });
+    document.getElementById("studio-queue-modal-close")?.addEventListener("click", () => {
+      closeStudioModal("studio-queue-modal");
+    });
+    document.getElementById("studio-queue-cancel")?.addEventListener("click", () => {
+      closeStudioModal("studio-queue-modal");
+    });
+    document.getElementById("studio-queue-form")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!studioOpenReviewId) return;
+      const input = document.getElementById("studio-queue-input");
+      const errEl = document.getElementById("studio-queue-error");
+      const raw = String(input?.value || "").trim();
+      const queueNo = Number(raw);
+      if (!Number.isInteger(queueNo) || queueNo < 1 || queueNo > 9999) {
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.textContent = "Укажите целое число от 1 до 9999";
+        }
+        input?.focus();
+        return;
+      }
+      const taken = getStudioTakenQueueNos(studioOpenReviewId);
+      if (taken.has(queueNo)) {
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.textContent = `Место №${queueNo} уже занято`;
+        }
+        input?.focus();
+        return;
+      }
+      if (errEl) {
+        errEl.hidden = true;
+        errEl.textContent = "";
+      }
+      try {
+        await patchStudioSubmission(studioOpenReviewId, { queueNo });
+        await loadStudioReviewList();
+        closeStudioModal("studio-queue-modal");
+        showToast(`Очередь: №${queueNo}`);
+        renderStudio();
+      } catch (err) {
+        if (errEl) {
+          errEl.hidden = false;
+          errEl.textContent = err.message || "Не удалось изменить очередь";
+        } else {
+          showToast(err.message || "Не удалось изменить очередь");
+        }
+      }
     });
     document.getElementById("studio-review-added")?.addEventListener("click", async () => {
       if (!studioOpenReviewId) return;

@@ -3488,6 +3488,43 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
     }
 
     const status = String(req.body?.status || "").trim();
+    const hasQueueNo = Object.prototype.hasOwnProperty.call(req.body || {}, "queueNo");
+
+    if (hasQueueNo) {
+      const current = String(rows[0].status || "pending");
+      if (current !== "approved") {
+        return res.status(400).json({
+          error: "Номер очереди можно менять только у одобренных анкет",
+        });
+      }
+      const queueNo = Number(req.body.queueNo);
+      if (!Number.isInteger(queueNo) || queueNo < 1 || queueNo > 9999) {
+        return res.status(400).json({ error: "Укажите целое число от 1 до 9999" });
+      }
+      const currentQn =
+        rows[0].queue_no != null ? Number(rows[0].queue_no) : null;
+      if (currentQn !== queueNo) {
+        const [taken] = await pool.execute(
+          `SELECT id FROM studio_submissions
+           WHERE status = 'approved'
+             AND deleted_at IS NULL
+             AND queue_no = :queueNo
+             AND id <> :id
+           LIMIT 1`,
+          { queueNo, id }
+        );
+        if (taken[0]) {
+          return res.status(409).json({
+            error: `Место №${queueNo} уже занято`,
+          });
+        }
+      }
+      await pool.execute(
+        `UPDATE studio_submissions SET queue_no = :queueNo WHERE id = :id`,
+        { queueNo, id }
+      );
+    }
+
     if (status) {
       if (!["rejected", "approved", "added"].includes(status)) {
         return res.status(400).json({ error: "Некорректный статус" });
@@ -3527,8 +3564,8 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
       );
       // Always compact 1..N after any queue-affecting change
       await renumberQueue("studio_submissions");
-    } else if (!wantsPayload && !hasHidden) {
-      return res.status(400).json({ error: "Нужен status, payload или hidden" });
+    } else if (!wantsPayload && !hasHidden && !hasQueueNo) {
+      return res.status(400).json({ error: "Нужен status, payload, hidden или queueNo" });
     }
 
     const [next] = await pool.execute(

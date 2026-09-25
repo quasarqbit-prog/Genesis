@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=101" />
+  <link rel="stylesheet" href="styles.css?v=102" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -86,6 +86,7 @@
                 <button type="button" class="mc-btn" id="studio-review-approve">Одобрить</button>
                 <button type="button" class="mc-btn" id="studio-review-added" hidden>Добавлено</button>
                 <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-reply">Ответить в ЛС</button>
+                <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-queue" hidden>Очередь</button>
                 <button type="button" class="mc-btn mc-btn--ghost" id="studio-review-hide" hidden>Скрыть</button>
                 <button type="button" class="mc-btn mc-btn--ghost studio-review-delete" id="studio-review-delete" hidden>Удалить</button>
               </div>
@@ -1936,6 +1937,29 @@
     </div>
   </div>
 
+  <div class="auth-modal ui-layer" id="studio-queue-modal" hidden>
+    <div class="popup-shell">
+      <button type="button" class="popup-close" id="studio-queue-modal-close" aria-label="Закрыть">×</button>
+      <div class="auth-modal__panel" role="dialog" aria-modal="true" aria-labelledby="studio-queue-modal-title">
+        <div class="auth-modal__head">
+          <h2 class="auth-modal__title" id="studio-queue-modal-title">Номер очереди</h2>
+        </div>
+        <form class="studio-modal__form" id="studio-queue-form" novalidate>
+          <p class="field-hint" id="studio-queue-hint">Занятые места задать нельзя — выбери свободный номер.</p>
+          <div class="field-block">
+            <label class="field-label" for="studio-queue-input">Место в очереди</label>
+            <input class="field-input" id="studio-queue-input" type="number" min="1" max="9999" step="1" required />
+          </div>
+          <p class="field-error" id="studio-queue-error" hidden></p>
+          <div class="studio-modal__actions">
+            <button type="button" class="mc-btn mc-btn--ghost" id="studio-queue-cancel">Отмена</button>
+            <button type="submit" class="mc-btn">Сохранить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div class="auth-modal ui-layer" id="studio-reject-modal" hidden>
     <div class="popup-shell">
       <button type="button" class="popup-close" id="studio-reject-modal-close" aria-label="Закрыть">×</button>
@@ -2069,6 +2093,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=101"></script>
+  <script src="script.js?v=102"></script>
 </body>
 </html>
