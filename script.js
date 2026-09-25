@@ -610,6 +610,9 @@
       }
       renderPlayersDirectory();
     });
+    socket.on("application:reviewed", (payload) => {
+      onApplicationReviewedEvent(payload);
+    });
     socket.on("rules:updated", (payload) => {
       if (payload?.rules) {
         rulesDoc = payload.rules;
@@ -3208,6 +3211,7 @@
     });
     shell?.classList.toggle("is-bare-main", name === "compendium");
     if (name === "studio") {
+      ackApplicationTab("studio");
       const refresh = async () => {
         await syncStudioMineStatuses();
         if (studioTab === "review" && isStudioStaffViewer()) {
@@ -3238,6 +3242,7 @@
       ensurePatchesLoaded().then(() => renderPatchesUi());
     }
     if (name === "orders") {
+      ackApplicationTab("orders");
       onOrdersTabShown();
     }
     if (name === "chat") {
@@ -5630,6 +5635,8 @@
     try {
       const data = await api("/api/studio/submissions/mine");
       const list = Array.isArray(data?.submissions) ? data.submissions : [];
+      studioMineCache = list;
+      refreshStudioTabAlert();
       const race = list.find(
         (s) => s.kind === "race" || s.clientFolderId === "race"
       );
@@ -6672,7 +6679,10 @@
 
   bindStudioUi();
   loadStudioDoc();
-  syncStudioMineStatuses().then(() => renderStudio());
+  syncStudioMineStatuses().then(() => {
+    if (isMainPanelActive("studio")) ackApplicationTab("studio");
+    renderStudio();
+  });
   renderStudio();
 
   /* ─── Orders (Заказы) ─── */
@@ -7385,6 +7395,7 @@
         if (ordersDismissedIds.has(id) && o.deletedAt) return false;
         return true;
       });
+      refreshOrdersTabAlert();
     } catch (err) {
       ordersList = [];
       showToast(err.message || "Не удалось загрузить заказы");
@@ -8892,6 +8903,167 @@
       playNotifySound();
     } catch (_) {
       /* sound may init later */
+    }
+  }
+
+  /* ---------- Application review alerts (studio + orders) ---------- */
+  const APP_ACK_STUDIO_KEY = "genesis_app_ack_studio_v1";
+  const APP_ACK_ORDERS_KEY = "genesis_app_ack_orders_v1";
+  const APP_FORCE_STUDIO_KEY = "genesis_app_force_studio_v1";
+  const APP_FORCE_ORDERS_KEY = "genesis_app_force_orders_v1";
+  let studioMineCache = [];
+  let studioTabAlert = false;
+  let ordersTabAlert = false;
+
+  function isMainPanelActive(name) {
+    return Boolean(
+      document.querySelector(
+        `.main-tab-panel[data-main-panel="${name}"].is-active`
+      )
+    );
+  }
+
+  function readAppAck(key) {
+    try {
+      const n = Number(localStorage.getItem(key));
+      return Number.isFinite(n) ? n : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeAppAck(key, ts = Date.now()) {
+    try {
+      localStorage.setItem(key, String(ts));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function readAppForce(key) {
+    try {
+      return localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function writeAppForce(key, on) {
+    try {
+      if (on) localStorage.setItem(key, "1");
+      else localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function ensureAppAck(key) {
+    if (readAppAck(key) == null) writeAppAck(key, Date.now());
+  }
+
+  function reviewedItemIsUnread(item, ackTs) {
+    const st = String(item?.status || "");
+    if (!["approved", "rejected", "added", "ready"].includes(st)) return false;
+    const t = Date.parse(item.reviewedAt || item.updatedAt || 0);
+    return Number.isFinite(t) && Number.isFinite(ackTs) && t > ackTs;
+  }
+
+  function refreshStudioTabAlert() {
+    ensureAppAck(APP_ACK_STUDIO_KEY);
+    const ack = readAppAck(APP_ACK_STUDIO_KEY);
+    const fromList = studioMineCache.some((s) => reviewedItemIsUnread(s, ack));
+    studioTabAlert = fromList || readAppForce(APP_FORCE_STUDIO_KEY);
+    updateApplicationTabBadges();
+  }
+
+  function refreshOrdersTabAlert() {
+    ensureAppAck(APP_ACK_ORDERS_KEY);
+    const ack = readAppAck(APP_ACK_ORDERS_KEY);
+    const fromList = (ordersList || []).some((o) => reviewedItemIsUnread(o, ack));
+    ordersTabAlert = fromList || readAppForce(APP_FORCE_ORDERS_KEY);
+    updateApplicationTabBadges();
+  }
+
+  function updateApplicationTabBadges() {
+    const studioBadge = document.getElementById("studio-tab-badge");
+    const ordersBadge = document.getElementById("orders-tab-badge");
+    if (studioBadge) studioBadge.hidden = !studioTabAlert;
+    if (ordersBadge) ordersBadge.hidden = !ordersTabAlert;
+  }
+
+  function ackApplicationTab(kind) {
+    if (kind === "studio") {
+      writeAppAck(APP_ACK_STUDIO_KEY, Date.now());
+      writeAppForce(APP_FORCE_STUDIO_KEY, false);
+      studioTabAlert = false;
+    } else if (kind === "orders") {
+      writeAppAck(APP_ACK_ORDERS_KEY, Date.now());
+      writeAppForce(APP_FORCE_ORDERS_KEY, false);
+      ordersTabAlert = false;
+    }
+    updateApplicationTabBadges();
+  }
+
+  function formatApplicationReviewToast(payload) {
+    const type = String(payload?.type || "");
+    const status = String(payload?.status || "");
+    if (type === "studio") {
+      const name =
+        payload?.submission?.folderName ||
+        payload?.submission?.baseName ||
+        "Анкета";
+      if (status === "approved") return `Студия: «${name}» одобрена`;
+      if (status === "added") return `Студия: «${name}» добавлена в игру`;
+      if (status === "rejected") {
+        const why = String(payload?.submission?.reason || "").trim();
+        return why
+          ? `Студия: «${name}» отклонена — ${why}`
+          : `Студия: «${name}» отклонена`;
+      }
+      return `Студия: обновление по «${name}»`;
+    }
+    if (type === "order") {
+      const kind = String(payload?.order?.kind || "skin");
+      const label =
+        kind === "model" ? "Модель" : kind === "build" ? "Постройка" : "Скин";
+      if (status === "approved") return `Заказ (${label}): принят`;
+      if (status === "ready") return `Заказ (${label}): готов`;
+      if (status === "rejected") {
+        const why = String(payload?.order?.reason || "").trim();
+        return why
+          ? `Заказ (${label}): отклонён — ${why}`
+          : `Заказ (${label}): отклонён`;
+      }
+      return `Заказ (${label}): обновление`;
+    }
+    return "Обновление по заявке";
+  }
+
+  function onApplicationReviewedEvent(payload) {
+    if (!payload || !authToken) return;
+    const type = String(payload.type || "");
+    showToast(formatApplicationReviewToast(payload));
+    if (type === "studio") {
+      if (isMainPanelActive("studio")) {
+        ackApplicationTab("studio");
+      } else {
+        writeAppForce(APP_FORCE_STUDIO_KEY, true);
+        studioTabAlert = true;
+        updateApplicationTabBadges();
+      }
+      syncStudioMineStatuses().then(() => renderStudio());
+    } else if (type === "order") {
+      if (isMainPanelActive("orders")) {
+        ackApplicationTab("orders");
+      } else {
+        writeAppForce(APP_FORCE_ORDERS_KEY, true);
+        ordersTabAlert = true;
+        updateApplicationTabBadges();
+      }
+      loadOrdersMine().then(() => {
+        refreshOrdersTabAlert();
+        renderOrdersUi();
+      });
     }
   }
 

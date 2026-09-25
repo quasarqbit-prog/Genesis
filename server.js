@@ -1761,6 +1761,27 @@ function broadcastDirectoryUser(user) {
   io.emit("directory:user", { user: payload });
 }
 
+/** Notify submitter that their studio/order application was reviewed. */
+function notifyApplicationReviewed({
+  userId,
+  type,
+  status,
+  previousStatus,
+  submission = null,
+  order = null,
+}) {
+  const uid = Number(userId);
+  if (!Number.isFinite(uid) || uid < 0) return;
+  if (!status || String(previousStatus || "") === String(status)) return;
+  io.to(`user:${uid}`).emit("application:reviewed", {
+    type,
+    status: String(status),
+    previousStatus: previousStatus != null ? String(previousStatus) : null,
+    submission: submission || null,
+    order: order || null,
+  });
+}
+
 /* ---------- Health / config ---------- */
 app.get("/api/health", async (_req, res) => {
   try {
@@ -3606,7 +3627,17 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
       `SELECT * FROM studio_submissions WHERE id = :id LIMIT 1`,
       { id }
     );
-    return res.json({ ok: true, submission: mapStudioSubmissionRow(next[0]) });
+    const mapped = mapStudioSubmissionRow(next[0]);
+    if (status) {
+      notifyApplicationReviewed({
+        userId: rows[0].submitter_id,
+        type: "studio",
+        status,
+        previousStatus: rows[0].status,
+        submission: mapped,
+      });
+    }
+    return res.json({ ok: true, submission: mapped });
   } catch (err) {
     console.error("studio patch:", err);
     const status = err.status || 500;
@@ -4114,7 +4145,17 @@ app.patch("/api/orders/:id", authMiddleware, async (req, res) => {
     }
 
     const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
-    return res.json({ ok: true, order: mapOrderRow(next[0]) });
+    const mapped = mapOrderRow(next[0]);
+    if (status) {
+      notifyApplicationReviewed({
+        userId: rows[0].submitter_id,
+        type: "order",
+        status,
+        previousStatus: rows[0].status,
+        order: mapped,
+      });
+    }
+    return res.json({ ok: true, order: mapped });
   } catch (err) {
     console.error("orders patch:", err);
     const status = err.status || 500;
@@ -4159,7 +4200,15 @@ app.post("/api/orders/:id/results", authMiddleware, async (req, res) => {
     );
     await renumberQueue("orders", { kind: "skin" });
     const [next] = await pool.execute(`SELECT * FROM orders WHERE id = :id LIMIT 1`, { id });
-    return res.json({ ok: true, order: mapOrderRow(next[0]) });
+    const mapped = mapOrderRow(next[0]);
+    notifyApplicationReviewed({
+      userId: rows[0].submitter_id,
+      type: "order",
+      status: "ready",
+      previousStatus: current,
+      order: mapped,
+    });
+    return res.json({ ok: true, order: mapped });
   } catch (err) {
     console.error("orders results:", err);
     const status = err.status || 500;

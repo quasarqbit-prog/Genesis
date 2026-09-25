@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=106" />
+  <link rel="stylesheet" href="styles.css?v=107" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -26,14 +26,18 @@
     <div class="app-shell" id="profile-card">
       <section class="studio-stage" id="studio-stage" aria-label="Главный экран">
         <nav class="main-tabs" id="main-tabs" aria-label="Разделы">
-          <button type="button" class="main-tabs__btn is-active" data-main-tab="studio">Студия</button>
+          <button type="button" class="main-tabs__btn is-active" data-main-tab="studio">
+            Студия<span class="main-tabs__badge" id="studio-tab-badge" hidden>!</span>
+          </button>
           <button type="button" class="main-tabs__btn" data-main-tab="compendium">Компендиум</button>
           <button type="button" class="main-tabs__btn" data-main-tab="rules">Правила</button>
           <button type="button" class="main-tabs__btn" data-main-tab="server">
             Сервер<span class="main-tabs__badge" id="server-tab-badge" hidden>!</span>
           </button>
           <button type="button" class="main-tabs__btn" data-main-tab="patch">Патч-ноут</button>
-          <button type="button" class="main-tabs__btn" data-main-tab="orders">Заказы</button>
+          <button type="button" class="main-tabs__btn" data-main-tab="orders">
+            Заказы<span class="main-tabs__badge" id="orders-tab-badge" hidden>!</span>
+          </button>
           <button type="button" class="main-tabs__btn" data-main-tab="chat">
             Чат<span class="main-tabs__badge" id="chat-tab-badge" hidden>!</span>
           </button>
@@ -2091,6 +2095,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=106"></script>
+  <script src="script.js?v=107"></script>
 </body>
 </html>
