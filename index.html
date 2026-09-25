@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=105" />
+  <link rel="stylesheet" href="styles.css?v=106" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -300,6 +300,7 @@
               </aside>
               <section class="chat-main" aria-label="Переписка">
                 <header class="chat-main__head" id="chat-main-head">
+                  <span class="chat-main__avatar" id="chat-main-avatar" hidden aria-hidden="true"></span>
                   <h2 class="chat-main__title" id="chat-main-title">Выбери чат</h2>
                   <button type="button" class="mc-btn mc-btn--compact mc-btn--ghost" id="chat-join-btn" hidden>Вступить</button>
                 </header>
@@ -679,6 +680,7 @@
               <span class="role-badge role-badge--user" id="user-profile-role" hidden></span>
               <div class="user-profile-card__meta" id="user-profile-meta"></div>
               <div class="user-profile-card__id" id="user-profile-id">id —</div>
+              <button type="button" class="mc-btn user-profile-dm-btn" id="user-profile-dm-btn" hidden>Написать</button>
               <div class="user-profile-identity-edit" id="user-profile-identity-edit" hidden>
                 <div class="field-block">
                   <label class="field-label" for="edit-site-nick">
@@ -2089,6 +2091,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=105"></script>
+  <script src="script.js?v=106"></script>
 </body>
 </html>

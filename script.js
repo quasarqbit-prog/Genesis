@@ -1423,6 +1423,14 @@
         metaEl.hidden = !metaEl.textContent;
       }
       if (idEl) idEl.textContent = `id ${Number(user.id)}`;
+      const dmBtn = document.getElementById("user-profile-dm-btn");
+      if (dmBtn) {
+        const canDm =
+          Boolean(authToken) &&
+          Number.isFinite(Number(user.id)) &&
+          Number(user.id) !== Number(authUser?.id);
+        dmBtn.hidden = !canDm;
+      }
       if (canFounderEditUser(user)) fillFounderRaceEdit(user);
       setUserProfileEditMode(false);
       loadProfilePublished(user.id);
@@ -4513,6 +4521,11 @@
 
   document.getElementById("user-profile-close")?.addEventListener("click", () => {
     setUserProfileDrawerOpen(false);
+  });
+
+  document.getElementById("user-profile-dm-btn")?.addEventListener("click", () => {
+    if (!profileViewUser?.id) return;
+    openDmWithUser(profileViewUser.id);
   });
 
   document.getElementById("user-profile-close-tab")?.addEventListener("click", () => {
@@ -11766,6 +11779,100 @@
     }
   }
 
+  function chatRoomPeer(room) {
+    const myId = Number(authUser?.id);
+    const members = Array.isArray(room?.members) ? room.members : [];
+    if (!members.length) return null;
+    if (room.type === "dm" || room.type === "group" || room.type === "ticket") {
+      return members.find((m) => Number(m.id) !== myId) || members[0] || null;
+    }
+    return null;
+  }
+
+  function chatAvatarLetter(room, peer) {
+    const raw =
+      peer?.siteNick ||
+      peer?.mcNick ||
+      chatRoomTitle(room) ||
+      "?";
+    return String(raw).trim().charAt(0).toUpperCase() || "?";
+  }
+
+  function fillChatAvatarHost(host, room) {
+    if (!host) return;
+    if (!room) {
+      host.hidden = true;
+      host.innerHTML = "";
+      host.className = host.id === "chat-main-avatar" ? "chat-main__avatar" : "chat-room__avatar";
+      return;
+    }
+    const peer = chatRoomPeer(room);
+    const letter = chatAvatarLetter(room, peer);
+    const url = peer?.avatarUrl ? String(peer.avatarUrl) : "";
+    const baseClass =
+      host.id === "chat-main-avatar" ? "chat-main__avatar" : "chat-room__avatar";
+    host.hidden = false;
+    host.className = url ? baseClass : `${baseClass} ${baseClass}--letter`;
+    if (url) {
+      host.innerHTML = `<img src="${escapeChat(url)}" alt="" loading="lazy" /><span class="${baseClass}-fallback" hidden>${escapeChat(letter)}</span>`;
+      const img = host.querySelector("img");
+      img?.addEventListener("error", () => {
+        img.hidden = true;
+        const fb = host.querySelector(`.${baseClass}-fallback`);
+        if (fb) fb.hidden = false;
+        host.classList.add(`${baseClass}--letter`);
+      });
+    } else {
+      host.innerHTML = `<span class="${baseClass}-fallback">${escapeChat(letter)}</span>`;
+    }
+  }
+
+  function chatAvatarHtml(room, { className = "chat-room__avatar" } = {}) {
+    const peer = chatRoomPeer(room);
+    const letter = escapeChat(chatAvatarLetter(room, peer));
+    const url = peer?.avatarUrl ? String(peer.avatarUrl) : "";
+    if (url) {
+      return `<span class="${className}" aria-hidden="true"><img src="${escapeChat(url)}" alt="" loading="lazy" /><span class="${className}-fallback" hidden>${letter}</span></span>`;
+    }
+    return `<span class="${className} ${className}--letter" aria-hidden="true"><span class="${className}-fallback">${letter}</span></span>`;
+  }
+
+  function setChatScopeUi(scope) {
+    chatScope = scope;
+    document.querySelectorAll("#chat-scope-tabs [data-chat-scope]").forEach((el) => {
+      el.classList.toggle(
+        "is-active",
+        el.getAttribute("data-chat-scope") === scope
+      );
+    });
+  }
+
+  async function openDmWithUser(userId) {
+    const id = Number(userId);
+    if (!authToken) {
+      showToast("Войди, чтобы написать");
+      return;
+    }
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (Number(authUser?.id) === id) {
+      showToast("Это твой профиль");
+      return;
+    }
+    try {
+      const data = await api("/api/chat/rooms", {
+        method: "POST",
+        body: JSON.stringify({ type: "dm", memberIds: [id] }),
+      });
+      setUserProfileDrawerOpen(false);
+      setChatScopeUi("mine");
+      setMainTab("chat");
+      await refreshChatRooms();
+      if (data?.room?.id) await openChatRoom(data.room.id);
+    } catch (err) {
+      showToast(err.message || "Не удалось открыть чат");
+    }
+  }
+
   function renderChatRoomList() {
     const list = document.getElementById("chat-room-list");
     const empty = document.getElementById("chat-room-empty");
@@ -11788,8 +11895,19 @@
         : chatScope === "public" && !room.joined
           ? "Нажми, чтобы вступить"
           : "Нет сообщений";
-      btn.innerHTML = `<span class="chat-room__name">${escapeChat(chatRoomTitle(room))}${unread ? " !" : ""}</span>
-        <span class="chat-room__meta">${escapeChat(chatTypeLabel(room.type))} · ${escapeChat(preview)}</span>`;
+      btn.innerHTML = `${chatAvatarHtml(room)}
+        <span class="chat-room__text">
+          <span class="chat-room__name">${escapeChat(chatRoomTitle(room))}${unread ? " !" : ""}</span>
+          <span class="chat-room__meta">${escapeChat(chatTypeLabel(room.type))} · ${escapeChat(preview)}</span>
+        </span>`;
+      const img = btn.querySelector(".chat-room__avatar img");
+      if (img) {
+        img.addEventListener("error", () => {
+          img.hidden = true;
+          const fb = btn.querySelector(".chat-room__avatar-fallback");
+          if (fb) fb.hidden = false;
+        });
+      }
       list.appendChild(btn);
     });
   }
@@ -11821,11 +11939,13 @@
 
   function renderChatMain(room) {
     const title = document.getElementById("chat-main-title");
+    const avatarHost = document.getElementById("chat-main-avatar");
     const joinBtn = document.getElementById("chat-join-btn");
     const form = document.getElementById("chat-compose");
     const input = document.getElementById("chat-compose-input");
     if (!room) {
       if (title) title.textContent = "Выбери чат";
+      fillChatAvatarHost(avatarHost, null);
       if (joinBtn) joinBtn.hidden = true;
       if (form) form.hidden = true;
       chatMessages = [];
@@ -11837,6 +11957,7 @@
         ? `${chatRoomTitle(room)} · только просмотр`
         : chatRoomTitle(room);
     }
+    fillChatAvatarHost(avatarHost, room);
     const needJoin = room.type === "public" && !room.joined && !room.slug;
     if (joinBtn) joinBtn.hidden = !needJoin;
     const canCompose = !needJoin && !room.webReadonly;
@@ -12201,25 +12322,13 @@
       });
       closeChatCreateModal();
       if (type === "public") {
-        chatScope = "public";
-        document.querySelectorAll("#chat-scope-tabs [data-chat-scope]").forEach((el) => {
-          el.classList.toggle(
-            "is-active",
-            el.getAttribute("data-chat-scope") === "public"
-          );
-        });
+        setChatScopeUi("public");
       } else {
-        chatScope = "mine";
-        document.querySelectorAll("#chat-scope-tabs [data-chat-scope]").forEach((el) => {
-          el.classList.toggle(
-            "is-active",
-            el.getAttribute("data-chat-scope") === "mine"
-          );
-        });
+        setChatScopeUi("mine");
       }
       await refreshChatRooms();
       if (data?.room?.id) await openChatRoom(data.room.id);
-      showToast("Чат создан");
+      showToast(type === "dm" ? "Чат открыт" : "Чат создан");
     } catch (ex) {
       setErr(ex.message || "Не удалось создать чат");
     }
