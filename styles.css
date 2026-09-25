@@ -5041,6 +5041,34 @@ h3,
     white-space: nowrap;
   }
 
+  .presence-mini__online {
+    font-family: var(--font-ded);
+    font-size: 10px;
+    line-height: 1.2;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .presence-mini__online.is-server {
+    color: #4db8ff;
+  }
+
+  .presence-mini__online.is-site {
+    color: var(--accent);
+  }
+
+  .presence-mini__online.is-both {
+    color: #9ad4ff;
+  }
+
+  .presence-mini__online.is-banned {
+    color: #ff8ea0;
+  }
+
+  .presence-mini__online.is-offline {
+    color: var(--muted);
+  }
+
   .presence-avatar--self {
     cursor: pointer;
   }

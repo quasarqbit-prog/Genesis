@@ -733,6 +733,24 @@
     return true;
   }
 
+  function presenceOnlineLabel(user) {
+    if (isBannedUser(user)) {
+      return { text: "Забанен", kind: "banned" };
+    }
+    const onServer = isServerOnlineVisible(user);
+    const onSite = isSiteOnlineVisible(user);
+    if (onServer && onSite) {
+      return { text: "На сервере и на сайте", kind: "both" };
+    }
+    if (onServer) {
+      return { text: "На сервере", kind: "server" };
+    }
+    if (onSite) {
+      return { text: "На сайте", kind: "site" };
+    }
+    return { text: "Не в сети", kind: "offline" };
+  }
+
   function presenceRank(user) {
     if (isBannedUser(user)) return -1;
     // Server (game) outranks site
@@ -1345,6 +1363,7 @@
     const nickEl = document.getElementById("presence-mini-nick");
     const raceEl = document.getElementById("presence-mini-race");
     const idEl = document.getElementById("presence-mini-id");
+    const onlineEl = document.getElementById("presence-mini-online");
     if (nickEl) nickEl.textContent = nick;
     const roleEl = ensureRoleBadgeEl("presence-mini-role", nickEl);
     fillRoleBadge(roleEl, user.role);
@@ -1353,6 +1372,12 @@
       raceEl.hidden = !raceName;
     }
     if (idEl) idEl.textContent = `id ${id}`;
+    if (onlineEl) {
+      const online = presenceOnlineLabel(user);
+      onlineEl.textContent = online.text;
+      onlineEl.dataset.kind = online.kind;
+      onlineEl.className = `presence-mini__online is-${online.kind}`;
+    }
     mini.hidden = false;
     mini.style.left = "0px";
     mini.style.top = "0px";
