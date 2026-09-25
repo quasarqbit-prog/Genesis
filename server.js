@@ -3164,6 +3164,10 @@ async function nextQueueNo(table, { kind = null } = {}) {
 /** Compact queue to 1..N for rows that are currently in the queue. */
 async function renumberQueue(table, { kind = null } = {}) {
   assertQueueTable(table);
+  if (table === "studio_submissions") {
+    // Older approved versions must not keep queue slots (list shows only latest per folder)
+    await purgeSupersededStudioQueueSlots();
+  }
   const params = {};
   let kindSql = "";
   if (table === "orders" && kind) {
@@ -3187,6 +3191,28 @@ async function renumberQueue(table, { kind = null } = {}) {
     });
     n += 1;
   }
+}
+
+/**
+ * Drop queue_no from approved studio rows that are not the latest version
+ * of their folder (they still block slots if left numbered).
+ */
+async function purgeSupersededStudioQueueSlots() {
+  await pool.execute(
+    `UPDATE studio_submissions s
+     INNER JOIN (
+       SELECT submitter_id, client_folder_id, MAX(id) AS max_id
+       FROM studio_submissions
+       GROUP BY submitter_id, client_folder_id
+     ) latest
+       ON latest.submitter_id = s.submitter_id
+      AND latest.client_folder_id = s.client_folder_id
+     SET s.queue_no = NULL
+     WHERE s.status = 'approved'
+       AND s.deleted_at IS NULL
+       AND s.queue_no IS NOT NULL
+       AND s.id <> latest.max_id`
+  );
 }
 
 /** Drop a folder's previous approved rows from the studio queue (new version supersedes). */
@@ -3411,6 +3437,8 @@ app.get("/api/studio/submissions/mine", authMiddleware, async (req, res) => {
 app.get("/api/studio/submissions", staffMiddleware, async (req, res) => {
   try {
     await purgeSoftDeleted("studio_submissions");
+    // Heal ghost queue slots left by older approved versions
+    await renumberQueue("studio_submissions");
     const showHidden =
       String(req.query.showHidden || "") === "1" ||
       String(req.query.hidden || "") === "1";
@@ -3497,12 +3525,18 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
           error: "Номер очереди можно менять только у одобренных анкет",
         });
       }
+      // Drop ghost slots from superseded versions before conflict check
+      await renumberQueue("studio_submissions");
+      const [freshRows] = await pool.execute(
+        `SELECT queue_no FROM studio_submissions WHERE id = :id LIMIT 1`,
+        { id }
+      );
       const queueNo = Number(req.body.queueNo);
       if (!Number.isInteger(queueNo) || queueNo < 1 || queueNo > 9999) {
         return res.status(400).json({ error: "Укажите целое число от 1 до 9999" });
       }
       const currentQn =
-        rows[0].queue_no != null ? Number(rows[0].queue_no) : null;
+        freshRows[0]?.queue_no != null ? Number(freshRows[0].queue_no) : null;
       if (currentQn !== queueNo) {
         const [taken] = await pool.execute(
           `SELECT id FROM studio_submissions
@@ -4901,6 +4935,8 @@ server.listen(PORT, async () => {
     await ensureSchema();
     await ensureAdminSeed();
     await ensureSystemChatRooms();
+    await renumberQueue("studio_submissions");
+    await renumberQueue("orders", { kind: "skin" });
     console.log("DB schema OK");
   } catch (err) {
     console.error("DB schema ensure failed:", err.message);
