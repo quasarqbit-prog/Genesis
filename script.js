@@ -7979,9 +7979,6 @@
     document.getElementById("orders-type-model")?.addEventListener("click", () =>
       openOrdersForm("model")
     );
-    document.getElementById("orders-type-build")?.addEventListener("click", () => {
-      showToast('Раздел «Постройка» скоро');
-    });
 
     document.getElementById("orders-form-modal-close")?.addEventListener("click", () => {
       closeStudioModal("orders-form-modal");
