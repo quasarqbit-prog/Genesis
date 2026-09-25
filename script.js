@@ -735,15 +735,17 @@
 
   function presenceRank(user) {
     if (isBannedUser(user)) return -1;
-    if (isSiteOnlineVisible(user)) return 2;
-    if (isServerOnlineVisible(user)) return 1;
+    // Server (game) outranks site
+    if (isServerOnlineVisible(user)) return 2;
+    if (isSiteOnlineVisible(user)) return 1;
     return 0;
   }
 
   function presenceClass(user) {
     if (isBannedUser(user)) return "is-banned";
-    if (isSiteOnlineVisible(user)) return "is-site";
+    // Blue frame = on Minecraft server; accent = on site only
     if (isServerOnlineVisible(user)) return "is-server";
+    if (isSiteOnlineVisible(user)) return "is-site";
     return "is-offline";
   }
 
