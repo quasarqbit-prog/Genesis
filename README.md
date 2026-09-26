@@ -96,7 +96,10 @@ MOD_API_KEY=длинный_секретный_ключ
 | GET | `/api/mc/chat/rooms/:id/messages?nick=&after=` | История |
 | POST | `/api/mc/chat/messages` | Отправить `{ nick, roomId\|roomSlug, text, audienceNicks? }` |
 | GET | `/api/mc/chat/sync?nick=&after=` | Новые сообщения во всех чатах игрока |
-| GET | `/api/mc/chat/directory` | Список ников для создания |
+| GET | `/api/mc/chat/directory` | Список ников + `avatarUrl` |
+| GET | `/api/mc/profile?nick=` | Профиль: `avatarUrl`, `siteNick`, `role` |
+
+Аватарки: `avatarUrl` / `authorAvatarUrl` / `members[].avatarUrl` — путь `/uploads/avatars/….png` (склей с `apiBaseUrl`) или полный URL.
 
 Системные общие чаты (создаются при старте сервера):
 - `roomSlug: "minecraft"` — общий чат Minecraft

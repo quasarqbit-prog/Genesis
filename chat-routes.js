@@ -157,6 +157,19 @@ function setupChatRoutes({
     );
   }
 
+  function formatAvatarUrl(raw) {
+    const value = String(raw || "").trim();
+    if (!value) return "";
+    if (
+      value.startsWith("http://") ||
+      value.startsWith("https://") ||
+      value.startsWith("data:")
+    ) {
+      return value;
+    }
+    return value.split("?")[0];
+  }
+
   async function listMembers(roomId) {
     const [rows] = await pool.execute(
       `SELECT u.id, u.mc_nick, p.site_nick, p.avatar_path
@@ -171,7 +184,7 @@ function setupChatRoutes({
       id: Number(r.id),
       mcNick: r.mc_nick || "",
       siteNick: r.site_nick || "",
-      avatarUrl: r.avatar_path || "",
+      avatarUrl: formatAvatarUrl(r.avatar_path),
     }));
   }
 
@@ -196,6 +209,7 @@ function setupChatRoutes({
       roomId: Number(row.room_id),
       userId: row.user_id != null ? Number(row.user_id) : null,
       authorNick: row.author_nick || "",
+      authorAvatarUrl: formatAvatarUrl(row.author_avatar || row.avatar_path),
       text: row.body || "",
       source: row.source || "web",
       audience: parseAudience(row.audience_json),
@@ -205,12 +219,18 @@ function setupChatRoutes({
     };
   }
 
+  const MSG_SELECT = `msg.id, msg.room_id, msg.user_id, msg.author_nick, msg.body, msg.source, msg.audience_json, msg.created_at,
+                      p.avatar_path AS author_avatar`;
+  const MSG_FROM = `chat_messages msg
+     LEFT JOIN profiles p ON p.user_id = msg.user_id`;
+
   async function serializeRoom(row, userId) {
     const members = isSystemRoom(row) ? [] : await listMembers(row.id);
     const [lastRows] = await pool.execute(
-      `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
-       FROM chat_messages WHERE room_id = :roomId
-       ORDER BY id DESC LIMIT 1`,
+      `SELECT ${MSG_SELECT}
+       FROM ${MSG_FROM}
+       WHERE msg.room_id = :roomId
+       ORDER BY msg.id DESC LIMIT 1`,
       { roomId: row.id }
     );
     let last = lastRows[0] ? serializeMessage(lastRows[0]) : null;
@@ -442,7 +462,7 @@ function setupChatRoutes({
     const after = Number(afterId) || 0;
     const before = Number(beforeId) || 0;
     const proximity = room.slug === "proximity" && viewerId != null;
-    const vis = proximity ? ` AND ${proximityVisibilitySql("chat_messages")}` : "";
+    const vis = proximity ? ` AND ${proximityVisibilitySql("msg")}` : "";
     const params = { roomId };
     if (proximity) params.viewerId = Number(viewerId);
 
@@ -450,10 +470,10 @@ function setupChatRoutes({
     if (after > 0) {
       params.after = after;
       const [r] = await pool.execute(
-        `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
-         FROM chat_messages
-         WHERE room_id = :roomId AND id > :after${vis}
-         ORDER BY id ASC
+        `SELECT ${MSG_SELECT}
+         FROM ${MSG_FROM}
+         WHERE msg.room_id = :roomId AND msg.id > :after${vis}
+         ORDER BY msg.id ASC
          LIMIT ${lim}`,
         params
       );
@@ -461,20 +481,20 @@ function setupChatRoutes({
     } else if (before > 0) {
       params.before = before;
       const [r] = await pool.execute(
-        `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
-         FROM chat_messages
-         WHERE room_id = :roomId AND id < :before${vis}
-         ORDER BY id DESC
+        `SELECT ${MSG_SELECT}
+         FROM ${MSG_FROM}
+         WHERE msg.room_id = :roomId AND msg.id < :before${vis}
+         ORDER BY msg.id DESC
          LIMIT ${lim}`,
         params
       );
       rows = r.reverse();
     } else {
       const [r] = await pool.execute(
-        `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
-         FROM chat_messages
-         WHERE room_id = :roomId${vis}
-         ORDER BY id DESC
+        `SELECT ${MSG_SELECT}
+         FROM ${MSG_FROM}
+         WHERE msg.room_id = :roomId${vis}
+         ORDER BY msg.id DESC
          LIMIT ${lim}`,
         params
       );
@@ -532,8 +552,9 @@ function setupChatRoutes({
       }
     );
     const [rows] = await pool.execute(
-      `SELECT id, room_id, user_id, author_nick, body, source, audience_json, created_at
-       FROM chat_messages WHERE id = :id LIMIT 1`,
+      `SELECT ${MSG_SELECT}
+       FROM ${MSG_FROM}
+       WHERE msg.id = :id LIMIT 1`,
       { id: result.insertId }
     );
     const message = serializeMessage(rows[0]);
@@ -929,8 +950,8 @@ function setupChatRoutes({
       const after = Number(req.query.after) || 0;
       const lim = Math.min(Math.max(Number(req.query.limit) || 100, 1), 300);
       const [rows] = await pool.execute(
-        `SELECT msg.id, msg.room_id, msg.user_id, msg.author_nick, msg.body, msg.source, msg.audience_json, msg.created_at
-         FROM chat_messages msg
+        `SELECT ${MSG_SELECT}
+         FROM ${MSG_FROM}
          JOIN chat_members m ON m.room_id = msg.room_id AND m.user_id = :userId
          LEFT JOIN chat_rooms r ON r.id = msg.room_id
          WHERE msg.id > :after
@@ -957,7 +978,7 @@ function setupChatRoutes({
     try {
       if (!requireModKey(req, res)) return;
       const [rows] = await pool.execute(
-        `SELECT u.id, u.mc_nick, p.site_nick
+        `SELECT u.id, u.mc_nick, p.site_nick, p.avatar_path
          FROM users u
          LEFT JOIN profiles p ON p.user_id = u.id
          ORDER BY u.mc_nick ASC
@@ -969,10 +990,45 @@ function setupChatRoutes({
           id: Number(r.id),
           mcNick: r.mc_nick || "",
           siteNick: r.site_nick || "",
+          avatarUrl: formatAvatarUrl(r.avatar_path),
         })),
       });
     } catch (err) {
       console.error("mc chat directory:", err);
+      return res.status(500).json({ ok: false, error: "Server error" });
+    }
+  });
+
+  /** Lookup one player profile (avatar) by Minecraft nick */
+  app.get("/api/mc/profile", async (req, res) => {
+    try {
+      if (!requireModKey(req, res)) return;
+      const nick = normalizeMcNick(req.query?.nick || req.body?.nick || "");
+      if (!MC_NICK_RE.test(nick)) {
+        return res.status(400).json({ ok: false, error: "Bad nick" });
+      }
+      const [rows] = await pool.execute(
+        `SELECT u.id, u.mc_nick, u.role, p.site_nick, p.avatar_path
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE LOWER(u.mc_nick) = LOWER(:nick)
+         LIMIT 1`,
+        { nick }
+      );
+      if (!rows[0]) {
+        return res.status(404).json({ ok: false, error: "Unknown player" });
+      }
+      const r = rows[0];
+      return res.json({
+        ok: true,
+        id: Number(r.id),
+        mcNick: r.mc_nick || "",
+        siteNick: r.site_nick || "",
+        role: r.role || "user",
+        avatarUrl: formatAvatarUrl(r.avatar_path),
+      });
+    } catch (err) {
+      console.error("mc profile:", err);
       return res.status(500).json({ ok: false, error: "Server error" });
     }
   });

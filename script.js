@@ -1723,7 +1723,7 @@
   /* ---------- Sound / music ---------- */
   const SOUND_PREFS_KEY = "genesis_sound_prefs_v2";
   const SOUND_CLICK_SRC = "assets/sound/click.ogg";
-  const SOUND_NOTIFY_SRC = "assets/sound/massage.ogg";
+  const SOUND_NOTIFY_SRC = "assets/sound/message.ogg";
   const SOUND_INDEX_SRC = "assets/sound/music-index.json";
   const SOUND_CATALOG_API = "/api/music/catalog";
   const SOUND_DEFAULT_TRACK = "Minecraft Extended/amethyst.ogg";
