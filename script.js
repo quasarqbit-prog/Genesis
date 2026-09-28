@@ -606,7 +606,24 @@
           ...merged,
           avatarUrl: merged.avatarUrl || authUser.avatarUrl || "",
         };
+        if (user.race || user.raceName) {
+          profileCache = {
+            ...profileCache,
+            registered: true,
+            form: {
+              ...(profileCache.form || {}),
+              ...(user.race && typeof user.race === "object" ? user.race : {}),
+              raceName: user.raceName || user.race?.raceName || profileCache.form?.raceName || "",
+            },
+          };
+          writeLocalStorageFallback(profileCache);
+          fillHubRaceFields();
+        }
         applyAuthUi({ syncHubFields: false });
+      }
+      if (profileViewUser && Number(profileViewUser.id) === id) {
+        profileViewUser = { ...profileViewUser, ...merged };
+        loadProfilePublished(id);
       }
       renderPlayersDirectory();
     });
@@ -1147,18 +1164,18 @@
       !document.getElementById("user-profile-race-edit").hidden;
 
     const publishedRace = profilePublished?.race?.race || null;
+    const raceHtml = publishedRace ? renderRaceBlocks(publishedRace) : "";
     if (raceEl) {
-      if (!editing && publishedRace) {
-        const html = renderRaceBlocks(publishedRace);
-        raceEl.innerHTML = html;
-        raceEl.hidden = !html;
+      if (!editing && raceHtml) {
+        raceEl.innerHTML = raceHtml;
+        raceEl.hidden = false;
       } else if (!editing) {
         raceEl.innerHTML = "";
         raceEl.hidden = true;
       }
     }
     if (raceEmpty) {
-      raceEmpty.hidden = editing || Boolean(publishedRace);
+      raceEmpty.hidden = editing || Boolean(raceHtml);
     }
 
     if (!grid) return;
@@ -4162,15 +4179,21 @@
 
   let raceSubmissionStatus = null;
   let raceSubmissionReason = "";
+  let raceSubmissionQueueNo = null;
 
   function updateHubRaceStarUi() {
     const star = document.getElementById("hub-race-star");
+    const queueEl = document.getElementById("hub-race-queue");
     if (!star) return;
     const status = raceSubmissionStatus;
     if (!status) {
       star.hidden = true;
       star.removeAttribute("data-tip");
       star.className = "hub-tab-star";
+      if (queueEl) {
+        queueEl.hidden = true;
+        queueEl.textContent = "";
+      }
       return;
     }
     star.hidden = false;
@@ -4187,12 +4210,26 @@
             : "В обработке";
     star.setAttribute("data-tip", tip);
     star.setAttribute("aria-label", tip);
+    const qn = Number(raceSubmissionQueueNo);
+    if (queueEl) {
+      if (status === "approved" && Number.isFinite(qn) && qn > 0) {
+        queueEl.hidden = false;
+        queueEl.textContent = String(qn);
+        queueEl.setAttribute("aria-label", `Очередь ${qn}`);
+        queueEl.setAttribute("data-tip", `Очередь №${qn}`);
+      } else {
+        queueEl.hidden = true;
+        queueEl.textContent = "";
+        queueEl.removeAttribute("data-tip");
+      }
+    }
   }
 
   async function syncRaceSubmissionStatus() {
     if (!authToken) {
       raceSubmissionStatus = null;
       raceSubmissionReason = "";
+      raceSubmissionQueueNo = null;
       updateHubRaceStarUi();
       return;
     }
@@ -4204,6 +4241,8 @@
       );
       raceSubmissionStatus = race ? String(race.status || "pending") : null;
       raceSubmissionReason = race ? String(race.reason || "") : "";
+      raceSubmissionQueueNo =
+        race && race.queueNo != null ? Number(race.queueNo) : null;
     } catch (_) {
       /* ignore */
     }
@@ -4254,6 +4293,8 @@
       const sub = data?.submission;
       raceSubmissionStatus = String(sub?.status || "pending");
       raceSubmissionReason = String(sub?.reason || "");
+      raceSubmissionQueueNo =
+        sub && sub.queueNo != null ? Number(sub.queueNo) : null;
       updateHubRaceStarUi();
       showToast("Роль отправлена на рассмотрение");
     } catch (err) {
@@ -5662,9 +5703,12 @@
       if (race?.deletedAt) {
         raceSubmissionStatus = null;
         raceSubmissionReason = "";
+        raceSubmissionQueueNo = null;
       } else {
         raceSubmissionStatus = race ? String(race.status || "pending") : null;
         raceSubmissionReason = race ? String(race.reason || "") : "";
+        raceSubmissionQueueNo =
+          race && race.queueNo != null ? Number(race.queueNo) : null;
       }
       updateHubRaceStarUi();
 
@@ -6539,9 +6583,24 @@
     document.getElementById("studio-review-approve")?.addEventListener("click", async () => {
       if (!studioOpenReviewId) return;
       try {
-        await patchStudioSubmission(studioOpenReviewId, { status: "approved" });
+        const sub = await patchStudioSubmission(studioOpenReviewId, {
+          status: "approved",
+        });
         showToast("Одобрено");
         renderStudio();
+        if (sub && isRaceSubmission(sub)) {
+          const uid = Number(sub.submitterId);
+          if (Number.isFinite(uid)) {
+            if (profileViewUser && Number(profileViewUser.id) === uid) {
+              await loadProfilePublished(uid);
+            }
+            if (Number(authUser?.id) === uid) {
+              await loadProfileFromServer();
+              fillHubRaceFields();
+              await syncRaceSubmissionStatus();
+            }
+          }
+        }
       } catch (err) {
         showToast(err.message || "Не удалось одобрить");
       }
@@ -6592,6 +6651,16 @@
       try {
         await patchStudioSubmission(studioOpenReviewId, { queueNo });
         await loadStudioReviewList();
+        const openSub = getOpenReviewSubmission();
+        if (
+          openSub &&
+          isRaceSubmission(openSub) &&
+          Number(authUser?.id) === Number(openSub.submitterId)
+        ) {
+          raceSubmissionQueueNo = queueNo;
+          raceSubmissionStatus = "approved";
+          updateHubRaceStarUi();
+        }
         closeStudioModal("studio-queue-modal");
         showToast(`Очередь: №${queueNo}`);
         renderStudio();
@@ -9071,6 +9140,22 @@
         updateApplicationTabBadges();
       }
       syncStudioMineStatuses().then(() => renderStudio());
+      const sub = payload.submission;
+      const uid = Number(sub?.submitterId || authUser?.id);
+      if (
+        sub &&
+        isRaceSubmission(sub) &&
+        (String(payload.status) === "approved" || String(payload.status) === "added")
+      ) {
+        if (Number.isFinite(uid)) {
+          if (profileViewUser && Number(profileViewUser.id) === uid) {
+            loadProfilePublished(uid);
+          }
+          if (Number(authUser?.id) === uid) {
+            loadProfileFromServer().then(() => fillHubRaceFields());
+          }
+        }
+      }
     } else if (type === "order") {
       if (isMainPanelActive("orders")) {
         ackApplicationTab("orders");

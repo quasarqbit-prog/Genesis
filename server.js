@@ -3370,6 +3370,53 @@ function studioDisplayName(baseName, version) {
   return ver > 1 ? `${name} V${ver}` : name;
 }
 
+/** Push approved race payload into profiles so it appears in profile / mini-card. */
+async function publishApprovedRaceToProfile(submission) {
+  if (!submission || submission.kind !== "race") return null;
+  const userId = Number(submission.submitterId);
+  if (!Number.isFinite(userId)) return null;
+  const src =
+    submission.payload?.race && typeof submission.payload.race === "object"
+      ? submission.payload.race
+      : {};
+  const raceName = String(src.raceName || submission.baseName || submission.folderName || "")
+    .trim()
+    .replace(/\s+V\d+$/i, "")
+    .slice(0, 64);
+  if (!raceName) return null;
+  const form = {
+    nick: "",
+    raceName,
+    origin: String(src.origin || "").trim(),
+    abilities: String(src.abilities || "").trim(),
+    traits: String(src.traits || "").trim(),
+    useful: String(src.useful || "").trim(),
+    mechanics: String(src.mechanics || "").trim(),
+    blocks: Array.isArray(src.blocks) ? src.blocks : [],
+  };
+  const [nickRows] = await pool.execute(
+    `SELECT mc_nick FROM users WHERE id = :userId LIMIT 1`,
+    { userId }
+  );
+  form.nick = String(nickRows[0]?.mc_nick || "").trim();
+  await ensureProfile(userId, form.nick || null);
+  await pool.execute(
+    `UPDATE profiles
+     SET form_json = :formJson,
+         race_name = :raceName,
+         registered = 1
+     WHERE user_id = :userId`,
+    {
+      userId,
+      formJson: JSON.stringify(form),
+      raceName,
+    }
+  );
+  const publicUser = await loadUserPublic(userId);
+  if (publicUser) broadcastDirectoryUser(publicUser);
+  return publicUser;
+}
+
 async function getLatestStudioSubmission(submitterId, clientFolderId) {
   const [rows] = await pool.execute(
     `SELECT * FROM studio_submissions
@@ -3688,6 +3735,13 @@ app.patch("/api/studio/submissions/:id", staffMiddleware, async (req, res) => {
       { id }
     );
     const mapped = mapStudioSubmissionRow(next[0]);
+    if (status === "approved" || status === "added") {
+      try {
+        await publishApprovedRaceToProfile(mapped);
+      } catch (pubErr) {
+        console.error("publish race profile:", pubErr);
+      }
+    }
     if (status) {
       notifyApplicationReviewed({
         userId: rows[0].submitter_id,
@@ -4428,6 +4482,7 @@ app.get("/api/users/:id/published", authMiddleware, async (req, res) => {
   try {
     const userId = Number(req.params.id);
     if (!Number.isFinite(userId)) return res.status(400).json({ error: "Bad id" });
+    // Latest approved/added per folder (ignore newer pending/rejected drafts)
     const [rows] = await pool.execute(
       `SELECT s.*
        FROM studio_submissions s
@@ -4435,28 +4490,46 @@ app.get("/api/users/:id/published", authMiddleware, async (req, res) => {
          SELECT client_folder_id, MAX(id) AS max_id
          FROM studio_submissions
          WHERE submitter_id = :uid
+           AND status IN ('approved', 'added')
+           AND deleted_at IS NULL
+           AND hidden = 0
          GROUP BY client_folder_id
        ) latest ON latest.max_id = s.id
        WHERE s.submitter_id = :uid
-         AND s.status IN ('approved', 'added')
-         AND s.deleted_at IS NULL
-         AND s.hidden = 0
        ORDER BY s.updated_at DESC`,
       { uid: userId }
     );
     const submissions = rows.map(mapStudioSubmissionRow);
     const raceSub = submissions.find((s) => s.kind === "race") || null;
     const folders = submissions.filter((s) => s.kind !== "race");
+    let racePayload = null;
+    if (raceSub) {
+      const fromPayload =
+        raceSub.payload?.race && typeof raceSub.payload.race === "object"
+          ? raceSub.payload.race
+          : null;
+      const raceName = String(
+        fromPayload?.raceName ||
+          raceSub.baseName ||
+          String(raceSub.folderName || "").replace(/\s+V\d+$/i, "") ||
+          ""
+      ).trim();
+      racePayload = {
+        status: raceSub.status,
+        race: {
+          raceName,
+          origin: String(fromPayload?.origin || "").trim(),
+          abilities: String(fromPayload?.abilities || "").trim(),
+          traits: String(fromPayload?.traits || "").trim(),
+          useful: String(fromPayload?.useful || "").trim(),
+          mechanics: String(fromPayload?.mechanics || "").trim(),
+          blocks: Array.isArray(fromPayload?.blocks) ? fromPayload.blocks : [],
+        },
+      };
+    }
     return res.json({
       ok: true,
-      race: raceSub
-        ? {
-            status: raceSub.status,
-            race: raceSub.payload?.race || {
-              raceName: raceSub.folderName,
-            },
-          }
-        : null,
+      race: racePayload,
       folders: folders.map((s) => ({
         id: s.id,
         name: s.folderName,
