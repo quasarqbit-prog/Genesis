@@ -25,7 +25,7 @@ function setupChatRoutes({
   const SYSTEM_ROOMS = [
     {
       slug: "minecraft",
-      name: "Minecraft",
+      name: "Genesis",
       type: "public",
       webReadonly: 0,
     },

@@ -134,7 +134,7 @@ MOD_API_KEY=длинный_секретный_ключ
 Аватарки: `avatarUrl` / `authorAvatarUrl` / `members[].avatarUrl` — путь `/uploads/avatars/….png` (склей с `apiBaseUrl`) или полный URL.
 
 Системные общие чаты (создаются при старте сервера):
-- `roomSlug: "minecraft"` — общий чат Minecraft
+- `roomSlug: "minecraft"` — общий чат Genesis
 - `roomSlug: "proximity"` — «По близости»: на сайте только просмотр; писать из мода с `audienceNicks` (отправитель + кто рядом)
 
 Сайт → мод: мод периодически дергает `sync`. Мод → сайт: `POST .../messages` (сразу видно на сайте через Socket.io).
