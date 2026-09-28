@@ -1389,13 +1389,28 @@ function banDurationMs(value, unit) {
   return Math.floor(n * mult);
 }
 
-function emitGameCommandStub(payload) {
-  // Задел: мод Minecraft сможет слушать и применять бан на сервере
+let gameCommandSeq = 0;
+/** @type {Array<Record<string, unknown>>} */
+const gameCommandQueue = [];
+const GAME_COMMAND_QUEUE_MAX = 500;
+
+function enqueueGameCommand(payload) {
+  gameCommandSeq += 1;
+  const entry = {
+    id: gameCommandSeq,
+    ...payload,
+    createdAt: new Date().toISOString(),
+  };
+  gameCommandQueue.push(entry);
+  while (gameCommandQueue.length > GAME_COMMAND_QUEUE_MAX) {
+    gameCommandQueue.shift();
+  }
   try {
-    io.emit("panel:game-command", payload);
+    io.emit("panel:game-command", entry);
   } catch (err) {
     console.warn("panel:game-command emit:", err.message);
   }
+  return entry;
 }
 
 async function applyPermissionCommand(actor, nick, actionRaw) {
@@ -1490,7 +1505,7 @@ async function applyBanCommand(actor, nick, amountRaw, unitRaw) {
   );
   const user = await loadUserPublic(row.id);
   broadcastDirectoryUser(user);
-  emitGameCommandStub({
+  enqueueGameCommand({
     type: "ban",
     userId: row.id,
     mcNick: row.mc_nick,
@@ -1523,7 +1538,7 @@ async function applyUnbanCommand(actor, nick) {
   });
   const user = await loadUserPublic(row.id);
   broadcastDirectoryUser(user);
-  emitGameCommandStub({
+  enqueueGameCommand({
     type: "unban",
     userId: row.id,
     mcNick: row.mc_nick,
@@ -1652,16 +1667,26 @@ async function executePanelLine(actor, lineRaw) {
     throw err;
   }
   if (line.startsWith("/")) {
-    // Задел: команды игры на Minecraft-сервере
-    emitGameCommandStub({
+    // Команды для Minecraft-сервера (мод забирает через GET /api/mc/commands)
+    const command = line.slice(1).trim();
+    if (!command) {
+      const err = new Error("Пустая игровая команда");
+      err.status = 400;
+      throw err;
+    }
+    const entry = enqueueGameCommand({
       type: "raw",
-      command: line.slice(1).trim(),
+      command,
+      line,
       by: actor.id,
+      byNick: actor.mcNick || "",
+      byRole: actor.role || "",
     });
     return {
       ok: true,
-      stub: true,
-      message: `Игровая команда принята (задел): ${line}`,
+      queued: true,
+      commandId: entry.id,
+      message: `Игровая команда в очереди #${entry.id}: ${line}`,
     };
   }
 
@@ -2856,6 +2881,41 @@ app.post("/api/mc/online", async (req, res) => {
     });
   } catch (err) {
     console.error("mc online:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+/**
+ * Pending console / game commands for the Minecraft mod.
+ * GET /api/mc/commands?after=<lastId>
+ * Header: x-mod-key
+ * Returns commands with id > after (raw `/...` from site console, plus ban/unban).
+ */
+app.get("/api/mc/commands", async (req, res) => {
+  try {
+    if (!MOD_API_KEY) {
+      return res.status(403).json({ ok: false, error: "Forbidden" });
+    }
+    const key = String(req.headers["x-mod-key"] || req.query?.apiKey || "");
+    if (key !== MOD_API_KEY) {
+      return res.status(403).json({ ok: false, error: "Forbidden" });
+    }
+    const after = Math.max(0, Number(req.query.after) || 0);
+    const lim = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
+    const commands = gameCommandQueue
+      .filter((c) => Number(c.id) > after)
+      .slice(0, lim);
+    const cursor = commands.length
+      ? Number(commands[commands.length - 1].id)
+      : after;
+    return res.json({
+      ok: true,
+      commands,
+      cursor,
+      latestId: gameCommandSeq,
+    });
+  } catch (err) {
+    console.error("mc commands:", err);
     return res.status(500).json({ ok: false, error: "Server error" });
   }
 });

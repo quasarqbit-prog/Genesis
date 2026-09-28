@@ -4300,6 +4300,11 @@
       hint: "Очистить историю консоли",
       localOnly: true,
     },
+    {
+      name: "/",
+      usage: "/<команда> …",
+      hint: "Отправить команду на Minecraft-сервер",
+    },
   ];
   let consoleSuggestIndex = -1;
 
