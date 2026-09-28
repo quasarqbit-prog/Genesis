@@ -900,8 +900,6 @@ h3,
 
 .studio-review-delete {
   margin-left: auto;
-  color: #ff8a8a !important;
-  border-color: rgba(255, 120, 120, 0.45) !important;
 }
 
 .studio-review-toolbar {
@@ -4051,8 +4049,9 @@ h3,
 }
 
 .mc-btn--compact {
-  padding-left: 14px;
-  padding-right: 14px;
+  padding: 8px 10px;
+  font-size: 10px;
+  letter-spacing: 0.4px;
   white-space: nowrap;
   width: auto;
   min-width: 0;
@@ -5233,21 +5232,22 @@ h3,
 .auth-gate__actions .mc-btn {
   width: 100%;
   min-width: 0;
+  padding: 14px 18px;
+  font-size: 14px;
+  letter-spacing: 1px;
 }
 
 .mc-btn--ghost {
   color: var(--muted);
   background: transparent;
-  border-top: 4px solid var(--btn-border-light);
-  border-left: 4px solid var(--btn-border-light);
-  border-right: 4px solid var(--btn-border-dark);
-  border-bottom: 4px solid var(--btn-border-dark);
-  box-shadow: 0 4px 0 #05030a;
+  border: 2px solid rgba(107, 90, 138, 0.4);
+  box-shadow: none;
 }
 
 .mc-btn--ghost:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(16, 8, 28, 0.45);
 }
 
 .auth-btn {
@@ -5539,16 +5539,15 @@ h3,
   font-family: var(--font-ded);
   font-size: 14px;
   color: var(--muted);
-  background: var(--btn-face);
-  border-top: 3px solid var(--btn-border-light);
-  border-left: 3px solid var(--btn-border-light);
-  border-right: 3px solid var(--btn-border-dark);
-  border-bottom: 3px solid var(--btn-border-dark);
+  background: rgba(16, 8, 28, 0.75);
+  border: 2px solid rgba(107, 90, 138, 0.55);
   cursor: pointer;
+  transition: border-color 0.08s linear, color 0.08s linear;
 }
 
 .pass-toggle:hover {
   color: var(--accent);
+  border-color: var(--accent);
 }
 
 .choice-grid--2 {
@@ -5828,20 +5827,20 @@ h3,
   width: 36px;
   height: 36px;
   padding: 0;
-  border: 2px solid var(--panel-edge);
-  background: var(--btn-face);
+  border: 2px solid rgba(107, 90, 138, 0.55);
+  background: rgba(16, 8, 28, 0.75);
   color: var(--muted);
   font-family: var(--font-ded);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+  transition: color 0.08s linear, background 0.08s linear, border-color 0.08s linear;
 }
 
 .submit-close:hover {
-  color: #ff8ea0;
-  border-color: #fb7185;
-  background: rgba(251, 113, 133, 0.12);
+  color: #ff8f9a;
+  border-color: rgba(228, 90, 110, 0.45);
+  background: rgba(16, 8, 28, 0.92);
 }
 
 .submit-choice {
@@ -5932,7 +5931,19 @@ h3,
 }
 
 .mc-btn--ghost:hover {
-  color: var(--text);
+  color: var(--accent);
+}
+
+.mc-btn--danger,
+.studio-review-delete {
+  color: #ff8f9a;
+  border-color: rgba(228, 90, 110, 0.45);
+}
+
+.mc-btn--danger:hover,
+.studio-review-delete:hover {
+  color: #ffb0b8;
+  border-color: rgba(255, 143, 154, 0.75);
 }
 
 .mc-btn:disabled {
@@ -6892,19 +6903,18 @@ h3,
   appearance: none;
   font-family: var(--font-ded);
   font-size: 9px;
-  color: var(--muted);
-  background: var(--btn-face);
-  border-top: 3px solid var(--btn-border-light);
-  border-left: 3px solid var(--btn-border-light);
-  border-right: 3px solid var(--btn-border-dark);
-  border-bottom: 3px solid var(--btn-border-dark);
+  color: #ff8f9a;
+  background: rgba(16, 8, 28, 0.75);
+  border: 2px solid rgba(228, 90, 110, 0.45);
   padding: 8px 6px;
   cursor: pointer;
   text-transform: uppercase;
+  transition: border-color 0.08s linear, color 0.08s linear;
 }
 
 .skin-delete:hover {
-  color: #ff8ea0;
+  color: #ffb0b8;
+  border-color: rgba(255, 143, 154, 0.75);
 }
 
 /* Audio list */
@@ -6947,20 +6957,19 @@ h3,
   flex-shrink: 0;
   font-family: var(--font-ded);
   font-size: 9px;
-  color: var(--muted);
-  background: var(--btn-face);
-  border-top: 3px solid var(--btn-border-light);
-  border-left: 3px solid var(--btn-border-light);
-  border-right: 3px solid var(--btn-border-dark);
-  border-bottom: 3px solid var(--btn-border-dark);
+  color: #ff8f9a;
+  background: rgba(16, 8, 28, 0.75);
+  border: 2px solid rgba(228, 90, 110, 0.45);
   padding: 6px 8px;
   cursor: pointer;
   text-transform: uppercase;
   white-space: nowrap;
+  transition: border-color 0.08s linear, color 0.08s linear;
 }
 
 .audio-card__del:hover {
-  color: #ff8ea0;
+  color: #ffb0b8;
+  border-color: rgba(255, 143, 154, 0.75);
 }
 
 /* ── Craft block ───────────────────────────────── */
@@ -6976,21 +6985,23 @@ h3,
   font-family: var(--font-ded);
   font-size: 10px;
   color: var(--muted);
-  background: var(--btn-face);
-  border-top: 3px solid var(--btn-border-light);
-  border-left: 3px solid var(--btn-border-light);
-  border-right: 3px solid var(--btn-border-dark);
-  border-bottom: 3px solid var(--btn-border-dark);
+  background: rgba(16, 8, 28, 0.75);
+  border: 2px solid rgba(107, 90, 138, 0.55);
   padding: 8px 14px;
   cursor: pointer;
   text-transform: uppercase;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition: color 0.08s linear, background 0.08s linear, border-color 0.08s linear;
+}
+
+.craft-tab:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .craft-tab.is-active {
-  color: var(--bg-deep);
-  background: var(--accent);
-  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: rgba(196, 255, 77, 0.08);
+  border-color: var(--accent);
 }
 
 .craft-sub-label {
@@ -7489,39 +7500,35 @@ h3,
 .mc-btn {
   appearance: none;
   font-family: var(--font-ded);
-  font-size: 14px;
-  letter-spacing: 1px;
+  font-size: 12px;
+  letter-spacing: 0.4px;
   color: var(--text);
-  background: var(--btn-face);
-  border-top: 4px solid var(--btn-border-light);
-  border-left: 4px solid var(--btn-border-light);
-  border-right: 4px solid var(--btn-border-dark);
-  border-bottom: 4px solid var(--btn-border-dark);
-  padding: 18px 28px;
-  min-width: 240px;
+  background: rgba(16, 8, 28, 0.75);
+  border: 2px solid rgba(107, 90, 138, 0.55);
+  padding: 10px 14px;
+  min-width: 0;
+  width: auto;
   cursor: pointer;
   text-transform: uppercase;
-  transition: background 0.08s linear, transform 0.08s linear;
-  box-shadow: 0 4px 0 #05030a;
+  transition: border-color 0.08s linear, color 0.08s linear, background 0.08s linear;
+  box-shadow: none;
 }
 
 .mc-btn:hover {
-  background: var(--btn-face-hover);
+  border-color: var(--accent);
   color: var(--accent);
+  background: rgba(16, 8, 28, 0.92);
 }
 
 .mc-btn:active {
-  transform: translate(2px, 2px);
-  box-shadow: 0 2px 0 #05030a;
-  border-top-color: var(--btn-border-dark);
-  border-left-color: var(--btn-border-dark);
-  border-right-color: var(--btn-border-light);
-  border-bottom-color: var(--btn-border-light);
+  transform: none;
+  box-shadow: none;
+  background: rgba(196, 255, 77, 0.08);
 }
 
 .mc-btn:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 4px;
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .footer {
@@ -7605,7 +7612,7 @@ h3,
     width: 100%;
     min-width: 0;
     font-size: 12px;
-    padding: 16px 12px;
+    padding: 12px 14px;
   }
 
   .lead {
