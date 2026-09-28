@@ -1740,35 +1740,113 @@ async function getTelegramBotInfo() {
 /* ---------- Presence (site + Minecraft server) ---------- */
 const onlineUsers = new Map(); // socket.id -> { userId?, mcNick? }
 const serverOnlineIds = new Set(); // user ids online on Minecraft server
+/** Sticky site-online: survives brief disconnects (page refresh / reconnect). */
+const siteOnlineSticky = new Set();
+const siteOfflineGraceTimers = new Map(); // userId -> Timeout
+const PRESENCE_OFFLINE_GRACE_MS = 15000;
+const PRESENCE_BROADCAST_DEBOUNCE_MS = 400;
+let presenceBroadcastTimer = null;
+let lastPresencePayloadJson = "";
 
 function getOnlineUserIds() {
-  const ids = new Set();
-  for (const entry of onlineUsers.values()) {
-    const id = Number(entry?.userId);
-    if (Number.isFinite(id) && id >= 0) ids.add(id);
-  }
-  return [...ids];
+  return [...siteOnlineSticky];
 }
 
 function getServerOnlineUserIds() {
   return [...serverOnlineIds];
 }
 
-function broadcastPresence() {
+function userHasLiveSocket(userId) {
+  const uid = Number(userId);
+  if (!Number.isFinite(uid)) return false;
+  for (const entry of onlineUsers.values()) {
+    if (Number(entry?.userId) === uid) return true;
+  }
+  return false;
+}
+
+function cancelSiteOfflineGrace(userId) {
+  const uid = Number(userId);
+  if (!Number.isFinite(uid)) return;
+  const timer = siteOfflineGraceTimers.get(uid);
+  if (timer) {
+    clearTimeout(timer);
+    siteOfflineGraceTimers.delete(uid);
+  }
+}
+
+function touchSiteOnline(userId) {
+  const uid = Number(userId);
+  if (!Number.isFinite(uid) || uid < 0) return false;
+  cancelSiteOfflineGrace(uid);
+  const wasOnline = siteOnlineSticky.has(uid);
+  siteOnlineSticky.add(uid);
+  return !wasOnline;
+}
+
+function releaseSiteOnline(userId) {
+  const uid = Number(userId);
+  if (!Number.isFinite(uid) || uid < 0) return;
+  if (userHasLiveSocket(uid)) return;
+  if (siteOfflineGraceTimers.has(uid)) return;
+  siteOfflineGraceTimers.set(
+    uid,
+    setTimeout(() => {
+      siteOfflineGraceTimers.delete(uid);
+      if (userHasLiveSocket(uid)) return;
+      if (siteOnlineSticky.delete(uid)) {
+        schedulePresenceBroadcast();
+      }
+    }, PRESENCE_OFFLINE_GRACE_MS)
+  );
+}
+
+function buildPresencePayload() {
   const onlineIds = getOnlineUserIds();
   const serverIds = getServerOnlineUserIds();
-  io.emit("presence:update", {
+  return {
     online: onlineIds.length,
     onlineIds,
     serverOnlineIds: serverIds,
+  };
+}
+
+function broadcastPresenceNow(force = false) {
+  const payload = buildPresencePayload();
+  const json = JSON.stringify({
+    onlineIds: [...payload.onlineIds].sort((a, b) => a - b),
+    serverOnlineIds: [...payload.serverOnlineIds].sort((a, b) => a - b),
   });
+  if (!force && json === lastPresencePayloadJson) return;
+  lastPresencePayloadJson = json;
+  io.emit("presence:update", payload);
+}
+
+function schedulePresenceBroadcast(force = false) {
+  if (force) {
+    if (presenceBroadcastTimer) {
+      clearTimeout(presenceBroadcastTimer);
+      presenceBroadcastTimer = null;
+    }
+    broadcastPresenceNow(true);
+    return;
+  }
+  if (presenceBroadcastTimer) return;
+  presenceBroadcastTimer = setTimeout(() => {
+    presenceBroadcastTimer = null;
+    broadcastPresenceNow(false);
+  }, PRESENCE_BROADCAST_DEBOUNCE_MS);
+}
+
+function broadcastPresence() {
+  schedulePresenceBroadcast(false);
 }
 
 function withPresenceFlags(user) {
   if (!user) return null;
   const id = Number(user.id);
-  const onlineSet = new Set(getOnlineUserIds());
-  const serverSet = new Set(getServerOnlineUserIds());
+  const onlineSet = siteOnlineSticky;
+  const serverSet = serverOnlineIds;
   // showOnlineFrame — только своя рамка в профиле; видимость для других — отдельные флаги
   const siteOnline = user.showSiteOnline !== false && onlineSet.has(id);
   const serverOnline = user.showServerOnline !== false && serverSet.has(id);
@@ -5082,24 +5160,25 @@ io.use((socket, next) => {
 
 io.on("connection", (socket) => {
   const socketUserId = socket.data.user?.id;
+  const uid =
+    socketUserId != null && Number.isFinite(Number(socketUserId))
+      ? Number(socketUserId)
+      : null;
   onlineUsers.set(socket.id, {
-    userId:
-      socketUserId != null && Number.isFinite(Number(socketUserId))
-        ? Number(socketUserId)
-        : null,
+    userId: uid,
     mcNick: socket.data.user?.mcNick || null,
   });
-  broadcastPresence();
-
-  if (socketUserId != null && Number.isFinite(Number(socketUserId))) {
-    socket.join(`user:${Number(socketUserId)}`);
+  const becameOnline = uid != null ? touchSiteOnline(uid) : false;
+  if (becameOnline) {
+    schedulePresenceBroadcast(false);
+  } else {
+    // Still send current snapshot to the new socket without thrashing everyone
+    socket.emit("presence:update", buildPresencePayload());
   }
 
-  socket.emit("presence:update", {
-    online: getOnlineUserIds().length,
-    onlineIds: getOnlineUserIds(),
-    serverOnlineIds: getServerOnlineUserIds(),
-  });
+  if (uid != null) {
+    socket.join(`user:${uid}`);
+  }
 
   socket.on("chat:message", () => {
     /* legacy global chat disabled — use /api/chat + chat:join rooms */
@@ -5107,8 +5186,12 @@ io.on("connection", (socket) => {
   attachChatSocket(socket);
 
   socket.on("disconnect", () => {
+    const entry = onlineUsers.get(socket.id);
     onlineUsers.delete(socket.id);
-    broadcastPresence();
+    const goneId = entry?.userId != null ? Number(entry.userId) : null;
+    if (goneId != null && Number.isFinite(goneId)) {
+      releaseSiteOnline(goneId);
+    }
   });
 });
 

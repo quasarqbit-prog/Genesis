@@ -435,7 +435,7 @@
     pendingAvatarDataUrl = null;
     pendingAvatarReset = false;
     localStorage.removeItem(AUTH_USER_KEY);
-    renderPlayersDirectory();
+    renderPlayersDirectory(true);
     profileCache = readLocalStorageFallback();
   }
 
@@ -510,7 +510,7 @@
       directoryUsers = [];
       onlineUserIds = new Set();
       serverOnlineUserIds = new Set();
-      renderPlayersDirectory();
+      renderPlayersDirectory(true);
       updateAuthChrome();
       return profileCache;
     }
@@ -584,7 +584,7 @@
         el.hidden = false;
         el.textContent = `онлайн: ${ids.length || Number(payload?.online) || 0}`;
       }
-      applyPlayersPresence();
+      schedulePresenceUiRefresh();
     });
     socket.on("directory:user", (payload) => {
       const user = payload?.user;
@@ -625,7 +625,7 @@
         profileViewUser = { ...profileViewUser, ...merged };
         loadProfilePublished(id);
       }
-      renderPlayersDirectory();
+      renderPlayersDirectory(true);
     });
     socket.on("application:reviewed", (payload) => {
       onApplicationReviewedEvent(payload);
@@ -891,12 +891,11 @@
     });
   }
 
-  function renderPlayersDirectory() {
-    const staffHost = document.getElementById("presence-staff");
-    const othersHost = document.getElementById("presence-others");
-    const staffDivider = document.getElementById("presence-staff-divider");
-    if (!staffHost || !othersHost) return;
+  function presenceOrderSignature(list) {
+    return list.map((u) => String(Number(u.id))).join("|");
+  }
 
+  function buildPresenceSections() {
     const myId = Number(authUser?.id);
     const others = directoryUsers.filter((user) => Number(user.id) !== myId);
     const banned = sortPresenceUsers(others.filter(isBannedUser));
@@ -904,9 +903,54 @@
     const staff = sortPresenceUsers(active.filter(isStaffUser));
     const regular = sortPresenceUsers(active.filter((user) => !isStaffUser(user)));
     const regularWithBanned = regular.concat(banned);
+    return { staff, regularWithBanned };
+  }
+
+  function patchPresenceCardStatus(card, user) {
+    if (!card || !user) return;
+    const next = presenceClass(user);
+    const prev = card.getAttribute("data-status") || "";
+    if (prev === next) return;
+    card.classList.remove("is-site", "is-server", "is-banned", "is-offline");
+    card.classList.add(next);
+    card.setAttribute("data-status", next);
+  }
+
+  function renderPlayersDirectory(force = false) {
+    const staffHost = document.getElementById("presence-staff");
+    const othersHost = document.getElementById("presence-others");
+    const staffDivider = document.getElementById("presence-staff-divider");
+    if (!staffHost || !othersHost) return;
+
+    const { staff, regularWithBanned } = buildPresenceSections();
+    const nextOrder =
+      presenceOrderSignature(staff) + "::" + presenceOrderSignature(regularWithBanned);
+    const prevOrder = staffHost.dataset.presenceOrder || "";
+    const canPatch =
+      !force &&
+      prevOrder === nextOrder &&
+      staffHost.children.length === staff.length &&
+      othersHost.children.length === regularWithBanned.length;
+
+    if (canPatch) {
+      const byId = new Map(
+        [...staff, ...regularWithBanned].map((u) => [Number(u.id), u])
+      );
+      staffHost.querySelectorAll(".presence-user").forEach((card) => {
+        patchPresenceCardStatus(card, byId.get(Number(card.getAttribute("data-user-id"))));
+      });
+      othersHost.querySelectorAll(".presence-user").forEach((card) => {
+        patchPresenceCardStatus(card, byId.get(Number(card.getAttribute("data-user-id"))));
+      });
+      if (staffDivider) {
+        staffDivider.hidden = !(staff.length && regularWithBanned.length);
+      }
+      return;
+    }
 
     staffHost.innerHTML = staff.map(renderPresenceUser).join("");
     othersHost.innerHTML = regularWithBanned.map(renderPresenceUser).join("");
+    staffHost.dataset.presenceOrder = nextOrder;
     if (staffDivider) {
       staffDivider.hidden = !(staff.length && regularWithBanned.length);
     }
@@ -1543,8 +1587,22 @@
 
   bindPresenceTips();
 
+  let presenceUiTimer = null;
+  let presenceUiForce = false;
+
+  function schedulePresenceUiRefresh(force = false) {
+    if (force) presenceUiForce = true;
+    if (presenceUiTimer) return;
+    presenceUiTimer = window.setTimeout(() => {
+      presenceUiTimer = null;
+      const forceNow = presenceUiForce;
+      presenceUiForce = false;
+      renderPlayersDirectory(forceNow);
+    }, 120);
+  }
+
   function applyPlayersPresence() {
-    renderPlayersDirectory();
+    schedulePresenceUiRefresh(false);
   }
 
   async function loadPlayersDirectory() {
@@ -1552,7 +1610,7 @@
       directoryUsers = [];
       onlineUserIds = new Set();
       serverOnlineUserIds = new Set();
-      renderPlayersDirectory();
+      renderPlayersDirectory(true);
       return;
     }
     try {
@@ -1570,7 +1628,7 @@
             .filter((id) => Number.isFinite(id))
         );
       }
-      renderPlayersDirectory();
+      renderPlayersDirectory(true);
     } catch (err) {
       console.warn("players directory:", err.message);
     }
@@ -3939,7 +3997,7 @@
           };
         }
         applyAuthUi({ syncHubFields: false });
-        renderPlayersDirectory();
+        renderPlayersDirectory(true);
       } catch (err) {
         showToast(err.message || "Не удалось сохранить");
       }
@@ -4554,7 +4612,7 @@
           };
           applyAuthUi({ syncHubFields: false });
         }
-        renderPlayersDirectory();
+        renderPlayersDirectory(true);
       }
       return data;
     } catch (err) {
@@ -4615,7 +4673,7 @@
     if (profileViewUser && Number(profileViewUser.id) === id) {
       profileViewUser = { ...profileViewUser, ...directoryUsers[idx >= 0 ? idx : directoryUsers.length - 1] };
     }
-    renderPlayersDirectory();
+    renderPlayersDirectory(true);
   }
 
   document.getElementById("user-profile-tabs")?.addEventListener("click", (e) => {
