@@ -662,6 +662,39 @@ function setupChatRoutes({
     }
   });
 
+  /** Delete chat for everyone (dm / group). System, public and ticket rooms stay. */
+  app.delete("/api/chat/rooms/:id", authMiddleware, async (req, res) => {
+    try {
+      const room = await getRoom(req.params.id);
+      if (!room) return res.status(404).json({ error: "Чат не найден" });
+      if (room.slug || room.type === "public" || room.type === "ticket") {
+        return res.status(403).json({ error: "Этот чат нельзя удалить" });
+      }
+      if (room.type !== "dm" && room.type !== "group") {
+        return res.status(403).json({ error: "Этот чат нельзя удалить" });
+      }
+      if (!(await isMember(room.id, req.user.id))) {
+        return res.status(403).json({ error: "Нет доступа к чату" });
+      }
+      const roomId = Number(room.id);
+      const [members] = await pool.execute(
+        `SELECT user_id FROM chat_members WHERE room_id = :roomId`,
+        { roomId }
+      );
+      await pool.execute(`DELETE FROM chat_rooms WHERE id = :id`, { id: roomId });
+      io.emit("chat:rooms-updated", { roomId, deleted: true });
+      for (const m of members) {
+        const uid = Number(m.user_id);
+        if (!Number.isFinite(uid)) continue;
+        io.to(`user:${uid}`).emit("chat:room-deleted", { roomId });
+      }
+      return res.json({ ok: true, roomId });
+    } catch (err) {
+      console.error("chat delete:", err);
+      return res.status(500).json({ error: "Не удалось удалить чат" });
+    }
+  });
+
   app.get("/api/chat/rooms/:id/messages", authMiddleware, async (req, res) => {
     try {
       const room = await getRoom(req.params.id);

@@ -660,6 +660,20 @@
         chatRoomsDirty = true;
       }
     });
+    socket.on("chat:room-deleted", (payload) => {
+      const roomId = Number(payload?.roomId);
+      if (!Number.isFinite(roomId) || roomId <= 0) return;
+      chatRooms = chatRooms.filter((r) => Number(r.id) !== roomId);
+      chatRoomsById.delete(roomId);
+      chatUnreadRoomIds.delete(roomId);
+      updateChatTabBadge();
+      if (Number(chatActiveRoomId) === roomId) {
+        clearActiveChatRoom();
+        showToast("Чат удалён");
+      } else {
+        renderChatRoomList();
+      }
+    });
     socket.on("connect_error", () => {
       /* API может быть недоступен офлайн — UI продолжает работать локально */
     });
@@ -12113,12 +12127,14 @@
     const title = document.getElementById("chat-main-title");
     const avatarHost = document.getElementById("chat-main-avatar");
     const joinBtn = document.getElementById("chat-join-btn");
+    const deleteBtn = document.getElementById("chat-delete-btn");
     const form = document.getElementById("chat-compose");
     const input = document.getElementById("chat-compose-input");
     if (!room) {
       if (title) title.textContent = "Выбери чат";
       fillChatAvatarHost(avatarHost, null);
       if (joinBtn) joinBtn.hidden = true;
+      if (deleteBtn) deleteBtn.hidden = true;
       if (form) form.hidden = true;
       chatMessages = [];
       renderChatMessages();
@@ -12132,6 +12148,12 @@
     fillChatAvatarHost(avatarHost, room);
     const needJoin = room.type === "public" && !room.joined && !room.slug;
     if (joinBtn) joinBtn.hidden = !needJoin;
+    if (deleteBtn) {
+      deleteBtn.hidden = !(
+        (room.type === "dm" || room.type === "group") &&
+        !room.slug
+      );
+    }
     const canCompose = !needJoin && !room.webReadonly;
     if (form) form.hidden = !canCompose;
     if (input) {
@@ -12142,6 +12164,41 @@
     if (needJoin) {
       chatMessages = [];
       renderChatMessages();
+    }
+  }
+
+  function clearActiveChatRoom() {
+    if (chatActiveRoomId && socket) {
+      socket.emit("chat:leave", { roomId: chatActiveRoomId });
+    }
+    chatActiveRoomId = null;
+    chatMessages = [];
+    renderChatMessages();
+    renderChatMain(null);
+    renderChatRoomList();
+  }
+
+  async function deleteActiveChatRoom() {
+    const roomId = Number(chatActiveRoomId);
+    const room = chatRooms.find((r) => Number(r.id) === roomId);
+    if (!roomId || !room) return;
+    if (room.type !== "dm" && room.type !== "group") return;
+    const label = chatRoomTitle(room);
+    const who =
+      room.type === "dm"
+        ? "Чат удалится у обоих участников"
+        : "Чат удалится у всех участников";
+    if (!window.confirm(`Удалить «${label}»?\n${who}.`)) return;
+    try {
+      await api(`/api/chat/rooms/${roomId}`, { method: "DELETE" });
+      chatRooms = chatRooms.filter((r) => Number(r.id) !== roomId);
+      chatRoomsById.delete(roomId);
+      chatUnreadRoomIds.delete(roomId);
+      updateChatTabBadge();
+      clearActiveChatRoom();
+      showToast("Чат удалён");
+    } catch (err) {
+      showToast(err.message || "Не удалось удалить чат");
     }
   }
 
@@ -12523,6 +12580,10 @@
     } catch (err) {
       showToast(err.message || "Не удалось вступить");
     }
+  });
+
+  document.getElementById("chat-delete-btn")?.addEventListener("click", () => {
+    deleteActiveChatRoom();
   });
 
   document.getElementById("chat-compose")?.addEventListener("submit", async (e) => {
