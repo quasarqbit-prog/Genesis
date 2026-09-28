@@ -446,11 +446,20 @@ function setupChatRoutes({
   }
 
   function proximityVisibilitySql(alias = "msg") {
+    // Use a separate JSON string param — CAST(:id AS JSON) breaks prepared statements on MariaDB/MySQL
     return `(
       ${alias}.audience_json IS NULL
       OR ${alias}.user_id = :viewerId
-      OR JSON_CONTAINS(${alias}.audience_json, CAST(:viewerId AS JSON), '$')
+      OR JSON_CONTAINS(${alias}.audience_json, :viewerIdJson, '$')
     )`;
+  }
+
+  function proximityViewerParams(viewerId) {
+    const id = Number(viewerId);
+    return {
+      viewerId: id,
+      viewerIdJson: JSON.stringify(id),
+    };
   }
 
   async function loadMessages(
@@ -464,7 +473,7 @@ function setupChatRoutes({
     const proximity = room.slug === "proximity" && viewerId != null;
     const vis = proximity ? ` AND ${proximityVisibilitySql("msg")}` : "";
     const params = { roomId };
-    if (proximity) params.viewerId = Number(viewerId);
+    if (proximity) Object.assign(params, proximityViewerParams(viewerId));
 
     let rows;
     if (after > 0) {
@@ -994,7 +1003,11 @@ function setupChatRoutes({
            )
          ORDER BY msg.id ASC
          LIMIT ${lim}`,
-        { userId: user.id, after, viewerId: user.id }
+        {
+          userId: user.id,
+          after,
+          ...proximityViewerParams(user.id),
+        }
       );
       return res.json({
         ok: true,
