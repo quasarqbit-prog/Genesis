@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Genesis — Регистрация на сервер</title>
-  <link rel="stylesheet" href="styles.css?v=112" />
+  <link rel="stylesheet" href="styles.css?v=113" />
 </head>
 <body>
   <div class="sky" aria-hidden="true">
@@ -311,6 +311,10 @@
                 </header>
                 <div class="chat-messages" id="chat-messages" role="log" aria-live="polite"></div>
                 <form class="chat-compose" id="chat-compose" hidden>
+                  <div class="chat-emoji-wrap">
+                    <button type="button" class="chat-emoji-btn" id="chat-emoji-btn" aria-label="Эмодзи" aria-expanded="false" aria-controls="chat-emoji-picker"></button>
+                    <div class="chat-emoji-picker" id="chat-emoji-picker" hidden role="listbox" aria-label="Эмодзи"></div>
+                  </div>
                   <input
                     class="field-input chat-compose__input"
                     id="chat-compose-input"
@@ -2096,6 +2100,6 @@
   </footer>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="script.js?v=112"></script>
+  <script src="script.js?v=113"></script>
 </body>
 </html>

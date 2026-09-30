@@ -7993,11 +7993,95 @@ h3,
   gap: 8px;
   padding: 12px 14px;
   border-top: 1px solid rgba(107, 90, 138, 0.35);
+  align-items: center;
 }
 
 .chat-compose__input {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.chat-emoji-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.chat-emoji-btn {
+  appearance: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 2px solid rgba(107, 90, 138, 0.55);
+  cursor: pointer;
+  image-rendering: pixelated;
+  background-color: rgba(16, 8, 28, 0.75);
+  background-image: url("assets/emoji.png");
+  background-repeat: no-repeat;
+  background-size: 260px 20px;
+  background-position: 8px 6px;
+}
+
+.chat-emoji-btn:hover,
+.chat-emoji-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+.chat-emoji-picker {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  display: grid;
+  grid-template-columns: repeat(7, 28px);
+  gap: 4px;
+  padding: 8px;
+  border: 2px solid rgba(107, 90, 138, 0.55);
+  background: rgba(12, 7, 22, 0.98);
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
+}
+
+.chat-emoji-picker[hidden] {
+  display: none !important;
+}
+
+.chat-emoji-picker__item {
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.chat-emoji-picker__item:hover,
+.chat-emoji-picker__item:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.chat-emoji {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin: 0 1px;
+  vertical-align: -3px;
+  image-rendering: pixelated;
+  background-image: url("assets/emoji.png");
+  background-repeat: no-repeat;
+  background-size: 208px 16px;
+  background-position: calc(var(--emoji-i, 0) * -16px) 0;
+}
+
+.chat-emoji-picker__item .chat-emoji {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  vertical-align: 0;
+  background-size: 260px 20px;
+  background-position: calc(var(--emoji-i, 0) * -20px) 0;
 }
 
 .chat-type-grid {

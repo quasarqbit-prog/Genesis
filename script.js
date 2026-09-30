@@ -11740,6 +11740,54 @@
     return escapeHtml(String(s || ""));
   }
 
+  /** Custom chat emoji sheet: assets/emoji.png — 13×(10×10) L→R */
+  const CHAT_EMOJIS = [
+    { char: "🙂", index: 0 },
+    { char: "😄", index: 1 },
+    { char: "😝", index: 2 },
+    { char: "😳", index: 3 },
+    { char: "😘", index: 4 },
+    { char: "😏", index: 5 },
+    { char: "😂", index: 6 },
+    { char: "😭", index: 7 },
+    { char: "🤨", index: 8 },
+    { char: "😐", index: 9 },
+    { char: "😦", index: 10 },
+    { char: "🥺", index: 11 },
+    { char: "😒", index: 12 },
+  ];
+  const CHAT_EMOJI_INDEX = new Map(CHAT_EMOJIS.map((e) => [e.char, e.index]));
+  const CHAT_EMOJI_RE = new RegExp(
+    `(${CHAT_EMOJIS.map((e) => e.char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`,
+    "g"
+  );
+
+  function chatEmojiHtml(index, char) {
+    const i = Number(index);
+    if (!Number.isFinite(i) || i < 0) return escapeChat(char || "");
+    return `<span class="chat-emoji" style="--emoji-i:${i}" title="${escapeChat(
+      char || ""
+    )}" role="img" aria-label="${escapeChat(char || "")}"></span>`;
+  }
+
+  function renderChatTextWithEmojis(raw) {
+    const text = String(raw || "");
+    if (!text) return "";
+    let html = "";
+    let last = 0;
+    CHAT_EMOJI_RE.lastIndex = 0;
+    let m;
+    while ((m = CHAT_EMOJI_RE.exec(text)) !== null) {
+      html += escapeChat(text.slice(last, m.index));
+      const ch = m[1];
+      const idx = CHAT_EMOJI_INDEX.get(ch);
+      html += chatEmojiHtml(idx, ch);
+      last = m.index + m[0].length;
+    }
+    html += escapeChat(text.slice(last));
+    return html;
+  }
+
   function chatRoomTitle(room) {
     if (!room) return "Чат";
     return room.title || room.name || `Чат #${room.id}`;
@@ -11766,7 +11814,7 @@
     let last = 0;
     let m;
     while ((m = linkRe.exec(raw)) !== null) {
-      html += escapeChat(raw.slice(last, m.index));
+      html += renderChatTextWithEmojis(raw.slice(last, m.index));
       const kind = m[1];
       const id = m[2];
       const label =
@@ -11774,7 +11822,7 @@
       html += `<button type="button" class="chat-msg__ticket-link" data-ticket-kind="${kind}" data-ticket-id="${id}">${escapeChat(label)}</button>`;
       last = m.index + m[0].length;
     }
-    html += escapeChat(raw.slice(last));
+    html += renderChatTextWithEmojis(raw.slice(last));
     return html.replace(/\n/g, "<br>");
   }
 
@@ -12732,6 +12780,75 @@
 
   document.getElementById("chat-delete-btn")?.addEventListener("click", () => {
     deleteActiveChatRoom();
+  });
+
+  function setChatEmojiPickerOpen(open) {
+    const picker = document.getElementById("chat-emoji-picker");
+    const btn = document.getElementById("chat-emoji-btn");
+    if (!picker || !btn) return;
+    picker.hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  function ensureChatEmojiPicker() {
+    const picker = document.getElementById("chat-emoji-picker");
+    if (!picker || picker.dataset.ready === "1") return;
+    picker.dataset.ready = "1";
+    picker.innerHTML = CHAT_EMOJIS.map(
+      (e) =>
+        `<button type="button" class="chat-emoji-picker__item" role="option" data-emoji="${escapeChat(
+          e.char
+        )}" aria-label="${escapeChat(e.char)}">${chatEmojiHtml(
+          e.index,
+          e.char
+        )}</button>`
+    ).join("");
+  }
+
+  function insertChatEmoji(char) {
+    const input = document.getElementById("chat-compose-input");
+    if (!input || !char) return;
+    const start = Number(input.selectionStart);
+    const end = Number(input.selectionEnd);
+    const value = String(input.value || "");
+    const from = Number.isFinite(start) ? start : value.length;
+    const to = Number.isFinite(end) ? end : value.length;
+    const next = value.slice(0, from) + char + value.slice(to);
+    if (next.length > Number(input.maxLength || 1000)) return;
+    input.value = next;
+    const caret = from + char.length;
+    input.focus();
+    try {
+      input.setSelectionRange(caret, caret);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  document.getElementById("chat-emoji-btn")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    ensureChatEmojiPicker();
+    const picker = document.getElementById("chat-emoji-picker");
+    setChatEmojiPickerOpen(Boolean(picker?.hidden));
+  });
+
+  document.getElementById("chat-emoji-picker")?.addEventListener("click", (e) => {
+    const item = e.target.closest("[data-emoji]");
+    if (!item) return;
+    e.preventDefault();
+    insertChatEmoji(item.getAttribute("data-emoji") || "");
+    setChatEmojiPickerOpen(false);
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    const wrap = document.querySelector(".chat-emoji-wrap");
+    if (!wrap || wrap.contains(e.target)) return;
+    setChatEmojiPickerOpen(false);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setChatEmojiPickerOpen(false);
   });
 
   document.getElementById("chat-compose")?.addEventListener("submit", async (e) => {
