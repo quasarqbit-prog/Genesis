@@ -2964,6 +2964,77 @@ app.post("/api/mc/online", async (req, res) => {
 });
 
 /**
+ * Public roster for the mod title-screen.
+ * GET /api/mc/online — no key required (display-only).
+ * Returns server / site presence so the menu can sort indicators.
+ */
+app.get("/api/mc/online", async (_req, res) => {
+  try {
+    const address = String(
+      process.env.SERVER_IP || "srv1001.godlike.club:26519"
+    ).trim();
+    const siteIds = new Set(getOnlineUserIds());
+    const serverIds = new Set(getServerOnlineUserIds());
+    const [rows] = await pool.query(
+      `SELECT u.id, u.mc_nick, p.site_nick, p.avatar_path,
+              p.show_site_online, p.show_server_online
+       FROM users u
+       LEFT JOIN profiles p ON p.user_id = u.id
+       WHERE u.mc_nick IS NOT NULL AND TRIM(u.mc_nick) <> ''
+       ORDER BY u.mc_nick ASC
+       LIMIT 200`
+    );
+    const players = [];
+    for (const row of rows) {
+      const mcNick = String(row.mc_nick || "").trim();
+      if (!mcNick) continue;
+      const id = Number(row.id);
+      const showSite =
+        row.show_site_online === undefined
+          ? true
+          : Boolean(Number(row.show_site_online));
+      const showServer =
+        row.show_server_online === undefined
+          ? true
+          : Boolean(Number(row.show_server_online));
+      const serverOnline =
+        showServer && Number.isFinite(id) && serverIds.has(id);
+      const siteOnline =
+        !serverOnline &&
+        showSite &&
+        Number.isFinite(id) &&
+        siteIds.has(id);
+      let avatarUrl = publicAvatarUrl(row.avatar_path || "");
+      players.push({
+        mcNick,
+        siteNick: String(row.site_nick || "").trim(),
+        avatarUrl,
+        siteOnline,
+        serverOnline,
+      });
+    }
+    players.sort((a, b) => {
+      const rank = (p) => (p.serverOnline ? 0 : p.siteOnline ? 1 : 2);
+      const d = rank(a) - rank(b);
+      if (d !== 0) return d;
+      return String(a.mcNick).localeCompare(String(b.mcNick), "en", {
+        sensitivity: "base",
+      });
+    });
+    return res.json({
+      ok: true,
+      online: serverIds.size,
+      siteOnline: siteIds.size,
+      serverAddress: address,
+      players,
+    });
+  } catch (err) {
+    console.error("mc online get:", err);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+/**
  * Pending console / game commands for the Minecraft mod.
  * GET /api/mc/commands?after=<lastId>
  * Header: x-mod-key
